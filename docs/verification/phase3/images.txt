@@ -1,0 +1,2 @@
+[kelios-backend:phase0] sha256:5fa0bfd65583925432efb39b0a61480501c0ed66144c9b6eabb90f229e083a15 user=kelios architecture=arm64
+[kelios-frontend:phase0] sha256:b26dd7596cf04f5714d50aff789dfd25dadadec38400dc86c5379eaf2fd517da user=101 architecture=arm64

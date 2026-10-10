@@ -1,0 +1,49 @@
+ Container kelios-phase0-frontend-1 Recreate 
+ Container kelios-phase0-frontend-1 Recreated 
+ Container kelios-phase0-frontend-1 Starting 
+ Container kelios-phase0-frontend-1 Started 
+ Container kelios-phase0-frontend-1 Waiting 
+ Container kelios-phase0-frontend-1 Healthy 
+blue frontend image: sha256:5142572498844abf9f78e880995b4138b7f342ec6d58d593f81f98dc9bb8fb76
+
+> kelios-frontend@0.0.1 test:smoke
+> playwright test
+
+
+Running 6 tests using 1 worker
+
+(node:72598) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 tests/runtime-branding.spec.ts:3:1 › mounted logo and palette render, and API proxy connects (805ms)
+  ✓  2 tests/runtime-branding.spec.ts:18:3 › missing branding safely renders defaults (117ms)
+  ✓  3 tests/runtime-branding.spec.ts:18:3 › malformed branding safely renders defaults (122ms)
+  ✓  4 tests/runtime-branding.spec.ts:18:3 › unsupported branding safely renders defaults (115ms)
+  ✓  5 tests/runtime-branding.spec.ts:18:3 › timeout branding safely renders defaults (3.4s)
+  ✓  6 tests/runtime-branding.spec.ts:32:1 › broken logo falls back without hiding the application (117ms)
+
+  6 passed (5.5s)
+ Container kelios-phase0-frontend-1 Recreate 
+ Container kelios-phase0-frontend-1 Recreated 
+ Container kelios-phase0-frontend-1 Starting 
+ Container kelios-phase0-frontend-1 Started 
+ Container kelios-phase0-frontend-1 Waiting 
+ Container kelios-phase0-frontend-1 Healthy 
+green frontend image: sha256:5142572498844abf9f78e880995b4138b7f342ec6d58d593f81f98dc9bb8fb76
+
+> kelios-frontend@0.0.1 test:smoke
+> playwright test
+
+
+Running 6 tests using 1 worker
+
+(node:72771) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 tests/runtime-branding.spec.ts:3:1 › mounted logo and palette render, and API proxy connects (222ms)
+  ✓  2 tests/runtime-branding.spec.ts:18:3 › missing branding safely renders defaults (113ms)
+  ✓  3 tests/runtime-branding.spec.ts:18:3 › malformed branding safely renders defaults (105ms)
+  ✓  4 tests/runtime-branding.spec.ts:18:3 › unsupported branding safely renders defaults (124ms)
+  ✓  5 tests/runtime-branding.spec.ts:18:3 › timeout branding safely renders defaults (3.4s)
+  ✓  6 tests/runtime-branding.spec.ts:32:1 › broken logo falls back without hiding the application (122ms)
+
+  6 passed (4.6s)
+Both rendered branding smoke suites passed with the same frontend image.

@@ -1,0 +1,5 @@
+Restored HTTPS local GLOBAL login: passed
+Restored scoped Asset reads and localIdentifier: passed
+External RSA/AES keys available; restored OIDC secret decrypted/re-encrypted by production configuration service: passed
+Exact source/restored all-table digests: passed
+OIDC envelope decryption and missing-key fail-closed separately verified by real PostgreSQL Phase4MetadataIT

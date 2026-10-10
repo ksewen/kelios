@@ -1,0 +1,71 @@
+{
+  "suites": [
+    {
+      "suite": "com.github.ksewen.kelios.identity.auth.AuthPolicyTest",
+      "kind": "unit",
+      "tests": 16,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "com.github.ksewen.kelios.identity.auth.JwtAndBrowserTest",
+      "kind": "unit",
+      "tests": 16,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "com.github.ksewen.kelios.platform.StatusControllerTest",
+      "kind": "unit",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "com.github.ksewen.kelios.platform.security.BusinessProblemsTest",
+      "kind": "unit",
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "com.github.ksewen.kelios.engine.statemachine.StateMachineTest",
+      "kind": "unit",
+      "tests": 34,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "com.github.ksewen.kelios.identity.auth.IdentityAuthenticationIT",
+      "kind": "postgresql-integration",
+      "tests": 47,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "com.github.ksewen.kelios.identity.auth.Phase3InventoryIT",
+      "kind": "postgresql-integration",
+      "tests": 97,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "com.github.ksewen.kelios.inventory.DomainFoundationIT",
+      "kind": "postgresql-integration",
+      "tests": 72,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  ],
+  "total": 290,
+  "unit": 74,
+  "postgresqlIntegration": 216
+}

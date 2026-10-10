@@ -1,0 +1,5 @@
+{
+  "schemaVersion": 1,
+  "logoUrl": "/runtime/logos/logo.svg",
+  "theme": { "background": "#f2faf5", "foreground": "#16372b", "primary": "#087f5b", "primaryForeground": "#ffffff", "accent": "#d8f2e4", "accentForeground": "#14543c" }
+}

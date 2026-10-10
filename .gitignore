@@ -1,0 +1,10 @@
+.DS_Store
+.cache/
+backend/target/
+frontend/node_modules/
+frontend/dist/
+frontend/test-results/
+deploy/secrets/*
+!deploy/secrets/.gitkeep
+.env
+*.log

@@ -1,0 +1,5 @@
+Apache Maven 3.9.16 (2bdd9fddda4b155ebf8000e807eb73fd829a51d5)
+Maven home: /Users/ksewen/IdeaProjects/github/kelios/.cache/maven-home/wrapper/dists/apache-maven-3.9.16/56ba1f9f
+Java version: 25.0.2, vendor: Homebrew, runtime: /opt/homebrew/Cellar/openjdk/25.0.2/libexec/openjdk.jdk/Contents/Home
+Default locale: de_DE, platform encoding: UTF-8
+OS name: "mac os x", version: "26.6.2", arch: "aarch64", family: "mac"

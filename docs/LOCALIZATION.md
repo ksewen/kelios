@@ -1,0 +1,13 @@
+# Frontend presentation localization
+
+The same frontend image bundles exactly English (`en`) and German (`de`) static version-controlled resources in src/locales. i18next 26.4.3 and react-i18next 17.0.16 provide resource lookup/interpolation and reactive React switching; no remote translations, backend locale, User/Tenant field or language API exists.
+
+On first use, browser language preferences are examined in order; the first supported en/de regional base is selected. If none is supported, English is used. A valid explicitly chosen `kelios.ui.language` en/de value takes precedence and survives reload. Invalid/unavailable storage falls back safely; switching still works in memory. The unauthenticated English/Deutsch selector updates document language and all presentation without resetting drafts or session identity.
+
+Only this non-sensitive presentation preference may use localStorage. Access JWTs remain memory-only, Refresh remains an HttpOnly cookie; tokens/credentials never enter localStorage/sessionStorage. Language does not affect authorization, Tenant context, JWT claims or API requests.
+
+Resources cover shell/auth/pending, forms/actions/confirmation/help, inventory/history/loan/state, Catalog/place/Merge, Tenant/User/OIDC administration and audit. Stable enums/action/problem codes map to localized labels; API values remain unchanged. Known business/auth errors have localized safe messages; unknown errors use generic localized fallback, not raw backend detail. Audit context and historical/domain/user-entered values remain data, never translation keys. Local identifier / Lokale Kennung is secondary to the KELIOS Asset Tag and independent of Serial number / Seriennummer and External inventory number / Externe Inventarnummer.
+
+Intl formats ordinary counts and UTC display instants using selected locale; API/storage ISO/UTC values remain canonical. Identifiers remain literal. React text rendering escapes data, including punctuation/HTML-looking values.
+
+Maintain both resource key sets and matching interpolation placeholders. `npm test` fails on divergent keys, empty strings, missing referenced UI keys, or missing supported enum/event/audit/problem mappings. Representative real browser en/de workflows supplement these deterministic checks; avoid brittle whole-resource sentence assertions. Add a new language only with separate scope approval. Runtime-mounted branding/logo/theme is independent of both bundled languages; neither language switching nor branding requires an image rebuild.

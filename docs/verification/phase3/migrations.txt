@@ -1,0 +1,9 @@
+ version |              description              | success 
+---------+---------------------------------------+---------
+ 1       | platform baseline                     | t
+ 2       | domain foundation                     | t
+ 3       | narrow history and unknown protection | t
+ 4       | phase 2 identity authentication       | t
+ 5       | audit tenant attribution              | t
+(5 rows)
+

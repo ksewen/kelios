@@ -1,0 +1,328 @@
+{
+  "checked": 53,
+  "unchanged": 51,
+  "approvedChanges": [
+    "ARCHITECTURE.md",
+    "docs/plans/PHASE_3_PLAN.md"
+  ],
+  "files": [
+    {
+      "file": "AGENTS.md",
+      "before": "29643ea823db10b723c788ff0e9a4cbaa3438251b103dffc239e1bad1eea7aa6",
+      "after": "29643ea823db10b723c788ff0e9a4cbaa3438251b103dffc239e1bad1eea7aa6",
+      "unchanged": true
+    },
+    {
+      "file": "DOMAIN.md",
+      "before": "1e26548d9da05eb0e045e882549545bc84b304c0540fe221cea0031f07e1719a",
+      "after": "1e26548d9da05eb0e045e882549545bc84b304c0540fe221cea0031f07e1719a",
+      "unchanged": true
+    },
+    {
+      "file": "ARCHITECTURE.md",
+      "before": "4fd6c935316fc97cc75f54bcbd948d5a40d4ab345595b0fbd1fb445972881091",
+      "after": "d7e5bb958f9e1512b2577f5e5157fd59197380bd215fda2cea464869b062aa04",
+      "unchanged": false
+    },
+    {
+      "file": "CODEX_IMPLEMENTATION_TASK.md",
+      "before": "5e433f501615c2f53f98f8dcef43f78377d037c0373a9bb9f5e7e0e777a923b1",
+      "after": "5e433f501615c2f53f98f8dcef43f78377d037c0373a9bb9f5e7e0e777a923b1",
+      "unchanged": true
+    },
+    {
+      "file": "docs/plans/PHASE_0_PLAN.md",
+      "before": "9056c31c5335520ecc3c92d76f3963bf9b127be6f7986f9f5c3a91ae9e54804e",
+      "after": "9056c31c5335520ecc3c92d76f3963bf9b127be6f7986f9f5c3a91ae9e54804e",
+      "unchanged": true
+    },
+    {
+      "file": "docs/plans/PHASE_1_PLAN.md",
+      "before": "db7051d59dd5cb682c1c50c49f037e26e90f98545ac633ace4a556ad249485aa",
+      "after": "db7051d59dd5cb682c1c50c49f037e26e90f98545ac633ace4a556ad249485aa",
+      "unchanged": true
+    },
+    {
+      "file": "docs/plans/PHASE_3_PLAN.md",
+      "before": "db75c256d4505bdbdda8f7298dc38fe5b443eeb2ed38df0dc5749f8c3fdbd966",
+      "after": "11ff2eedfd42b64277c149b1f6269dea887f9a2ac281627d0714160a4bd9aae8",
+      "unchanged": false
+    },
+    {
+      "file": "docs/plans/PHASE_2_PLAN.md",
+      "before": "221b4be6adde3763f0410a4fd83d69dab6787d0399664b508f40de31d8eeb144",
+      "after": "221b4be6adde3763f0410a4fd83d69dab6787d0399664b508f40de31d8eeb144",
+      "unchanged": true
+    },
+    {
+      "file": "docs/adr/0003-phase-2-authentication-and-authorization.md",
+      "before": "2710aaf8505447e40704a4211402577b57582f603a6af6e03eec13405408ad04",
+      "after": "2710aaf8505447e40704a4211402577b57582f603a6af6e03eec13405408ad04",
+      "unchanged": true
+    },
+    {
+      "file": "docs/adr/0002-phase-1-domain-persistence.md",
+      "before": "3efff65062186ce4953d4f3ec0fe007ee16801789ac9c69758a92d5974352c46",
+      "after": "3efff65062186ce4953d4f3ec0fe007ee16801789ac9c69758a92d5974352c46",
+      "unchanged": true
+    },
+    {
+      "file": "docs/adr/0001-phase-0-foundation.md",
+      "before": "8d9b749c4a49a017bb4456545d2905d177677a8912d4c472f370a2ad8e9ab2c4",
+      "after": "8d9b749c4a49a017bb4456545d2905d177677a8912d4c472f370a2ad8e9ab2c4",
+      "unchanged": true
+    },
+    {
+      "file": "docs/analysis/PHASE_3_AUDIT_ATTRIBUTION.md",
+      "before": "8072a521d2edc332042ef5992030c367288e0b977a66708e2b5bdb8ce2c08e92",
+      "after": "8072a521d2edc332042ef5992030c367288e0b977a66708e2b5bdb8ce2c08e92",
+      "unchanged": true
+    },
+    {
+      "file": "docs/verification/PHASE_1.md",
+      "before": "32e6318b8cafe2d36416bcd844c562ee3fe0f5c61c15dc95159b55af412e71cb",
+      "after": "32e6318b8cafe2d36416bcd844c562ee3fe0f5c61c15dc95159b55af412e71cb",
+      "unchanged": true
+    },
+    {
+      "file": "docs/verification/.DS_Store",
+      "before": "86912a6c9ab3231489e2b5a218af8b65e54d4db6c79c1977e3711a5864f380c7",
+      "after": "86912a6c9ab3231489e2b5a218af8b65e54d4db6c79c1977e3711a5864f380c7",
+      "unchanged": true
+    },
+    {
+      "file": "docs/verification/PHASE_0.md",
+      "before": "289e4136ead257284d9f15b44e9bdc77ddd5f0bbbb15c3dad47c30fb757af531",
+      "after": "289e4136ead257284d9f15b44e9bdc77ddd5f0bbbb15c3dad47c30fb757af531",
+      "unchanged": true
+    },
+    {
+      "file": "docs/verification/PHASE_2_ISERV_MANUAL.md",
+      "before": "e68158c940acbacef321d919280dbebc1ea9d88be704c786dc4fde5c7e23c304",
+      "after": "e68158c940acbacef321d919280dbebc1ea9d88be704c786dc4fde5c7e23c304",
+      "unchanged": true
+    },
+    {
+      "file": "docs/verification/blue.png",
+      "before": "c3f31ceb766060dc7820f944637154ad244d9168a0e7fb19ea78bb966fb4a1d8",
+      "after": "c3f31ceb766060dc7820f944637154ad244d9168a0e7fb19ea78bb966fb4a1d8",
+      "unchanged": true
+    },
+    {
+      "file": "docs/verification/green.png",
+      "before": "e7d5fa13c784743ae0f7596fc289d0481ba0c49ff332b5c4770d954f508fb1da",
+      "after": "e7d5fa13c784743ae0f7596fc289d0481ba0c49ff332b5c4770d954f508fb1da",
+      "unchanged": true
+    },
+    {
+      "file": "docs/verification/backend-startup.txt",
+      "before": "32fbd9fc70c69156670767db2eb04fcbcbaa6bcb32e7a12e12c6a6e98e58ea5a",
+      "after": "32fbd9fc70c69156670767db2eb04fcbcbaa6bcb32e7a12e12c6a6e98e58ea5a",
+      "unchanged": true
+    },
+    {
+      "file": "docs/verification/backend-verify.txt",
+      "before": "b41e88d2eb0a68ef6ef1c4ee6a4cae961ae6068018d2b9537d9d7914523cd1b6",
+      "after": "b41e88d2eb0a68ef6ef1c4ee6a4cae961ae6068018d2b9537d9d7914523cd1b6",
+      "unchanged": true
+    },
+    {
+      "file": "docs/verification/browser-smoke.txt",
+      "before": "efad4d65d594ffed99e78cde171abb5bba8dedd032486fd2e658e907a72ba689",
+      "after": "efad4d65d594ffed99e78cde171abb5bba8dedd032486fd2e658e907a72ba689",
+      "unchanged": true
+    },
+    {
+      "file": "docs/verification/container-smoke.txt",
+      "before": "bd011087e8aede9b96c2af2166e85c24d1bc42948c1e6c440a0e6f04a413f347",
+      "after": "bd011087e8aede9b96c2af2166e85c24d1bc42948c1e6c440a0e6f04a413f347",
+      "unchanged": true
+    },
+    {
+      "file": "docs/verification/PHASE_2.md",
+      "before": "d65c2e07f4f0b73c95259240cd5927271e8855f16d9823044f88875242769717",
+      "after": "d65c2e07f4f0b73c95259240cd5927271e8855f16d9823044f88875242769717",
+      "unchanged": true
+    },
+    {
+      "file": "docs/verification/phase2/migrations.txt",
+      "before": "66e146077b206f7819fe67fbd61eccbe2ab738735fbc6ac37ee2f6d087e7bf52",
+      "after": "66e146077b206f7819fe67fbd61eccbe2ab738735fbc6ac37ee2f6d087e7bf52",
+      "unchanged": true
+    },
+    {
+      "file": "docs/verification/phase2/preservation.txt",
+      "before": "88edbd8f3a7d4131e6dd4799dd4105ece0f76fa7dc4b04bff6c585c03304ec77",
+      "after": "88edbd8f3a7d4131e6dd4799dd4105ece0f76fa7dc4b04bff6c585c03304ec77",
+      "unchanged": true
+    },
+    {
+      "file": "docs/verification/phase2/frontend-test.txt",
+      "before": "3629245dbeae7fdbb18729f0777836e41cdb1ab3eded77abc9d0dc5fd120d59a",
+      "after": "3629245dbeae7fdbb18729f0777836e41cdb1ab3eded77abc9d0dc5fd120d59a",
+      "unchanged": true
+    },
+    {
+      "file": "docs/verification/phase2/docker-smoke.txt",
+      "before": "7763db25336427f41c2d83f4143dd8c302a008983997e0e5723d719e07994ff1",
+      "after": "7763db25336427f41c2d83f4143dd8c302a008983997e0e5723d719e07994ff1",
+      "unchanged": true
+    },
+    {
+      "file": "docs/verification/phase2/blue.png",
+      "before": "25d8f1c3b65a9ef11bb26cf2232cd8b7e4894914bc48ebea616e199443e4f500",
+      "after": "25d8f1c3b65a9ef11bb26cf2232cd8b7e4894914bc48ebea616e199443e4f500",
+      "unchanged": true
+    },
+    {
+      "file": "docs/verification/phase2/maven-verify.txt",
+      "before": "435f05746a2701d474f3dad4b14019096d1f08e6ff7f1228f0ce2ff2cf5c8252",
+      "after": "435f05746a2701d474f3dad4b14019096d1f08e6ff7f1228f0ce2ff2cf5c8252",
+      "unchanged": true
+    },
+    {
+      "file": "docs/verification/phase2/frontend-build.txt",
+      "before": "53d140d0b91c10b6bc107450fcfa448654a6cb69e26f1320dbff9b0b619e4455",
+      "after": "53d140d0b91c10b6bc107450fcfa448654a6cb69e26f1320dbff9b0b619e4455",
+      "unchanged": true
+    },
+    {
+      "file": "docs/verification/phase2/documentation-check.txt",
+      "before": "24733bc05b823659d545e5334a12e4554b4758be8caa67ac85ea814b37712dee",
+      "after": "24733bc05b823659d545e5334a12e4554b4758be8caa67ac85ea814b37712dee",
+      "unchanged": true
+    },
+    {
+      "file": "docs/verification/phase2/green.png",
+      "before": "1a392e2d0013e8b65d2b3e7abd5c2ced0e81782c5144bbd7c5f98ad0d3559bf3",
+      "after": "1a392e2d0013e8b65d2b3e7abd5c2ced0e81782c5144bbd7c5f98ad0d3559bf3",
+      "unchanged": true
+    },
+    {
+      "file": "docs/verification/phase2/maven.txt",
+      "before": "06b4caff3c99dfe0c5f8a249b8add2d062b84325874f9c04ce47ff3308b4094b",
+      "after": "06b4caff3c99dfe0c5f8a249b8add2d062b84325874f9c04ce47ff3308b4094b",
+      "unchanged": true
+    },
+    {
+      "file": "docs/verification/phase2/backend-startup.txt",
+      "before": "004272bf88db192fb6b2f9901c4cef075a1b7f8186c09c847a9d2a0a09c4c0c5",
+      "after": "004272bf88db192fb6b2f9901c4cef075a1b7f8186c09c847a9d2a0a09c4c0c5",
+      "unchanged": true
+    },
+    {
+      "file": "docs/verification/phase2/https-browser-smoke.txt",
+      "before": "e59c67f2cf79f4470d2c95e95f23c0bdae06af14d806c275c91a5a2fb1d7e66c",
+      "after": "e59c67f2cf79f4470d2c95e95f23c0bdae06af14d806c275c91a5a2fb1d7e66c",
+      "unchanged": true
+    },
+    {
+      "file": "docs/verification/phase2/images.txt",
+      "before": "18da20747340d0cf3971020a4cc5d8dc47295fb98f46315b07c18df513d3391d",
+      "after": "18da20747340d0cf3971020a4cc5d8dc47295fb98f46315b07c18df513d3391d",
+      "unchanged": true
+    },
+    {
+      "file": "docs/verification/phase2/node.txt",
+      "before": "c642a0de246dcdc6c51318fe449646fc5067b981a8d09e9ccdb8141a5756339a",
+      "after": "c642a0de246dcdc6c51318fe449646fc5067b981a8d09e9ccdb8141a5756339a",
+      "unchanged": true
+    },
+    {
+      "file": "docs/verification/phase2/docker-version.txt",
+      "before": "e8cbd2e0bd5c9370ddc34e0e1ee809dfc38252ed823c6c7316074618c4562ff0",
+      "after": "e8cbd2e0bd5c9370ddc34e0e1ee809dfc38252ed823c6c7316074618c4562ff0",
+      "unchanged": true
+    },
+    {
+      "file": "docs/verification/phase1/frontend-test.txt",
+      "before": "0f8e613ceaf2b3d45f37134a363dbac000f14f646c1cfc6a204674aed2915ce7",
+      "after": "0f8e613ceaf2b3d45f37134a363dbac000f14f646c1cfc6a204674aed2915ce7",
+      "unchanged": true
+    },
+    {
+      "file": "docs/verification/phase1/docker-smoke.txt",
+      "before": "15ae01f48aa2b8529dae7e389dc96eff185efaf8d4587a694256974f59209222",
+      "after": "15ae01f48aa2b8529dae7e389dc96eff185efaf8d4587a694256974f59209222",
+      "unchanged": true
+    },
+    {
+      "file": "docs/verification/phase1/branding-regression.txt",
+      "before": "3f9996b2e493d13f10bf02b67008ff4300e93f05dcae34be9f6eda57356c418e",
+      "after": "3f9996b2e493d13f10bf02b67008ff4300e93f05dcae34be9f6eda57356c418e",
+      "unchanged": true
+    },
+    {
+      "file": "docs/verification/phase1/blue.png",
+      "before": "c3f31ceb766060dc7820f944637154ad244d9168a0e7fb19ea78bb966fb4a1d8",
+      "after": "c3f31ceb766060dc7820f944637154ad244d9168a0e7fb19ea78bb966fb4a1d8",
+      "unchanged": true
+    },
+    {
+      "file": "docs/verification/phase1/toolchain.txt",
+      "before": "06b4caff3c99dfe0c5f8a249b8add2d062b84325874f9c04ce47ff3308b4094b",
+      "after": "06b4caff3c99dfe0c5f8a249b8add2d062b84325874f9c04ce47ff3308b4094b",
+      "unchanged": true
+    },
+    {
+      "file": "docs/verification/phase1/maven-verify.txt",
+      "before": "3c4582f7f11195b15fc0f73967da17bfa183990db05e029ff5f1a851f0cd62d7",
+      "after": "3c4582f7f11195b15fc0f73967da17bfa183990db05e029ff5f1a851f0cd62d7",
+      "unchanged": true
+    },
+    {
+      "file": "docs/verification/phase1/frontend-build.txt",
+      "before": "e32f4d55da904e7b841301ee06b1229b1ffee22ef0cdefc1e2ed051fb70a8f3f",
+      "after": "e32f4d55da904e7b841301ee06b1229b1ffee22ef0cdefc1e2ed051fb70a8f3f",
+      "unchanged": true
+    },
+    {
+      "file": "docs/verification/phase1/green.png",
+      "before": "e7d5fa13c784743ae0f7596fc289d0481ba0c49ff332b5c4770d954f508fb1da",
+      "after": "e7d5fa13c784743ae0f7596fc289d0481ba0c49ff332b5c4770d954f508fb1da",
+      "unchanged": true
+    },
+    {
+      "file": "docs/verification/phase1/backend-startup.txt",
+      "before": "9a8c7df6123d2e176e4afdde09b86d3e314651b822e541ed9da4aee79ba1810b",
+      "after": "9a8c7df6123d2e176e4afdde09b86d3e314651b822e541ed9da4aee79ba1810b",
+      "unchanged": true
+    },
+    {
+      "file": "docs/verification/phase1/preservation-check.json",
+      "before": "e2117e4c8b0631dd272a5aecd418c4a83522a36b731860639dc4d40f4497ff35",
+      "after": "e2117e4c8b0631dd272a5aecd418c4a83522a36b731860639dc4d40f4497ff35",
+      "unchanged": true
+    },
+    {
+      "file": "docs/verification/phase1/initial-postgres-failures.txt",
+      "before": "ce08304c0677262951cbdcc636c50d9db3ac737c141843588a3734ad25b20f2e",
+      "after": "ce08304c0677262951cbdcc636c50d9db3ac737c141843588a3734ad25b20f2e",
+      "unchanged": true
+    },
+    {
+      "file": "backend/src/main/resources/db/migration/V3__narrow_history_and_unknown_protection.sql",
+      "before": "827af334b1bac6d651009ae7dc62cc54e67a1bc40f135273cca1c42df4966e08",
+      "after": "827af334b1bac6d651009ae7dc62cc54e67a1bc40f135273cca1c42df4966e08",
+      "unchanged": true
+    },
+    {
+      "file": "backend/src/main/resources/db/migration/V1__platform_baseline.sql",
+      "before": "7b34a096cc637f2e9cbe6e0f552ed7667e4e52f0d66950cc29734073c6b8d275",
+      "after": "7b34a096cc637f2e9cbe6e0f552ed7667e4e52f0d66950cc29734073c6b8d275",
+      "unchanged": true
+    },
+    {
+      "file": "backend/src/main/resources/db/migration/V2__domain_foundation.sql",
+      "before": "10a52ea85363980d9b7665b6b1646ba284a3ae734fca7d523339a01304f37e48",
+      "after": "10a52ea85363980d9b7665b6b1646ba284a3ae734fca7d523339a01304f37e48",
+      "unchanged": true
+    },
+    {
+      "file": "backend/src/main/resources/db/migration/V4__phase_2_identity_authentication.sql",
+      "before": "eb4ca8dd3ea475c5a3a966f711f07657f11d38e4dc4fb23cfce9061652103e49",
+      "after": "eb4ca8dd3ea475c5a3a966f711f07657f11d38e4dc4fb23cfce9061652103e49",
+      "unchanged": true
+    }
+  ]
+}

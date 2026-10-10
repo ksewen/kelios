@@ -1,0 +1,42 @@
+spring:
+  application:
+    name: kelios
+  config:
+    import: optional:configtree:/run/secrets/
+  datasource:
+    hikari:
+      connection-init-sql: "SET lock_timeout = '10s'"
+    url: ${KELIOS_DATABASE_URL:jdbc:postgresql://localhost:5432/kelios}
+    username: ${KELIOS_DATABASE_USER:kelios}
+    password: ${KELIOS_DATABASE_PASSWORD:${db-password:}}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    locations: classpath:db/migration
+    clean-disabled: true
+  mvc:
+    problemdetails:
+      enabled: true
+server:
+  port: 8080
+  shutdown: graceful
+  error:
+    include-message: never
+    include-stacktrace: never
+management:
+  server:
+    port: 8081
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState,db

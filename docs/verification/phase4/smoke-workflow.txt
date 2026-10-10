@@ -1,0 +1,142 @@
+ Container kelios-phase4-postgres-1 Running 
+ Container kelios-phase4-backend-1 Recreate 
+ Container kelios-phase4-backend-1 Recreated 
+ Container kelios-phase4-frontend-1 Recreate 
+ Container kelios-phase4-frontend-1 Recreated 
+ Container kelios-phase4-postgres-1 Waiting 
+ Container kelios-phase4-postgres-1 Healthy 
+ Container kelios-phase4-backend-1 Starting 
+ Container kelios-phase4-backend-1 Started 
+ Container kelios-phase4-backend-1 Waiting 
+ Container kelios-phase4-backend-1 Healthy 
+ Container kelios-phase4-frontend-1 Starting 
+ Container kelios-phase4-frontend-1 Started 
+ Container kelios-phase4-postgres-1 Waiting 
+ Container kelios-phase4-backend-1 Waiting 
+ Container kelios-phase4-frontend-1 Waiting 
+ Container kelios-phase4-backend-1 Healthy 
+ Container kelios-phase4-postgres-1 Healthy 
+ Container kelios-phase4-frontend-1 Healthy 
+Deployment bootstrap/recovery repeat refused as required.
+ Container kelios-phase4-frontend-1 Recreate 
+ Container kelios-phase4-frontend-1 Recreated 
+ Container kelios-phase4-frontend-1 Starting 
+ Container kelios-phase4-frontend-1 Started 
+ Container kelios-phase4-frontend-1 Waiting 
+ Container kelios-phase4-frontend-1 Healthy 
+blue frontend image: sha256:1884b553e9570cfa216359dffebafdc50b6ce7a84a6246093eb934ad7cc7f0d4
+
+> kelios-frontend@0.0.1 test:smoke
+> playwright test
+
+
+Running 23 tests using 1 worker
+
+(node:35100) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓   1 tests/authentication.spec.ts:19:1 › real HTTPS login, memory transport, reload refresh and logout (1.2s)
+  ✓   2 tests/authentication.spec.ts:37:1 › real cookie refresh rejects missing CSRF and wrong Origin (346ms)
+  ✓   3 tests/authentication.spec.ts:46:1 › real disabled account loses refresh while issued Access expires naturally (650ms)
+  ✓   4 tests/authentication.spec.ts:66:1 › frontend Tenant initiation/completion shows mandatory pending state without business requests (255ms)
+  ✓   5 tests/authentication.spec.ts:87:1 › safe OIDC failure state contains no tokens or authorization code (120ms)
+  ✓   6 tests/inventory.spec.ts:10:1 › real inventory UI registration, history, terminal loan and Return (2.2s)
+  ✓   7 tests/inventory.spec.ts:30:1 › real management UI creates places and catalog, previews Merge, publishes, and audits (1.8s)
+  ✓   8 tests/inventory.spec.ts:40:1 › real read-only GLOBAL user has inventory reads but no mutation or audit controls (488ms)
+  ✓   9 tests/inventory.spec.ts:44:1 › real existing identity administration UI and write-only OIDC settings (1.0s)
+  ✓  10 tests/inventory.spec.ts:52:1 › stale conflict preserves draft, requires explicit reload and does not replay mutation (533ms)
+  ✓  11 tests/inventory.spec.ts:58:1 › UI-only Tenant ADMIN fixture exposes own audit while Tenant USER hides administration (295ms)
+  ✓  12 tests/inventory.spec.ts:65:1 › UI-only delayed old Tenant read cannot repopulate the newly selected Tenant (305ms)
+  ✓  13 tests/phase4-localization.spec.ts:6:2 › real en metadata, history, search and branding (1.9s)
+  ✓  14 tests/phase4-localization.spec.ts:6:2 › real de metadata, history, search and branding (1.9s)
+  ✓  15 tests/phase4-localization.spec.ts:28:1 › unsupported first-use browser locale falls back to English (126ms)
+  ✓  16 tests/phase4-localization.spec.ts:29:44 › UI-only en pending fixture denies business requests (164ms)
+  ✓  17 tests/phase4-localization.spec.ts:29:44 › UI-only de pending fixture denies business requests (155ms)
+  ✓  18 tests/runtime-branding.spec.ts:3:1 › mounted logo and palette render, and API proxy connects (256ms)
+  ✓  19 tests/runtime-branding.spec.ts:18:3 › missing branding safely renders defaults (132ms)
+  ✓  20 tests/runtime-branding.spec.ts:18:3 › malformed branding safely renders defaults (133ms)
+  ✓  21 tests/runtime-branding.spec.ts:18:3 › unsupported branding safely renders defaults (124ms)
+  ✓  22 tests/runtime-branding.spec.ts:18:3 › timeout branding safely renders defaults (3.4s)
+  ✓  23 tests/runtime-branding.spec.ts:32:1 › broken logo falls back without hiding the application (162ms)
+
+  23 passed (18.6s)
+ Container kelios-phase4-frontend-1 Recreate 
+ Container kelios-phase4-frontend-1 Recreated 
+ Container kelios-phase4-frontend-1 Starting 
+ Container kelios-phase4-frontend-1 Started 
+ Container kelios-phase4-frontend-1 Waiting 
+ Container kelios-phase4-frontend-1 Healthy 
+green frontend image: sha256:1884b553e9570cfa216359dffebafdc50b6ce7a84a6246093eb934ad7cc7f0d4
+
+> kelios-frontend@0.0.1 test:smoke
+> playwright test runtime-branding.spec.ts phase4-localization.spec.ts
+
+
+Running 11 tests using 1 worker
+
+(node:35862) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓   1 tests/phase4-localization.spec.ts:6:2 › real en metadata, history, search and branding (2.4s)
+  ✓   2 tests/phase4-localization.spec.ts:6:2 › real de metadata, history, search and branding (1.9s)
+  ✓   3 tests/phase4-localization.spec.ts:28:1 › unsupported first-use browser locale falls back to English (133ms)
+  ✓   4 tests/phase4-localization.spec.ts:29:44 › UI-only en pending fixture denies business requests (164ms)
+  ✓   5 tests/phase4-localization.spec.ts:29:44 › UI-only de pending fixture denies business requests (162ms)
+  ✓   6 tests/runtime-branding.spec.ts:3:1 › mounted logo and palette render, and API proxy connects (251ms)
+  ✓   7 tests/runtime-branding.spec.ts:18:3 › missing branding safely renders defaults (127ms)
+  ✓   8 tests/runtime-branding.spec.ts:18:3 › malformed branding safely renders defaults (124ms)
+  ✓   9 tests/runtime-branding.spec.ts:18:3 › unsupported branding safely renders defaults (121ms)
+  ✓  10 tests/runtime-branding.spec.ts:18:3 › timeout branding safely renders defaults (3.4s)
+  ✓  11 tests/runtime-branding.spec.ts:32:1 › broken logo falls back without hiding the application (176ms)
+
+  11 passed (9.8s)
+ Container kelios-phase4-backend-1 Recreate 
+ Container kelios-phase4-backend-1 Recreated 
+ Container kelios-phase4-backend-1 Starting 
+ Container kelios-phase4-backend-1 Started 
+ Container kelios-phase4-backend-1 Waiting 
+ Container kelios-phase4-backend-1 Healthy 
+ Container kelios-phase4-backend-1 Recreate 
+ Container kelios-phase4-backend-1 Recreated 
+ Container kelios-phase4-backend-1 Starting 
+ Container kelios-phase4-backend-1 Started 
+ Container kelios-phase4-backend-1 Waiting 
+ Container kelios-phase4-backend-1 Healthy 
+Disposable PostgreSQL backup/restore/readiness/HTTPS-authentication drill passed.
+ Network kelios-phase4-clean-1791662278_default Creating 
+ Volume kelios-phase4-clean-1791662278_postgres-data Creating 
+ Volume kelios-phase4-clean-1791662278_postgres-data Creating 
+ Network kelios-phase4-clean-1791662278_default Creating 
+ Volume kelios-phase4-clean-1791662278_postgres-data Created 
+ Volume kelios-phase4-clean-1791662278_postgres-data Created 
+ Network kelios-phase4-clean-1791662278_default Created 
+ Network kelios-phase4-clean-1791662278_default Created 
+ Container kelios-phase4-clean-1791662278-postgres-1 Creating 
+ Container kelios-phase4-clean-1791662278-postgres-1 Created 
+ Container kelios-phase4-clean-1791662278-backend-1 Creating 
+ Container kelios-phase4-clean-1791662278-backend-1 Created 
+ Container kelios-phase4-clean-1791662278-frontend-1 Creating 
+ Container kelios-phase4-clean-1791662278-frontend-1 Created 
+ Container kelios-phase4-clean-1791662278-postgres-1 Starting 
+ Container kelios-phase4-clean-1791662278-postgres-1 Started 
+ Container kelios-phase4-clean-1791662278-postgres-1 Waiting 
+ Container kelios-phase4-clean-1791662278-postgres-1 Healthy 
+ Container kelios-phase4-clean-1791662278-backend-1 Starting 
+ Container kelios-phase4-clean-1791662278-backend-1 Started 
+ Container kelios-phase4-clean-1791662278-backend-1 Waiting 
+ Container kelios-phase4-clean-1791662278-backend-1 Healthy 
+ Container kelios-phase4-clean-1791662278-frontend-1 Starting 
+ Container kelios-phase4-clean-1791662278-frontend-1 Started 
+ Container kelios-phase4-clean-1791662278-backend-1 Waiting 
+ Container kelios-phase4-clean-1791662278-frontend-1 Waiting 
+ Container kelios-phase4-clean-1791662278-postgres-1 Waiting 
+ Container kelios-phase4-clean-1791662278-backend-1 Healthy 
+ Container kelios-phase4-clean-1791662278-postgres-1 Healthy 
+ Container kelios-phase4-clean-1791662278-frontend-1 Healthy 
+t
+{"status":"UP"}{"application":"KELIOS","status":"ready"} Container kelios-phase4-clean-1791662278-frontend-1 Stopping 
+ Container kelios-phase4-clean-1791662278-frontend-1 Stopped 
+ Container kelios-phase4-clean-1791662278-backend-1 Stopping 
+ Container kelios-phase4-clean-1791662278-backend-1 Stopped 
+ Container kelios-phase4-clean-1791662278-postgres-1 Stopping 
+ Container kelios-phase4-clean-1791662278-postgres-1 Stopped 
+Clean isolated V1-to-V6 image/HTTPS deployment passed; disposable volume retained.
+Phase 4 inventory/HTTPS/authentication and both-brand deployment regression passed.

@@ -1,0 +1,46 @@
+backend-1  | 
+backend-1  |   .   ____          _            __ _ _
+backend-1  |  /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+backend-1  | ( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+backend-1  |  \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+backend-1  |   '  |____| .__|_| |_|_| |_\__, | / / / /
+backend-1  |  =========|_|==============|___/=/_/_/_/
+backend-1  | 
+backend-1  |  :: Spring Boot ::                (v4.1.1)
+backend-1  | 
+backend-1  | 2026-10-10T10:28:26.127Z  INFO 1 --- [kelios] [           main] c.g.ksewen.kelios.KeliosApplication      : Starting KeliosApplication v0.0.1-SNAPSHOT using Java 25.0.4.1 with PID 1 (/app/app.jar started by kelios in /app)
+backend-1  | 2026-10-10T10:28:26.131Z  INFO 1 --- [kelios] [           main] c.g.ksewen.kelios.KeliosApplication      : No active profile set, falling back to 1 default profile: "default"
+backend-1  | 2026-10-10T10:28:27.047Z  INFO 1 --- [kelios] [           main] o.s.boot.tomcat.TomcatWebServer          : Tomcat initialized with port 8080 (http)
+backend-1  | 2026-10-10T10:28:27.058Z  INFO 1 --- [kelios] [           main] o.apache.catalina.core.StandardService   : Starting service [Tomcat]
+backend-1  | 2026-10-10T10:28:27.058Z  INFO 1 --- [kelios] [           main] o.apache.catalina.core.StandardEngine    : Starting Servlet engine: [Apache Tomcat/11.0.24]
+backend-1  | 2026-10-10T10:28:27.077Z  INFO 1 --- [kelios] [           main] b.w.c.s.WebApplicationContextInitializer : Root WebApplicationContext: initialization completed in 909 ms
+backend-1  | 2026-10-10T10:28:27.613Z  INFO 1 --- [kelios] [           main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Starting...
+backend-1  | 2026-10-10T10:28:27.745Z  INFO 1 --- [kelios] [           main] com.zaxxer.hikari.pool.HikariPool        : HikariPool-1 - Added connection org.postgresql.jdbc.PgConnection@5882b202
+backend-1  | 2026-10-10T10:28:27.746Z  INFO 1 --- [kelios] [           main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Start completed.
+backend-1  | 2026-10-10T10:28:27.763Z  INFO 1 --- [kelios] [           main] org.flywaydb.core.FlywayExecutor         : Database: jdbc:postgresql://postgres:5432/kelios (PostgreSQL 17.11)
+backend-1  | 2026-10-10T10:28:27.804Z  INFO 1 --- [kelios] [           main] o.f.c.i.s.JdbcTableSchemaHistory         : Schema history table "public"."flyway_schema_history" does not exist yet
+backend-1  | 2026-10-10T10:28:27.806Z  INFO 1 --- [kelios] [           main] o.f.core.internal.command.DbValidate     : Successfully validated 1 migration (execution time 00:00.011s)
+backend-1  | 2026-10-10T10:28:27.814Z  INFO 1 --- [kelios] [           main] o.f.c.i.s.JdbcTableSchemaHistory         : Creating Schema History table "public"."flyway_schema_history" ...
+backend-1  | 2026-10-10T10:28:27.850Z  INFO 1 --- [kelios] [           main] o.f.core.internal.command.DbMigrate      : Current version of schema "public": << Empty Schema >>
+backend-1  | 2026-10-10T10:28:27.855Z  INFO 1 --- [kelios] [           main] o.f.core.internal.command.DbMigrate      : Migrating schema "public" to version "1 - platform baseline"
+backend-1  | 2026-10-10T10:28:27.858Z  INFO 1 --- [kelios] [           main] o.f.c.i.s.DefaultSqlScriptExecutor       : +----------+
+backend-1  | | ?column? |
+backend-1  | +----------+
+backend-1  | | 1        |
+backend-1  | +----------+
+backend-1  | 
+backend-1  | 2026-10-10T10:28:27.869Z  INFO 1 --- [kelios] [           main] o.f.core.internal.command.DbMigrate      : Successfully applied 1 migration to schema "public", now at version v1 (execution time 00:00.004s)
+backend-1  | 2026-10-10T10:28:27.995Z  INFO 1 --- [kelios] [           main] o.s.boot.tomcat.TomcatWebServer          : Tomcat started on port 8080 (http) with context path '/'
+backend-1  | 2026-10-10T10:28:28.047Z  INFO 1 --- [kelios] [           main] o.s.boot.tomcat.TomcatWebServer          : Tomcat initialized with port 8081 (http)
+backend-1  | 2026-10-10T10:28:28.047Z  INFO 1 --- [kelios] [           main] o.apache.catalina.core.StandardService   : Starting service [Tomcat]
+backend-1  | 2026-10-10T10:28:28.047Z  INFO 1 --- [kelios] [           main] o.apache.catalina.core.StandardEngine    : Starting Servlet engine: [Apache Tomcat/11.0.24]
+backend-1  | 2026-10-10T10:28:28.048Z  INFO 1 --- [kelios] [           main] b.w.c.s.WebApplicationContextInitializer : Root WebApplicationContext: initialization completed in 50 ms
+backend-1  | 2026-10-10T10:28:28.063Z  INFO 1 --- [kelios] [           main] o.s.b.a.e.web.EndpointLinksResolver      : Exposing 1 endpoint beneath base path '/actuator'
+backend-1  | 2026-10-10T10:28:28.088Z  INFO 1 --- [kelios] [           main] o.s.boot.tomcat.TomcatWebServer          : Tomcat started on port 8081 (http) with context path '/'
+backend-1  | 2026-10-10T10:28:28.094Z  INFO 1 --- [kelios] [           main] c.g.ksewen.kelios.KeliosApplication      : Started KeliosApplication in 2.311 seconds (process running for 2.618)
+backend-1  | 2026-10-10T10:28:30.535Z  INFO 1 --- [kelios] [nio-8081-exec-1] o.a.c.c.C.[Tomcat-1].[localhost].[/]     : Initializing Spring DispatcherServlet 'dispatcherServletRegistration'
+backend-1  | 2026-10-10T10:28:30.535Z  INFO 1 --- [kelios] [nio-8081-exec-1] o.s.web.servlet.DispatcherServlet        : Initializing Servlet 'dispatcherServletRegistration'
+backend-1  | 2026-10-10T10:28:30.535Z  INFO 1 --- [kelios] [nio-8081-exec-1] o.s.web.servlet.DispatcherServlet        : Completed initialization in 0 ms
+backend-1  | 2026-10-10T10:28:54.172Z  INFO 1 --- [kelios] [nio-8080-exec-1] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring DispatcherServlet 'dispatcherServlet'
+backend-1  | 2026-10-10T10:28:54.172Z  INFO 1 --- [kelios] [nio-8080-exec-1] o.s.web.servlet.DispatcherServlet        : Initializing Servlet 'dispatcherServlet'
+backend-1  | 2026-10-10T10:28:54.172Z  INFO 1 --- [kelios] [nio-8080-exec-1] o.s.web.servlet.DispatcherServlet        : Completed initialization in 0 ms

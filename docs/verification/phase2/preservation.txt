@@ -1,0 +1,2 @@
+28 pre-existing specification/task/Phase 0–1 plan/ADR/evidence/migration files have unchanged SHA-256 content hashes compared with the pre-Phase-2 workspace snapshot.
+No V1, V2 or V3 migration changes. No Phase 0/1 evidence rewrite.

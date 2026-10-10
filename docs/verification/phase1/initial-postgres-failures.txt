@@ -1,0 +1,217 @@
+[INFO] Scanning for projects...
+[INFO] 
+[INFO] ------------------< com.github.ksewen:kelios-backend >------------------
+[INFO] Building KELIOS backend 0.0.1-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.6.2:enforce (default) @ kelios-backend ---
+[INFO] Rule 0: org.apache.maven.enforcer.rules.version.RequireMavenVersion passed
+[INFO] Rule 1: org.apache.maven.enforcer.rules.version.RequireJavaVersion passed
+[INFO] 
+[INFO] --- resources:3.5.0:resources (default-resources) @ kelios-backend ---
+[INFO] Copying 1 resource from src/main/resources to target/classes
+[INFO] Copying 3 resources from src/main/resources to target/classes
+[INFO] 
+[INFO] --- compiler:3.15.0:compile (default-compile) @ kelios-backend ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.5.0:testResources (default-testResources) @ kelios-backend ---
+[INFO] skip non existing resourceDirectory /Users/ksewen/IdeaProjects/github/kelios/backend/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.15.0:testCompile (default-testCompile) @ kelios-backend ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- surefire:3.5.6:test (default-test) @ kelios-backend ---
+[INFO] Using auto detected provider org.apache.maven.surefire.junitplatform.JUnitPlatformProvider
+[INFO] 
+[INFO] -------------------------------------------------------
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+[INFO] Running com.github.ksewen.kelios.platform.StatusControllerTest
+14:15:13.365 [main] INFO org.springframework.mock.web.MockServletContext -- Initializing Spring TestDispatcherServlet ''
+14:15:13.366 [main] INFO org.springframework.test.web.servlet.TestDispatcherServlet -- Initializing Servlet ''
+14:15:13.368 [main] INFO org.springframework.test.web.servlet.TestDispatcherServlet -- Completed initialization in 1 ms
+14:15:13.482 [main] INFO org.springframework.mock.web.MockServletContext -- Initializing Spring TestDispatcherServlet ''
+14:15:13.482 [main] INFO org.springframework.test.web.servlet.TestDispatcherServlet -- Initializing Servlet ''
+14:15:13.483 [main] INFO org.springframework.test.web.servlet.TestDispatcherServlet -- Completed initialization in 1 ms
+14:15:13.487 [main] WARN org.springframework.web.servlet.PageNotFound -- No mapping for GET /api/v1/assets
+14:15:13.488 [main] WARN org.springframework.web.servlet.PageNotFound -- No endpoint GET /api/v1/assets.
+14:15:13.489 [main] WARN org.springframework.web.servlet.PageNotFound -- No mapping for GET /api/v1/auth/login
+14:15:13.490 [main] WARN org.springframework.web.servlet.PageNotFound -- No endpoint GET /api/v1/auth/login.
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.547 s -- in com.github.ksewen.kelios.platform.StatusControllerTest
+[INFO] Running com.github.ksewen.kelios.engine.statemachine.StateMachineTest
+[INFO] Tests run: 34, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.088 s -- in com.github.ksewen.kelios.engine.statemachine.StateMachineTest
+[INFO] 
+[INFO] Results:
+[INFO] 
+[INFO] Tests run: 36, Failures: 0, Errors: 0, Skipped: 0
+[INFO] 
+[INFO] 
+[INFO] --- jar:3.5.1:jar (default-jar) @ kelios-backend ---
+[INFO] 
+[INFO] --- spring-boot:4.1.1:repackage (repackage) @ kelios-backend ---
+[INFO] Replacing main artifact /Users/ksewen/IdeaProjects/github/kelios/backend/target/kelios-backend-0.0.1-SNAPSHOT.jar with repackaged archive, adding nested dependencies in BOOT-INF/.
+[INFO] The original artifact has been renamed to /Users/ksewen/IdeaProjects/github/kelios/backend/target/kelios-backend-0.0.1-SNAPSHOT.jar.original
+[INFO] 
+[INFO] --- failsafe:3.5.6:integration-test (default) @ kelios-backend ---
+[INFO] Using auto detected provider org.apache.maven.surefire.junitplatform.JUnitPlatformProvider
+[INFO] 
+[INFO] -------------------------------------------------------
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+[INFO] Running com.github.ksewen.kelios.inventory.DomainFoundationIT
+14:15:14.526 [main] INFO org.testcontainers.images.PullPolicy -- Image pull policy will be performed by: DefaultPullPolicy()
+14:15:14.529 [main] INFO org.testcontainers.utility.ImageNameSubstitutor -- Image name substitution will be performed by: DefaultImageNameSubstitutor (composite of 'ConfigurationFileImageNameSubstitutor' and 'PrefixingImageNameSubstitutor')
+14:15:14.544 [main] INFO org.testcontainers.DockerClientFactory -- Testcontainers version: 2.0.5
+14:15:14.708 [main] INFO org.testcontainers.dockerclient.DockerClientProviderStrategy -- Loaded org.testcontainers.dockerclient.UnixSocketClientProviderStrategy from ~/.testcontainers.properties, will try it first
+14:15:14.978 [main] INFO org.testcontainers.dockerclient.DockerClientProviderStrategy -- Found Docker environment with local Unix socket (unix:///var/run/docker.sock)
+14:15:14.980 [main] INFO org.testcontainers.DockerClientFactory -- Docker host IP address is localhost
+14:15:14.999 [main] INFO org.testcontainers.DockerClientFactory -- Connected to docker: 
+  Server Version: 29.8.2
+  API Version: 1.56
+  Operating System: Docker Desktop
+  Total Memory: 15970 MB
+  Labels: 
+    com.docker.desktop.address=unix:///Users/ksewen/Library/Containers/com.docker.docker/Data/docker-cli.sock
+14:15:15.030 [main] INFO tc.testcontainers/ryuk:0.14.0 -- Creating container for image: testcontainers/ryuk:0.14.0
+14:15:15.136 [main] INFO org.testcontainers.utility.RegistryAuthLocator -- Credential helper/store (docker-credential-desktop) does not have credentials for https://index.docker.io/v1/
+14:15:15.217 [main] INFO tc.testcontainers/ryuk:0.14.0 -- Container testcontainers/ryuk:0.14.0 is starting: 85efce499137196cb0d8126126f0e3e7007df45cfcd2f95d43a277417b76e6e6
+14:15:15.437 [main] INFO tc.testcontainers/ryuk:0.14.0 -- Container testcontainers/ryuk:0.14.0 started in PT0.406535S
+14:15:15.442 [main] INFO org.testcontainers.utility.RyukResourceReaper -- Ryuk started - will monitor and terminate Testcontainers containers on JVM exit
+14:15:15.442 [main] INFO org.testcontainers.DockerClientFactory -- Checking the system...
+14:15:15.442 [main] INFO org.testcontainers.DockerClientFactory -- ✔︎ Docker server version should be at least 1.6.0
+14:15:15.442 [main] INFO tc.postgres:17-alpine -- Creating container for image: postgres:17-alpine
+14:15:15.481 [main] INFO tc.postgres:17-alpine -- Container postgres:17-alpine is starting: 5a6a9162ff06a785aafe40f6e28fde69aa0b0848e58dfdc385b20897013e1544
+14:15:16.489 [main] INFO tc.postgres:17-alpine -- Container postgres:17-alpine started in PT1.04689S
+14:15:16.492 [main] INFO tc.postgres:17-alpine -- Container is started (JDBC URL: jdbc:postgresql://localhost:56416/test?loggerLevel=OFF)
+14:15:16.682 [main] INFO org.springframework.boot.test.context.SpringBootTestContextBootstrapper -- Found @SpringBootConfiguration com.github.ksewen.kelios.KeliosApplication for test class com.github.ksewen.kelios.inventory.DomainFoundationIT
+14:15:16.722 [main] INFO org.springframework.boot.test.context.SpringBootTestContextBootstrapper -- Found @SpringBootConfiguration com.github.ksewen.kelios.KeliosApplication for test class com.github.ksewen.kelios.inventory.DomainFoundationIT
+
+  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+
+ :: Spring Boot ::                (v4.1.1)
+
+2026-10-10T14:15:16.927+02:00  INFO 19209 --- [kelios] [           main] c.g.k.k.inventory.DomainFoundationIT     : Starting DomainFoundationIT using Java 25.0.2 with PID 19209 (started by ksewen in /Users/ksewen/IdeaProjects/github/kelios/backend)
+2026-10-10T14:15:16.928+02:00  INFO 19209 --- [kelios] [           main] c.g.k.k.inventory.DomainFoundationIT     : No active profile set, falling back to 1 default profile: "default"
+2026-10-10T14:15:17.285+02:00  INFO 19209 --- [kelios] [           main] .s.d.r.c.RepositoryConfigurationDelegate : Bootstrapping Spring Data JPA repositories in DEFAULT mode.
+2026-10-10T14:15:17.302+02:00  INFO 19209 --- [kelios] [           main] .s.d.r.c.RepositoryConfigurationDelegate : Finished Spring Data repository scanning in 9 ms. Found 0 JPA repository interfaces.
+2026-10-10T14:15:17.624+02:00  INFO 19209 --- [kelios] [           main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Starting...
+2026-10-10T14:15:17.752+02:00  INFO 19209 --- [kelios] [           main] com.zaxxer.hikari.pool.HikariPool        : HikariPool-1 - Added connection org.postgresql.jdbc.PgConnection@7bc8ffbc
+2026-10-10T14:15:17.752+02:00  INFO 19209 --- [kelios] [           main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Start completed.
+2026-10-10T14:15:17.772+02:00  INFO 19209 --- [kelios] [           main] org.flywaydb.core.FlywayExecutor         : Database: jdbc:postgresql://localhost:56416/test?loggerLevel=OFF (PostgreSQL 17.11)
+2026-10-10T14:15:17.833+02:00  INFO 19209 --- [kelios] [           main] o.f.c.i.s.JdbcTableSchemaHistory         : Schema history table "public"."flyway_schema_history" does not exist yet
+2026-10-10T14:15:17.836+02:00  INFO 19209 --- [kelios] [           main] o.f.core.internal.command.DbValidate     : Successfully validated 3 migrations (execution time 00:00.017s)
+2026-10-10T14:15:17.859+02:00  INFO 19209 --- [kelios] [           main] o.f.c.i.s.JdbcTableSchemaHistory         : Creating Schema History table "public"."flyway_schema_history" ...
+2026-10-10T14:15:17.903+02:00  INFO 19209 --- [kelios] [           main] o.f.core.internal.command.DbMigrate      : Current version of schema "public": << Empty Schema >>
+2026-10-10T14:15:17.908+02:00  INFO 19209 --- [kelios] [           main] o.f.core.internal.command.DbMigrate      : Migrating schema "public" to version "1 - platform baseline"
+2026-10-10T14:15:17.911+02:00  INFO 19209 --- [kelios] [           main] o.f.c.i.s.DefaultSqlScriptExecutor       : +----------+
+| ?column? |
++----------+
+| 1        |
++----------+
+
+2026-10-10T14:15:17.930+02:00  INFO 19209 --- [kelios] [           main] o.f.core.internal.command.DbMigrate      : Migrating schema "public" to version "2 - domain foundation"
+2026-10-10T14:15:17.996+02:00  INFO 19209 --- [kelios] [           main] o.f.core.internal.command.DbMigrate      : Migrating schema "public" to version "3 - narrow history and unknown protection"
+2026-10-10T14:15:18.012+02:00  INFO 19209 --- [kelios] [           main] o.f.core.internal.command.DbMigrate      : Successfully applied 3 migrations to schema "public", now at version v3 (execution time 00:00.068s)
+2026-10-10T14:15:18.084+02:00  INFO 19209 --- [kelios] [           main] org.hibernate.orm.jpa                    : HHH008540: Processing PersistenceUnitInfo [name: default]
+2026-10-10T14:15:18.126+02:00  INFO 19209 --- [kelios] [           main] org.hibernate.orm.core                   : HHH000001: Hibernate ORM core version 7.4.5.Final
+2026-10-10T14:15:18.391+02:00  INFO 19209 --- [kelios] [           main] o.s.o.j.p.SpringPersistenceUnitInfo      : No LoadTimeWeaver setup: ignoring JPA class transformer
+2026-10-10T14:15:18.452+02:00  INFO 19209 --- [kelios] [           main] org.hibernate.orm.connections.pooling    : HHH10001005: Database info:
+	Database JDBC URL [jdbc:postgresql://localhost:56416/test?loggerLevel=OFF]
+	Database driver: PostgreSQL JDBC Driver
+	Database dialect: PostgreSQLDialect
+	Database version: 17.11
+	Default catalog/schema: test/public
+	Autocommit mode: undefined/unknown
+	Isolation level: READ_COMMITTED [default READ_COMMITTED]
+	JDBC fetch size: none
+	Pool: DataSourceConnectionProvider
+	Minimum pool size: undefined/unknown
+	Maximum pool size: undefined/unknown
+2026-10-10T14:15:19.090+02:00  INFO 19209 --- [kelios] [           main] org.hibernate.orm.core                   : HHH000489: No JTA platform available (set 'hibernate.transaction.jta.platform' to enable JTA platform integration)
+2026-10-10T14:15:19.123+02:00  INFO 19209 --- [kelios] [           main] j.LocalContainerEntityManagerFactoryBean : Initialized JPA EntityManagerFactory for persistence unit 'default'
+2026-10-10T14:15:19.403+02:00  INFO 19209 --- [kelios] [           main] c.g.k.k.inventory.DomainFoundationIT     : Started DomainFoundationIT in 2.641 seconds (process running for 5.352)
+Mockito is currently self-attaching to enable the inline-mock-maker. This will no longer work in future releases of the JDK. Please add Mockito as an agent to your build as described in Mockito's documentation: https://javadoc.io/doc/org.mockito/mockito-core/latest/org.mockito/org/mockito/Mockito.html#0.3
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+WARNING: A Java agent has been loaded dynamically (/Users/ksewen/IdeaProjects/github/kelios/.cache/maven-repository/net/bytebuddy/byte-buddy-agent/1.18.11/byte-buddy-agent-1.18.11.jar)
+WARNING: If a serviceability tool is in use, please run with -XX:+EnableDynamicAgentLoading to hide this warning
+WARNING: If a serviceability tool is not in use, please run with -Djdk.instrument.traceUsage for more information
+WARNING: Dynamic loading of agents will be disallowed by default in a future release
+2026-10-10T14:15:20.857+02:00  INFO 19209 --- [kelios] [           main] org.flywaydb.core.FlywayExecutor         : Database: jdbc:postgresql://localhost:56416/test?loggerLevel=OFF (PostgreSQL 17.11)
+2026-10-10T14:15:20.869+02:00  INFO 19209 --- [kelios] [           main] o.f.core.internal.database.base.Schema   : Creating schema "upgrade_test" ...
+2026-10-10T14:15:20.872+02:00  INFO 19209 --- [kelios] [           main] o.f.c.i.s.JdbcTableSchemaHistory         : Creating Schema History table "upgrade_test"."flyway_schema_history" ...
+2026-10-10T14:15:20.898+02:00  INFO 19209 --- [kelios] [           main] o.f.core.internal.command.DbMigrate      : Current version of schema "upgrade_test": null
+2026-10-10T14:15:20.901+02:00  INFO 19209 --- [kelios] [           main] o.f.core.internal.command.DbMigrate      : Migrating schema "upgrade_test" to version "1 - platform baseline"
+2026-10-10T14:15:20.902+02:00  INFO 19209 --- [kelios] [           main] o.f.c.i.s.DefaultSqlScriptExecutor       : +----------+
+| ?column? |
++----------+
+| 1        |
++----------+
+
+2026-10-10T14:15:20.907+02:00  INFO 19209 --- [kelios] [           main] o.f.core.internal.command.DbMigrate      : Successfully applied 1 migration to schema "upgrade_test", now at version v1 (execution time 00:00.002s)
+2026-10-10T14:15:20.926+02:00  INFO 19209 --- [kelios] [           main] org.flywaydb.core.FlywayExecutor         : Database: jdbc:postgresql://localhost:56416/test?loggerLevel=OFF (PostgreSQL 17.11)
+2026-10-10T14:15:20.940+02:00  INFO 19209 --- [kelios] [           main] o.f.core.internal.command.DbValidate     : Successfully validated 4 migrations (execution time 00:00.005s)
+2026-10-10T14:15:20.954+02:00  INFO 19209 --- [kelios] [           main] o.f.core.internal.command.DbMigrate      : Current version of schema "upgrade_test": 1
+2026-10-10T14:15:20.959+02:00  INFO 19209 --- [kelios] [           main] o.f.core.internal.command.DbMigrate      : Migrating schema "upgrade_test" to version "2 - domain foundation"
+2026-10-10T14:15:21.017+02:00  INFO 19209 --- [kelios] [           main] o.f.core.internal.command.DbMigrate      : Migrating schema "upgrade_test" to version "3 - narrow history and unknown protection"
+2026-10-10T14:15:21.025+02:00  INFO 19209 --- [kelios] [           main] o.f.core.internal.command.DbMigrate      : Successfully applied 2 migrations to schema "upgrade_test", now at version v3 (execution time 00:00.055s)
+2026-10-10T14:15:21.034+02:00  INFO 19209 --- [kelios] [           main] org.flywaydb.core.FlywayExecutor         : Database: jdbc:postgresql://localhost:56416/test?loggerLevel=OFF (PostgreSQL 17.11)
+2026-10-10T14:15:21.048+02:00  INFO 19209 --- [kelios] [           main] o.f.core.internal.command.DbValidate     : Successfully validated 4 migrations (execution time 00:00.005s)
+[ERROR] Tests run: 37, Failures: 2, Errors: 0, Skipped: 0, Time elapsed: 7.955 s <<< FAILURE! -- in com.github.ksewen.kelios.inventory.DomainFoundationIT
+[ERROR] com.github.ksewen.kelios.inventory.DomainFoundationIT.operationLockTimeoutRollsBackMergeWithoutRetryOrPartialHistory -- Time elapsed: 0.725 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: 
+Expected class org.springframework.dao.PessimisticLockingFailureException, got org.springframework.jdbc.UncategorizedSQLException: PreparedStatementCallback; uncategorized SQLException for SQL [SELECT * FROM category WHERE id=? FOR UPDATE]; SQL state [55P03]; error code [0]; ERROR: canceling statement due to lock timeout
+  Wobei: while locking tuple (0,2) in relation "category" ==> expected: <true> but was: <false>
+	at org.junit.jupiter.api.AssertionFailureBuilder.build(AssertionFailureBuilder.java:158)
+	at org.junit.jupiter.api.AssertionFailureBuilder.buildAndThrow(AssertionFailureBuilder.java:139)
+	at org.junit.jupiter.api.AssertTrue.failNotTrue(AssertTrue.java:69)
+	at org.junit.jupiter.api.AssertTrue.assertTrue(AssertTrue.java:48)
+	at org.junit.jupiter.api.Assertions.assertTrue(Assertions.java:204)
+	at com.github.ksewen.kelios.inventory.DomainFoundationIT.fails(DomainFoundationIT.java:277)
+	at com.github.ksewen.kelios.inventory.DomainFoundationIT.operationLockTimeoutRollsBackMergeWithoutRetryOrPartialHistory(DomainFoundationIT.java:359)
+
+[ERROR] com.github.ksewen.kelios.inventory.DomainFoundationIT.simultaneousAssetUpdatesUseVersionPredicateAndRollbackLosingEvent -- Time elapsed: 0.058 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: Expected class org.springframework.orm.ObjectOptimisticLockingFailureException, got jakarta.persistence.OptimisticLockException: Unexpected row count (expected row count 1 but was 0) [update asset set category_id=?,condition=?,created_at=?,created_by=?,deleted_at=?,deleted_by=?,expected_return_at=?,external_inventory_number=?,lifecycle=?,loan_note=?,loanable=?,loaned_at=?,loaned_to=?,location_id=?,manufacturer_id=?,note=?,owner_id=?,product_id=?,serial_number=?,updated_at=?,updated_by=?,version=? where id=? and version=?] for entity [com.github.ksewen.kelios.inventory.Asset with id '3f1dbb67-d074-4911-9f83-5ec094e2d838'] ==> expected: <true> but was: <false>
+	at org.junit.jupiter.api.AssertionFailureBuilder.build(AssertionFailureBuilder.java:158)
+	at org.junit.jupiter.api.AssertionFailureBuilder.buildAndThrow(AssertionFailureBuilder.java:139)
+	at org.junit.jupiter.api.AssertTrue.failNotTrue(AssertTrue.java:69)
+	at org.junit.jupiter.api.AssertTrue.assertTrue(AssertTrue.java:48)
+	at org.junit.jupiter.api.Assertions.assertTrue(Assertions.java:204)
+	at com.github.ksewen.kelios.inventory.DomainFoundationIT.fails(DomainFoundationIT.java:277)
+	at com.github.ksewen.kelios.inventory.DomainFoundationIT.simultaneousAssetUpdatesUseVersionPredicateAndRollbackLosingEvent(DomainFoundationIT.java:350)
+
+[INFO] 
+[INFO] Results:
+[INFO] 
+[ERROR] Failures: 
+[ERROR]   DomainFoundationIT.operationLockTimeoutRollsBackMergeWithoutRetryOrPartialHistory:359->fails:277 Expected class org.springframework.dao.PessimisticLockingFailureException, got org.springframework.jdbc.UncategorizedSQLException: PreparedStatementCallback; uncategorized SQLException for SQL [SELECT * FROM category WHERE id=? FOR UPDATE]; SQL state [55P03]; error code [0]; ERROR: canceling statement due to lock timeout
+  Wobei: while locking tuple (0,2) in relation "category" ==> expected: <true> but was: <false>
+[ERROR]   DomainFoundationIT.simultaneousAssetUpdatesUseVersionPredicateAndRollbackLosingEvent:350->fails:277 Expected class org.springframework.orm.ObjectOptimisticLockingFailureException, got jakarta.persistence.OptimisticLockException: Unexpected row count (expected row count 1 but was 0) [update asset set category_id=?,condition=?,created_at=?,created_by=?,deleted_at=?,deleted_by=?,expected_return_at=?,external_inventory_number=?,lifecycle=?,loan_note=?,loanable=?,loaned_at=?,loaned_to=?,location_id=?,manufacturer_id=?,note=?,owner_id=?,product_id=?,serial_number=?,updated_at=?,updated_by=?,version=? where id=? and version=?] for entity [com.github.ksewen.kelios.inventory.Asset with id '3f1dbb67-d074-4911-9f83-5ec094e2d838'] ==> expected: <true> but was: <false>
+[INFO] 
+[ERROR] Tests run: 37, Failures: 2, Errors: 0, Skipped: 0
+[INFO] 
+[INFO] 
+[INFO] --- failsafe:3.5.6:verify (default) @ kelios-backend ---
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD FAILURE
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  11.320 s
+[INFO] Finished at: 2026-10-10T14:15:22+02:00
+[INFO] ------------------------------------------------------------------------
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-failsafe-plugin:3.5.6:verify (default) on project kelios-backend: There are test failures.
+[ERROR] 
+[ERROR] See /Users/ksewen/IdeaProjects/github/kelios/backend/target/failsafe-reports for the individual test results.
+[ERROR] See dump files (if any exist) [date].dump, [date]-jvmRun[N].dump and [date].dumpstream.
+[ERROR] -> [Help 1]
+[ERROR] 
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR] 
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoFailureException

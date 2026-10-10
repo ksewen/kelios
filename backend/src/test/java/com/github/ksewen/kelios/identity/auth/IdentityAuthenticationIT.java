@@ -1,0 +1,388 @@
+package com.github.ksewen.kelios.identity.auth;
+
+import com.github.ksewen.kelios.audit.*;
+import com.github.ksewen.kelios.catalog.CatalogService;
+import com.github.ksewen.kelios.identity.UserService;
+import com.github.ksewen.kelios.identity.UserService.*;
+import com.github.ksewen.kelios.inventory.*;
+import com.github.ksewen.kelios.platform.security.*;
+import com.github.ksewen.kelios.tenancy.TenantService;
+import jakarta.servlet.http.Cookie;
+import java.nio.file.*;
+import java.time.*;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicReference;
+import org.flywaydb.core.Flyway;
+import org.junit.jupiter.api.*;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.*;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.*;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.test.context.*;
+import org.springframework.test.web.servlet.*;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.transaction.*;
+import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.web.context.WebApplicationContext;
+import org.testcontainers.junit.jupiter.*;
+import org.testcontainers.postgresql.PostgreSQLContainer;
+import tools.jackson.databind.json.JsonMapper;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
+
+@Testcontainers
+@SpringBootTest(webEnvironment=SpringBootTest.WebEnvironment.MOCK,properties={"spring.datasource.hikari.maximum-pool-size=32"})
+class IdentityAuthenticationIT {
+    @Container static final PostgreSQLContainer PG=new PostgreSQLContainer("postgres:17-alpine");
+    static final class MutableClock extends Clock {
+        final AtomicReference<Instant> now=new AtomicReference<>(Instant.parse("2026-10-10T12:00:00Z"));
+        public ZoneId getZone(){return ZoneOffset.UTC;}public Clock withZone(ZoneId zone){return Clock.fixed(instant(),zone);}public Instant instant(){return now.get();}
+    }
+    static final MutableClock CLOCK=new MutableClock();
+    static final AuthTestKeys KEYS;static final HttpsOidcFixture PROVIDER;
+    static {try{KEYS=new AuthTestKeys("identity-it-keys");PROVIDER=new HttpsOidcFixture(KEYS.directory,CLOCK);}catch(Exception ex){throw new ExceptionInInitializerError(ex);}}
+    @TestConfiguration static class Time {@Bean @Primary MutableClock identityClock(){return CLOCK;}}
+    @DynamicPropertySource static void properties(DynamicPropertyRegistry p){
+        p.add("spring.datasource.url",PG::getJdbcUrl);p.add("spring.datasource.username",PG::getUsername);p.add("spring.datasource.password",PG::getPassword);
+        p.add("kelios.auth.key-directory",()->KEYS.directory.toAbsolutePath().toString());p.add("kelios.auth.public-origin",()->"https://kelios.example");p.add("kelios.auth.issuer",()->"https://kelios.example");
+        p.add("kelios.auth.trusted-provider-hosts",()->"localhost");p.add("kelios.auth.provider-trust-store",()->PROVIDER.trustStore.toAbsolutePath().toString());p.add("kelios.auth.provider-trust-store-password",()->"fixture-store");
+    }
+    @Autowired AuthenticationService auth;@Autowired OidcConfigurationService configurations;@Autowired OidcLogin oidc;@Autowired OidcProvisioning provisioning;
+    @Autowired JwtTokens tokens;@Autowired IdentityStore identities;@Autowired UserService users;@Autowired TenantService tenants;
+    @Autowired JdbcTemplate jdbc;@Autowired PlatformTransactionManager tm;@Autowired WebApplicationContext context;
+    @Autowired SecuredDomainOperations secured;@Autowired CatalogService catalog;@Autowired PlaceService places;@Autowired AssetService assets;
+    MockMvc mvc;Identity admin;UUID tenant,other;final JsonMapper json=JsonMapper.builder().build();
+    @BeforeEach void setup(){
+        CLOCK.now.updateAndGet(i->i.plusSeconds(120));PROVIDER.reset();SecurityContextHolder.clearContext();
+        jdbc.update("DELETE FROM external_identity");jdbc.update("DELETE FROM local_global_credential");jdbc.update("DELETE FROM app_user");
+        jdbc.update("DELETE FROM tenant_oidc_allowed_group");jdbc.update("DELETE FROM tenant_oidc_config");
+        admin=auth.bootstrap("initial-admin","Administrator","CorrectHorse25!Battery");
+        tenant=tenants.create("Tenant",admin.actor());other=tenants.create("Other",admin.actor());
+        configure(tenant,null,Set.of(PROVIDER.group));mvc=MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build();
+    }
+    @AfterEach void clear(){SecurityContextHolder.clearContext();}
+    @AfterAll static void close(){PROVIDER.close();}
+    OidcConfigurationService.View configure(UUID target,Long version,Set<UUID> groups){return configurations.put(admin,target,PROVIDER.issuer,"fixture-client","fixture-secret",true,version,groups);}
+    <T>T tx(java.util.function.Supplier<T> work){return new TransactionTemplate(tm).execute(s->work.get());}
+    void principal(Identity user){SecurityContextHolder.getContext().setAuthentication(UsernamePasswordAuthenticationToken.authenticated(user,null,List.of()));}
+    Identity fixture(Scope scope,UUID tenant,Role role,Status status){UUID id=users.create(scope,tenant,role,status,"Fixture user");return identities.load(id,"");}
+    Map<String,Object> body(MvcResult result){return json.readValue(result.getResponse().getContentAsByteArray(),new tools.jackson.core.type.TypeReference<Map<String,Object>>(){});}
+    Cookie cookie(MvcResult result,String name){for(String header:result.getResponse().getHeaders("Set-Cookie")){String[] parts=header.split(";",2)[0].split("=",2);if(parts[0].equals(name)){Cookie cookie=new Cookie(name,parts[1]);cookie.setSecure(true);cookie.setHttpOnly(true);return cookie;}}throw new AssertionError("Expected cookie absent");}
+    MvcResult unsafe(MockHttpServletRequestBuilder command,String bearer,Cookie... cookies)throws Exception{
+        var csrfRequest=get("/api/v1/auth/csrf").secure(true);
+        if(cookies.length>0)csrfRequest.cookie(cookies);
+        var csrf=mvc.perform(csrfRequest).andReturn();
+        var proof=cookie(csrf,BrowserTokens.CSRF);List<Cookie> all=new ArrayList<>(List.of(cookies));all.add(proof);
+        command.secure(true).header("Origin","https://kelios.example").header("X-CSRF-Token",body(csrf).get("token")).cookie(all.toArray(Cookie[]::new));
+        if(bearer!=null)command.header("Authorization","Bearer "+bearer);return mvc.perform(command).andReturn();
+    }
+    record LoginFlow(MvcResult start,HttpsOidcFixture.Authorization authorization){}
+    LoginFlow flow()throws Exception{
+        var start=unsafe(post("/api/v1/auth/oidc/"+tenant+"/start"),null);
+        assertEquals(200,start.getResponse().getStatus());return new LoginFlow(start,PROVIDER.authorize((String)body(start).get("authorizationUrl")));
+    }
+    MvcResult callback(LoginFlow flow,String state)throws Exception{
+        return mvc.perform(get("/api/v1/auth/oidc/"+tenant+"/callback").secure(true).cookie(cookie(flow.start(),BrowserTokens.FLOW))
+            .param("state",state).param("code",flow.authorization().code()).param("iss",PROVIDER.issuer)).andReturn();
+    }
+    MvcResult loginOidc()throws Exception{var flow=flow();return callback(flow,flow.authorization().state());}
+    @Test void globalLoginCurrentUserAndCookieContract()throws Exception{
+        var result=unsafe(post("/api/v1/auth/local/login").contentType("application/json").content(json.writeValueAsString(Map.of("login","INITIAL-ADMIN","password","CorrectHorse25!Battery"))),null);
+        assertEquals(200,result.getResponse().getStatus());assertFalse(body(result).containsKey("refreshToken"));String access=(String)body(result).get("accessToken");
+        var me=mvc.perform(get("/api/v1/auth/me").header("Authorization","Bearer "+access)).andReturn();assertEquals(200,me.getResponse().getStatus());assertEquals("GLOBAL",body(me).get("scope"));
+        String setCookie=result.getResponse().getHeader("Set-Cookie");assertTrue(setCookie.contains("Secure") && setCookie.contains("HttpOnly") && setCookie.contains("SameSite=Strict") && !setCookie.contains("Domain="));
+        var refresh=unsafe(post("/api/v1/auth/session/refresh"),null,cookie(result,BrowserTokens.REFRESH));assertEquals(200,refresh.getResponse().getStatus());
+        assertEquals(tokens.verify(cookie(result,BrowserTokens.REFRESH).getValue(),"refresh").expiresAt(),tokens.verify(cookie(refresh,BrowserTokens.REFRESH).getValue(),"refresh").expiresAt());
+        var logout=unsafe(delete("/api/v1/auth/session"),access,cookie(refresh,BrowserTokens.REFRESH));assertEquals(200,logout.getResponse().getStatus());assertTrue(logout.getResponse().getHeaders("Set-Cookie").stream().allMatch(x->x.contains("Max-Age=0")));
+    }
+    @Test void csrfCorsMissingAndForgedTokensAndUnknownRoutes()throws Exception{
+        assertEquals(403,mvc.perform(post("/api/v1/auth/local/login").contentType("application/json").content("{}")).andReturn().getResponse().getStatus());
+        var csrf=mvc.perform(get("/api/v1/auth/csrf")).andReturn();
+        assertEquals(403,mvc.perform(post("/api/v1/auth/session/refresh").header("Origin","https://evil.example").header("X-CSRF-Token",body(csrf).get("token")).cookie(cookie(csrf,BrowserTokens.CSRF))).andReturn().getResponse().getStatus());
+        assertEquals(401,mvc.perform(get("/api/v1/auth/me")).andReturn().getResponse().getStatus());assertEquals(401,mvc.perform(get("/api/v1/auth/me").header("Authorization","Bearer forged")).andReturn().getResponse().getStatus());
+        assertEquals(404,mvc.perform(get("/api/v1/not-implemented")).andReturn().getResponse().getStatus());assertEquals(200,mvc.perform(get("/api/v1/status")).andReturn().getResponse().getStatus());
+        assertNull(mvc.perform(get("/api/v1/status").header("Origin","https://evil.example")).andReturn().getResponse().getHeader("Access-Control-Allow-Origin"));assertNull(csrf.getRequest().getSession(false));
+    }
+    @Test void noDefaultPasswordAndBadLoginIsGeneric(){
+        var absent=assertThrows(AuthFailure.class,()->auth.login("unknown-user","WrongPassword25!"));var bad=assertThrows(AuthFailure.class,()->auth.login("initial-admin","WrongPassword25!"));assertEquals(absent.getMessage(),bad.getMessage());
+        assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM local_global_credential",Integer.class));
+    }
+    @Test void globalCreationIsActiveUserAndSeparateGrantAndNoTenantCredentials(){
+        var created=auth.createGlobal(admin,"Another.Admin","Another","CorrectHorse25!Battery");assertEquals(Scope.GLOBAL,created.scope());assertNull(created.tenantId());assertEquals(Role.USER,created.role());assertEquals(Status.ACTIVE,created.status());
+        assertEquals(Role.ADMIN,auth.role(admin,created.id(),Role.ADMIN).role());var tenantUser=fixture(Scope.TENANT,tenant,Role.USER,Status.ACTIVE);
+        assertThrows(AuthFailure.class,()->auth.resetCredential(admin,tenantUser.id(),"tenant-local","CorrectHorse25!Battery"));
+        assertThrows(RuntimeException.class,()->jdbc.update("INSERT INTO local_global_credential(user_id,login_name,password_hash) VALUES(?,'tenant-local','invalid')",tenantUser.id()));
+    }
+    @Test void passwordPolicyEveryCredentialPathAndChangeDoesNotRevoke(){
+        var issued=auth.login("initial-admin","CorrectHorse25!Battery");String invalid="nocapitalletters25!";
+        assertThrows(AuthFailure.class,()->auth.bootstrap("recover","Recovery",invalid));assertThrows(AuthFailure.class,()->auth.createGlobal(admin,"new-global","New",invalid));
+        assertThrows(AuthFailure.class,()->auth.resetCredential(admin,admin.id(),"initial-admin",invalid));assertThrows(AuthFailure.class,()->auth.ownPassword(admin,"CorrectHorse25!Battery",invalid));
+        auth.ownPassword(admin,"CorrectHorse25!Battery","DifferentHorse25!Battery");assertThrows(AuthFailure.class,()->auth.login("initial-admin","CorrectHorse25!Battery"));
+        assertDoesNotThrow(()->auth.refresh(issued.refreshToken()));assertDoesNotThrow(()->tokens.verify(issued.accessToken(),"access"));
+        assertDoesNotThrow(()->auth.login("initial-admin","DifferentHorse25!Battery"));assertTrue(auditCount("LOCAL_CREDENTIAL_CHANGED",admin.id())>0);
+    }
+    long auditCount(String action,UUID id){return jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE action=? AND target_id=?",Long.class,action,id);}
+    @Test void bootstrapRefusesUsableAdminButLaterRecoversAndAudits(){
+        assertThrows(AuthFailure.class,()->auth.bootstrap("second-admin","Second","CorrectHorse25!Battery"));
+        jdbc.update("UPDATE app_user SET status='DISABLED' WHERE id=?",admin.id());
+        var recovered=auth.bootstrap("recovered-admin","Recovery","CorrectHorse25!Battery");assertEquals(Role.ADMIN,recovered.role());assertEquals(Status.ACTIVE,recovered.status());assertEquals(1,auditCount("GLOBAL_ADMIN_BOOTSTRAPPED",recovered.id()));
+        assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM global_admin_recovery_guard",Integer.class));assertEquals(List.of("id"),jdbc.queryForList("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='global_admin_recovery_guard'",String.class));
+    }
+    @Test void malformedCredentialAdminDoesNotBlockRecoveryAndFailureRollsBack(){
+        jdbc.update("UPDATE local_global_credential SET password_hash='malformed' WHERE user_id=?",admin.id());long count=jdbc.queryForObject("SELECT count(*) FROM app_user",Long.class);
+        assertThrows(RuntimeException.class,()->auth.bootstrap("initial-admin","Collision","CorrectHorse25!Battery"));assertEquals(count,jdbc.queryForObject("SELECT count(*) FROM app_user",Long.class));
+        assertDoesNotThrow(()->auth.bootstrap("repair-admin","Recovery","CorrectHorse25!Battery"));
+    }
+    @Test void selfDisableDemotionRejectedWithoutLastAdminInvariant(){
+        assertThrows(AuthFailure.class,()->auth.disable(admin,admin.id()));assertThrows(AuthFailure.class,()->auth.role(admin,admin.id(),Role.USER));
+        var second=auth.createGlobal(admin,"other-admin","Other","CorrectHorse25!Battery");var promoted=auth.role(admin,second.id(),Role.ADMIN);
+        auth.disable(admin,promoted.id());auth.disable(promoted,admin.id());assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM app_user WHERE scope='GLOBAL' AND role='ADMIN' AND status='ACTIVE'",Integer.class));
+        assertDoesNotThrow(()->auth.bootstrap("recovery-third","Recovery","CorrectHorse25!Battery"));
+    }
+    @Test void concurrentRecoveryCommandsCreateExactlyOne()throws Exception{
+        jdbc.update("UPDATE app_user SET status='DISABLED' WHERE id=?",admin.id());
+        try(var pool=Executors.newFixedThreadPool(2)){
+            var gate=new CountDownLatch(1);var first=pool.submit(()->{gate.await();try{auth.bootstrap("recover-one","One","CorrectHorse25!Battery");return true;}catch(AuthFailure ex){return false;}});
+            var second=pool.submit(()->{gate.await();try{auth.bootstrap("recover-two","Two","CorrectHorse25!Battery");return true;}catch(AuthFailure ex){return false;}});gate.countDown();
+            assertNotEquals(first.get(20,TimeUnit.SECONDS),second.get(20,TimeUnit.SECONDS));
+        }
+        assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM app_user WHERE scope='GLOBAL' AND role='ADMIN' AND status='ACTIVE'",Integer.class));
+    }
+    @Test void oidcConfigurationEncryptedSanitizedAndVersioned()throws Exception{
+        var view=configurations.get(admin,tenant);assertEquals(Set.of(PROVIDER.group),view.allowedGroupIds());assertEquals("https://kelios.example/api/v1/auth/oidc/"+tenant+"/callback",view.callbackUri());
+        assertFalse(jdbc.queryForObject("SELECT encrypted_client_secret FROM tenant_oidc_config WHERE tenant_id=?",String.class,tenant).contains("fixture-secret"));assertFalse(json.writeValueAsString(view).contains("fixture-secret"));
+        assertThrows(AuthFailure.class,()->configure(tenant,null,Set.of(PROVIDER.group)));
+        var updated=configurations.put(admin,tenant,PROVIDER.issuer,"fixture-client",null,true,view.version(),Set.of(PROVIDER.group));assertEquals(1,updated.version());
+        assertThrows(AuthFailure.class,()->configurations.get(fixture(Scope.TENANT,tenant,Role.ADMIN,Status.ACTIVE),tenant));
+        var result=mvc.perform(get("/api/v1/tenants/"+tenant+"/oidc").header("Authorization","Bearer "+tokens.login(admin).accessToken())).andReturn();assertEquals(200,result.getResponse().getStatus());assertFalse(body(result).containsKey("encryptedSecret"));
+        String input=json.writeValueAsString(Map.of("issuer",PROVIDER.issuer,"clientId","fixture-client","enabled",true,"version",1,"allowedGroupIds",List.of(PROVIDER.group),"actorId",UUID.randomUUID()));
+        var saved=mvc.perform(put("/api/v1/tenants/"+tenant+"/oidc").header("Authorization","Bearer "+tokens.login(admin).accessToken()).contentType("application/json").content(input)).andReturn();
+        assertEquals(200,saved.getResponse().getStatus());assertEquals(2,((Number)body(saved).get("version")).intValue());assertEquals(true,body(saved).get("secretConfigured"));assertFalse(body(saved).containsKey("clientSecret"));
+        var tenantAdmin=fixture(Scope.TENANT,tenant,Role.ADMIN,Status.ACTIVE);
+        assertEquals(403,mvc.perform(put("/api/v1/tenants/"+tenant+"/oidc").header("Authorization","Bearer "+tokens.login(tenantAdmin).accessToken()).contentType("application/json").content(input)).andReturn().getResponse().getStatus());
+        String malformed=input.replace(PROVIDER.group.toString(),"invalid-group-uuid");
+        assertEquals(400,mvc.perform(put("/api/v1/tenants/"+tenant+"/oidc").header("Authorization","Bearer "+tokens.login(admin).accessToken()).contentType("application/json").content(malformed)).andReturn().getResponse().getStatus());
+        assertEquals(2,configurations.get(admin,tenant).version());assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE action='OIDC_CONFIG_CHANGED' AND target_id=? AND actor_id<>?",Integer.class,tenant,admin.id()));
+    }
+    @Test void fullDocumentedHttpsOidcFirstLoginIsPendingAndBusinessDenied()throws Exception{
+        var result=loginOidc();assertEquals("https://kelios.example/auth/complete",result.getResponse().getHeader("Location"));
+        var refresh=cookie(result,BrowserTokens.REFRESH).getValue();var session=auth.refresh(refresh);assertEquals(Scope.TENANT,session.user().scope());assertEquals(tenant,session.user().tenantId());assertEquals(Role.USER,session.user().role());assertEquals(Status.PENDING,session.user().status());
+        assertEquals(403,mvc.perform(get("/api/v1/tenants").header("Authorization","Bearer "+session.accessToken())).andReturn().getResponse().getStatus());assertEquals(200,mvc.perform(get("/api/v1/auth/me").header("Authorization","Bearer "+session.accessToken())).andReturn().getResponse().getStatus());
+        assertNull(result.getRequest().getSession(false));assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM external_identity",Integer.class));
+    }
+    @Test void existingIdentityKeepsIdDespiteChangedNameAndApprovedThenDisabled()throws Exception{
+        var first=auth.refresh(cookie(loginOidc(),BrowserTokens.REFRESH).getValue());UUID id=first.user().id();auth.approve(admin,id);PROVIDER.name="Changed display";
+        var active=auth.refresh(cookie(loginOidc(),BrowserTokens.REFRESH).getValue());assertEquals(id,active.user().id());assertEquals(Status.ACTIVE,active.user().status());assertEquals("Fixture user",active.user().displayName());
+        auth.disable(admin,id);assertThrows(AuthFailure.class,()->auth.refresh(active.refreshToken()));assertDoesNotThrow(()->tokens.verify(active.accessToken(),"access"));
+        assertEquals("https://kelios.example/auth/failed",loginOidc().getResponse().getHeader("Location"));
+    }
+    @ParameterizedTest(name="provider rejection {0}") @ValueSource(strings={"nonce","id-issuer","id-audience","id-expired","subject-mismatch","token-unavailable","userinfo-unavailable"})
+    void oidcProtocolFailuresProvisionNothing(String mode)throws Exception{
+        PROVIDER.mode=mode;var result=loginOidc();assertEquals("https://kelios.example/auth/failed",result.getResponse().getHeader("Location"));assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM external_identity",Integer.class));assertTrue(result.getResponse().getHeaders("Set-Cookie").stream().noneMatch(x->x.startsWith(BrowserTokens.REFRESH+"=")));
+    }
+    @ParameterizedTest(name="group rejection {0}") @ValueSource(strings={"missing","wrong-shape","missing-id","invalid-id","empty","outside"})
+    void documentedGroupFailuresFailClosed(String mode)throws Exception{
+        PROVIDER.groups=switch(mode){case "missing"->null;case "wrong-shape"->"wrong";case "missing-id"->List.of(Map.of("name","Members"));case "invalid-id"->List.of(Map.of("id","invalid"));case "empty"->List.of();default->List.of(Map.of("id",UUID.randomUUID().toString(),"name","Members"));};
+        assertEquals("https://kelios.example/auth/failed",loginOidc().getResponse().getHeader("Location"));assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM external_identity",Integer.class));
+    }
+    @Test void emptyAllowlistAndChangedConfigurationFailClosed()throws Exception{
+        var flow=flow();configure(tenant,0L,Set.of());assertEquals("https://kelios.example/auth/failed",callback(flow,flow.authorization().state()).getResponse().getHeader("Location"));
+        assertEquals("https://kelios.example/auth/failed",loginOidc().getResponse().getHeader("Location"));assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM external_identity",Integer.class));
+    }
+    @Test void stateCallbackTenantReplayAndFlowExpiry()throws Exception{
+        var flow=flow();assertEquals("https://kelios.example/auth/failed",callback(flow,"incorrect-state").getResponse().getHeader("Location"));
+        var wrongTenant=mvc.perform(get("/api/v1/auth/oidc/"+other+"/callback").cookie(cookie(flow.start(),BrowserTokens.FLOW)).param("state",flow.authorization().state()).param("code",flow.authorization().code())).andReturn();assertEquals("https://kelios.example/auth/failed",wrongTenant.getResponse().getHeader("Location"));
+        assertEquals("https://kelios.example/auth/complete",callback(flow,flow.authorization().state()).getResponse().getHeader("Location"));assertEquals("https://kelios.example/auth/failed",callback(flow,flow.authorization().state()).getResponse().getHeader("Location"));
+        var expired=flow();CLOCK.now.updateAndGet(i->i.plusSeconds(301));assertEquals("https://kelios.example/auth/failed",callback(expired,expired.authorization().state()).getResponse().getHeader("Location"));
+    }
+    @Test void discoveryAndPkceFailuresAndNoHardcodedProvider(){
+        PROVIDER.mode="discovery-issuer";assertThrows(AuthFailure.class,()->oidc.start(tenant));PROVIDER.mode="pkce-unsupported";assertThrows(AuthFailure.class,()->oidc.start(tenant));
+        assertThrows(AuthFailure.class,()->configurations.put(admin,tenant,"http://localhost","client","secret",true,0L,Set.of(PROVIDER.group)));
+        configure(other,null,Set.of(PROVIDER.group));assertEquals(other,configurations.provider(other).tenantId());
+    }
+    @Test void jitRaceNoOrphansAndNoCrossTenantMapping()throws Exception{
+        try(var pool=Executors.newFixedThreadPool(2)){
+            var first=pool.submit(()->provisioning.complete(tenant,0,PROVIDER.issuer,"concurrent-subject","Person",Set.of(PROVIDER.group)));
+            var second=pool.submit(()->provisioning.complete(tenant,0,PROVIDER.issuer,"concurrent-subject","Person",Set.of(PROVIDER.group)));
+            assertEquals(first.get(20,TimeUnit.SECONDS).user().id(),second.get(20,TimeUnit.SECONDS).user().id());
+        }
+        assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM app_user WHERE scope='TENANT'",Integer.class));configure(other,null,Set.of(PROVIDER.group));
+        assertThrows(AuthFailure.class,()->provisioning.complete(other,0,PROVIDER.issuer,"concurrent-subject","Person",Set.of(PROVIDER.group)));
+    }
+    @Test void laterGroupRemovalDoesNotSynchronizeOrBlockRefresh()throws Exception{
+        var original=auth.refresh(cookie(loginOidc(),BrowserTokens.REFRESH).getValue());auth.approve(admin,original.user().id());configure(tenant,0L,Set.of());PROVIDER.groups=List.of();
+        assertEquals(Status.ACTIVE,auth.refresh(original.refreshToken()).user().status());assertEquals("https://kelios.example/auth/failed",loginOidc().getResponse().getHeader("Location"));
+        auth.disable(admin,original.user().id());assertThrows(AuthFailure.class,()->auth.refresh(original.refreshToken()));
+    }
+    @Test void tenantAdminApprovalLimitsAndReadOnlyRoles(){
+        var tenantAdmin=fixture(Scope.TENANT,tenant,Role.ADMIN,Status.ACTIVE);var pending=fixture(Scope.TENANT,tenant,Role.USER,Status.PENDING);var otherPending=fixture(Scope.TENANT,other,Role.USER,Status.PENDING);var adminPending=fixture(Scope.TENANT,tenant,Role.ADMIN,Status.PENDING);
+        assertEquals(Status.ACTIVE,auth.approve(tenantAdmin,pending.id()).status());assertThrows(AuthFailure.class,()->auth.approve(tenantAdmin,otherPending.id()));assertThrows(AuthFailure.class,()->auth.approve(tenantAdmin,adminPending.id()));assertThrows(AuthFailure.class,()->auth.role(tenantAdmin,pending.id(),Role.ADMIN));
+        assertThrows(AuthFailure.class,()->auth.disable(tenantAdmin,adminPending.id()));assertTrue(auth.list(tenantAdmin).stream().allMatch(u->u.tenantId().equals(tenant) && u.role()==Role.USER));
+        for(var reader:List.of(fixture(Scope.GLOBAL,null,Role.USER,Status.ACTIVE),fixture(Scope.TENANT,tenant,Role.USER,Status.ACTIVE)))assertThrows(AuthFailure.class,()->auth.approve(reader,otherPending.id()));
+    }
+    @Test void currentDatabaseRefreshRoleAndStatusAndAbsoluteExpiry(){
+        var user=auth.createGlobal(admin,"refresh-user","Refresh","CorrectHorse25!Battery");var original=auth.login("refresh-user","CorrectHorse25!Battery");auth.role(admin,user.id(),Role.ADMIN);
+        var current=auth.refresh(original.refreshToken());assertEquals(Role.ADMIN,current.user().role());assertEquals(Role.USER,tokens.verify(original.accessToken(),"access").identity().role());
+        CLOCK.now.updateAndGet(i->i.plus(Duration.ofDays(30)).plusSeconds(30));assertThrows(AuthFailure.class,()->auth.refresh(original.refreshToken()));
+    }
+    @Test void scopedServiceBoundariesAndServerActorsPreserveDomain(){
+        principal(admin);UUID loc=secured.createPlace(PlaceService.Kind.LOCATION,tenant,"Room"),category=secured.category(null,"Type"),manufacturer=secured.manufacturer(null,"Manufacturer");
+        var asset=secured.register(tenant,new AssetService.Registration(new AssetService.DirectSelection(category,manufacturer),loc,null,false,null,null,null));
+        var tenantReader=fixture(Scope.TENANT,tenant,Role.USER,Status.ACTIVE);principal(tenantReader);assertEquals(asset.id(),secured.asset(asset.id()).id());assertThrows(AuthFailure.class,()->secured.assetText(asset.id(),0,null,null,"illegal"));
+        principal(fixture(Scope.TENANT,other,Role.ADMIN,Status.ACTIVE));assertThrows(AuthFailure.class,()->secured.asset(asset.id()));assertThrows(AuthFailure.class,()->secured.deleteAsset(asset.id(),0));
+        principal(fixture(Scope.GLOBAL,null,Role.USER,Status.ACTIVE));assertEquals(asset.id(),secured.asset(asset.id()).id());assertThrows(AuthFailure.class,()->secured.publish(CatalogService.Kind.CATEGORY,category));
+        principal(fixture(Scope.TENANT,tenant,Role.ADMIN,Status.ACTIVE));assertThrows(AuthFailure.class,()->secured.editLabel(CatalogService.Kind.CATEGORY,category,"No global write"));
+        assertEquals(admin.id(),jdbc.queryForObject("SELECT actor_id FROM asset_event WHERE asset_id=?",UUID.class,asset.id()));
+    }
+    @Test void postgresIdentityCompositeConstraintsAndUpgradePreserveFoundation(){
+        var user=fixture(Scope.TENANT,tenant,Role.USER,Status.PENDING);
+        assertThrows(RuntimeException.class,()->tx(()->{jdbc.update("INSERT INTO external_identity(issuer,subject,user_id,tenant_id) VALUES('https://example.test','wrong',?,?)",user.id(),other);return null;}));
+        Flyway.configure().dataSource(PG.getJdbcUrl(),PG.getUsername(),PG.getPassword()).schemas("phase2_upgrade").defaultSchema("phase2_upgrade").target("3").load().migrate();
+        UUID retained=UUID.randomUUID();jdbc.update("INSERT INTO phase2_upgrade.app_user(id,scope,role,status,display_name) VALUES(?,'GLOBAL','USER','ACTIVE','Retained')",retained);
+        Flyway.configure().dataSource(PG.getJdbcUrl(),PG.getUsername(),PG.getPassword()).schemas("phase2_upgrade").defaultSchema("phase2_upgrade").load().migrate();
+        assertEquals("Retained",jdbc.queryForObject("SELECT display_name FROM phase2_upgrade.app_user WHERE id=?",String.class,retained));assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM phase2_upgrade.local_global_credential",Integer.class));
+    }
+    @Test void disableWinsAgainstWaitingRefreshUsingIndependentConnection()throws Exception{
+        var original=auth.login("initial-admin","CorrectHorse25!Battery");var ready=new CountDownLatch(1);var release=new CountDownLatch(1);
+        try(var pool=Executors.newFixedThreadPool(2)){
+            var change=pool.submit(()->tx(()->{jdbc.queryForObject("SELECT id FROM app_user WHERE id=? FOR UPDATE",UUID.class,admin.id());ready.countDown();try{assertTrue(release.await(10,TimeUnit.SECONDS));}catch(InterruptedException ex){throw new RuntimeException(ex);}jdbc.update("UPDATE app_user SET status='DISABLED' WHERE id=?",admin.id());return null;}));
+            assertTrue(ready.await(10,TimeUnit.SECONDS));var refresh=pool.submit(()->{assertThrows(AuthFailure.class,()->auth.refresh(original.refreshToken()));return null;});
+            Thread.sleep(150);release.countDown();change.get(15,TimeUnit.SECONDS);refresh.get(15,TimeUnit.SECONDS);
+        }
+    }
+    void awaitDatabaseWait() throws Exception {
+        long deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(10);
+        while(System.nanoTime()<deadline){
+            if(jdbc.queryForObject("SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock'",Integer.class)>0)return;
+            Thread.sleep(20);
+        }
+        fail("Expected an independent PostgreSQL connection waiting for a row lock");
+    }
+    @Test void credentialResetWinsAgainstLoginFromOldHash()throws Exception{
+        var locked=new CountDownLatch(1);var release=new CountDownLatch(1);
+        try(var pool=Executors.newFixedThreadPool(2)){
+            var reset=pool.submit(()->tx(()->{auth.resetCredential(admin,admin.id(),"initial-admin","ReplacementHorse25!Battery");locked.countDown();try{assertTrue(release.await(15,TimeUnit.SECONDS));}catch(InterruptedException ex){throw new RuntimeException(ex);}return null;}));
+            assertTrue(locked.await(10,TimeUnit.SECONDS));
+            var login=pool.submit(()->assertThrows(AuthFailure.class,()->auth.login("initial-admin","CorrectHorse25!Battery")));
+            try{awaitDatabaseWait();}finally{release.countDown();}
+            reset.get(20,TimeUnit.SECONDS);assertEquals(401,login.get(20,TimeUnit.SECONDS).status());
+        }
+        assertDoesNotThrow(()->auth.login("initial-admin","ReplacementHorse25!Battery"));
+    }
+    @Test void recoverySerializesWithAdminPromotion()throws Exception{
+        var candidate=auth.createGlobal(admin,"promoted-admin","Promoted","CorrectHorse25!Battery");jdbc.update("UPDATE app_user SET status='DISABLED' WHERE id=?",admin.id());
+        var locked=new CountDownLatch(1);var release=new CountDownLatch(1);
+        try(var pool=Executors.newFixedThreadPool(2)){
+            var promotion=pool.submit(()->tx(()->{auth.role(admin,candidate.id(),Role.ADMIN);locked.countDown();try{assertTrue(release.await(15,TimeUnit.SECONDS));}catch(InterruptedException ex){throw new RuntimeException(ex);}return null;}));
+            assertTrue(locked.await(10,TimeUnit.SECONDS));var recovery=pool.submit(()->assertThrows(AuthFailure.class,()->auth.bootstrap("blocked-recovery","Recovery","CorrectHorse25!Battery")));
+            try{awaitDatabaseWait();}finally{release.countDown();}
+            promotion.get(20,TimeUnit.SECONDS);assertEquals(409,recovery.get(20,TimeUnit.SECONDS).status());
+        }
+        assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM app_user WHERE scope='GLOBAL' AND role='ADMIN' AND status='ACTIVE'",Integer.class));
+    }
+    @Test void configurationChangeWinsAgainstWaitingJit()throws Exception{
+        var locked=new CountDownLatch(1);var release=new CountDownLatch(1);
+        try(var pool=Executors.newFixedThreadPool(2)){
+            var configuration=pool.submit(()->tx(()->{configure(tenant,0L,Set.of());locked.countDown();try{assertTrue(release.await(15,TimeUnit.SECONDS));}catch(InterruptedException ex){throw new RuntimeException(ex);}return null;}));
+            assertTrue(locked.await(10,TimeUnit.SECONDS));var jit=pool.submit(()->assertThrows(AuthFailure.class,()->provisioning.complete(tenant,0,PROVIDER.issuer,"waiting-subject","Person",Set.of(PROVIDER.group))));
+            try{awaitDatabaseWait();}finally{release.countDown();}
+            configuration.get(20,TimeUnit.SECONDS);assertEquals(409,jit.get(20,TimeUnit.SECONDS).status());
+        }
+        assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM external_identity",Integer.class));
+    }
+    @Test void publicationWinsAgainstTenantCatalogEdit()throws Exception{
+        UUID category=catalog.createCategory(tenant,"Before publication",admin.actor());var tenantAdmin=fixture(Scope.TENANT,tenant,Role.ADMIN,Status.ACTIVE);
+        var locked=new CountDownLatch(1);var release=new CountDownLatch(1);
+        try(var pool=Executors.newFixedThreadPool(2)){
+            var publish=pool.submit(()->tx(()->{catalog.publish(CatalogService.Kind.CATEGORY,category,admin.actor());locked.countDown();try{assertTrue(release.await(15,TimeUnit.SECONDS));}catch(InterruptedException ex){throw new RuntimeException(ex);}return null;}));
+            assertTrue(locked.await(10,TimeUnit.SECONDS));var edit=pool.submit(()->{principal(tenantAdmin);try{return assertThrows(AuthFailure.class,()->secured.editLabel(CatalogService.Kind.CATEGORY,category,"Unauthorized"));}finally{SecurityContextHolder.clearContext();}});
+            try{awaitDatabaseWait();}finally{release.countDown();}
+            publish.get(20,TimeUnit.SECONDS);assertEquals(403,edit.get(20,TimeUnit.SECONDS).status());
+        }
+        assertEquals("Before publication",catalog.read(CatalogService.Kind.CATEGORY,category).name());
+    }
+    @Test void administrationHttpMatrixAndAuthoritativeTargets()throws Exception{
+        for(var actor:List.of(admin,fixture(Scope.GLOBAL,null,Role.USER,Status.ACTIVE),fixture(Scope.TENANT,tenant,Role.ADMIN,Status.ACTIVE),fixture(Scope.TENANT,tenant,Role.USER,Status.ACTIVE))){
+            String bearer=tokens.login(actor).accessToken();
+            var list=mvc.perform(get("/api/v1/tenants").header("Authorization","Bearer "+bearer)).andReturn();assertEquals(200,list.getResponse().getStatus());
+            if(actor.scope()==Scope.TENANT){var rows=json.readValue(list.getResponse().getContentAsByteArray(),List.class);assertEquals(1,rows.size());}
+            assertEquals(actor.globalAdmin()?200:403,mvc.perform(post("/api/v1/tenants").header("Authorization","Bearer "+bearer).contentType("application/json").content("{\"name\":\"Authorized creation\"}")).andReturn().getResponse().getStatus());
+            assertEquals(actor.globalAdmin()?200:403,mvc.perform(get("/api/v1/tenants/"+tenant+"/oidc").header("Authorization","Bearer "+bearer)).andReturn().getResponse().getStatus());
+        }
+    }
+    @Test void providerTransportRejectsUntrustedHostsAndPrivateAddresses()throws Exception{
+        var environment=new org.springframework.mock.env.MockEnvironment().withProperty("kelios.auth.provider-trust-store",PROVIDER.trustStore.toAbsolutePath().toString()).withProperty("kelios.auth.provider-trust-store-password","fixture-store");
+        try(var http=new ProviderHttp(new AuthSettings(environment))){
+            assertThrows(AuthFailure.class,()->http.get(PROVIDER.issuer+"/.well-known/openid-configuration",PROVIDER.issuer,null));
+            assertThrows(AuthFailure.class,()->http.endpoint("https://attacker.invalid/token",PROVIDER.issuer));
+            assertThrows(AuthFailure.class,()->http.endpoint("http://localhost/token",PROVIDER.issuer));
+            assertThrows(AuthFailure.class,()->http.endpoint("https://user@localhost/token",PROVIDER.issuer));
+        }
+        for(String address:List.of("127.0.0.1","10.0.0.1","169.254.169.254","100.64.0.1","::1","fc00::1"))assertTrue(ProviderHttp.blocked(java.net.InetAddress.getByName(address)));
+    }
+
+    @Test void subjectAndIssuerChangesCreateDistinctPendingIdentities(){
+        var first=provisioning.complete(tenant,0,PROVIDER.issuer,"first-subject","Person",Set.of(PROVIDER.group));
+        var second=provisioning.complete(tenant,0,PROVIDER.issuer,"other-subject","Person",Set.of(PROVIDER.group));
+        assertNotEquals(first.user().id(),second.user().id());
+        String changed="https://other-issuer.example";configurations.put(admin,tenant,changed,"fixture-client",null,true,0L,Set.of(PROVIDER.group));
+        var third=provisioning.complete(tenant,1,changed,"first-subject","Person",Set.of(PROVIDER.group));
+        assertNotEquals(first.user().id(),third.user().id());assertEquals(Status.PENDING,third.user().status());
+        assertEquals(3,jdbc.queryForObject("SELECT count(*) FROM external_identity",Integer.class));
+        jdbc.update("DELETE FROM external_identity WHERE user_id=?",third.user().id());jdbc.update("DELETE FROM app_user WHERE id=?",third.user().id());
+        assertThrows(AuthFailure.class,()->auth.refresh(third.refreshToken()));
+    }
+    @Test void processLocalThrottleHasBoundedCapacityAndTimeWindow(){
+        var limit=new LoginThrottle(CLOCK);for(int i=0;i<10;i++)limit.check("account",10);
+        assertEquals(429,assertThrows(AuthFailure.class,()->limit.check("account",10)).status());
+        CLOCK.now.updateAndGet(i->i.plusSeconds(60));assertDoesNotThrow(()->limit.check("account",10));
+        for(int i=0;i<4095;i++)limit.check("key-"+i,60);
+        assertEquals(429,assertThrows(AuthFailure.class,()->limit.check("overflow",60)).status());
+        CLOCK.now.updateAndGet(i->i.plusSeconds(60));assertDoesNotThrow(()->limit.check("overflow",60));
+    }
+
+    @Test void oversizedIdentityBodyIsRejectedBeforeJsonAndHashing()throws Exception{
+        var result=unsafe(post("/api/v1/auth/local/login").contentType("application/json").content("x".repeat(32769)),null);
+        assertEquals(400,result.getResponse().getStatus());assertEquals("application/problem+json",result.getResponse().getContentType());
+        assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM local_global_credential",Integer.class));
+    }
+
+    @Test void userAdministrationRejectsReadersBeforeTargetLookupAndScopesTenantTargets(){
+        var reader=fixture(Scope.GLOBAL,null,Role.USER,Status.ACTIVE);var tenantAdmin=fixture(Scope.TENANT,tenant,Role.ADMIN,Status.ACTIVE);
+        var crossTenant=fixture(Scope.TENANT,other,Role.USER,Status.PENDING);
+        assertEquals(403,assertThrows(AuthFailure.class,()->auth.approve(reader,UUID.randomUUID())).status());
+        assertEquals(403,assertThrows(AuthFailure.class,()->auth.disable(reader,UUID.randomUUID())).status());
+        assertEquals(404,assertThrows(AuthFailure.class,()->auth.approve(tenantAdmin,crossTenant.id())).status());
+        assertEquals(404,assertThrows(AuthFailure.class,()->auth.approve(tenantAdmin,UUID.randomUUID())).status());
+    }
+
+    @Test void pendingAndCredentiallessAdminsDoNotCountAsUsable(){
+        jdbc.update("UPDATE app_user SET status='PENDING' WHERE id=?",admin.id());
+        var recovered=auth.bootstrap("pending-recovery","Recovered","CorrectHorse25!Battery");
+        assertEquals(Status.PENDING,identities.load(admin.id(),"").status());
+        jdbc.update("DELETE FROM local_global_credential WHERE user_id=?",recovered.id());
+        var again=auth.bootstrap("credentialless-recovery","Recovered again","CorrectHorse25!Battery");
+        assertEquals(Status.ACTIVE,again.status());assertEquals(1,auditCount("GLOBAL_ADMIN_BOOTSTRAPPED",again.id()));
+        assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM app_user u JOIN local_global_credential c ON c.user_id=u.id WHERE u.scope='GLOBAL' AND u.role='ADMIN' AND u.status='ACTIVE'",Integer.class));
+    }
+    @Test void adminGrantWinsAgainstWaitingTenantApproval()throws Exception{
+        var tenantAdmin=fixture(Scope.TENANT,tenant,Role.ADMIN,Status.ACTIVE);var target=fixture(Scope.TENANT,tenant,Role.USER,Status.PENDING);
+        var locked=new CountDownLatch(1);var release=new CountDownLatch(1);
+        try(var pool=Executors.newFixedThreadPool(2)){
+            var grant=pool.submit(()->tx(()->{auth.role(admin,target.id(),Role.ADMIN);locked.countDown();try{assertTrue(release.await(15,TimeUnit.SECONDS));}catch(InterruptedException ex){throw new RuntimeException(ex);}return null;}));
+            assertTrue(locked.await(10,TimeUnit.SECONDS));var approve=pool.submit(()->assertThrows(AuthFailure.class,()->auth.approve(tenantAdmin,target.id())));
+            try{awaitDatabaseWait();}finally{release.countDown();}
+            grant.get(20,TimeUnit.SECONDS);assertEquals(404,approve.get(20,TimeUnit.SECONDS).status());
+        }
+        assertEquals(Role.ADMIN,identities.load(target.id(),"").role());assertEquals(Status.PENDING,identities.load(target.id(),"").status());assertEquals(0,auditCount("USER_APPROVED",target.id()));
+    }
+
+}

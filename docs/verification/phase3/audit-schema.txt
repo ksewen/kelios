@@ -1,0 +1,28 @@
+    column_name     |        data_type         | is_nullable 
+--------------------+--------------------------+-------------
+ id                 | uuid                     | NO
+ actor_id           | uuid                     | NO
+ actor_display_name | text                     | NO
+ action             | text                     | NO
+ target_type        | text                     | NO
+ target_id          | uuid                     | NO
+ occurred_at        | timestamp with time zone | NO
+ data               | jsonb                    | NO
+ tenant_id          | uuid                     | YES
+(9 rows)
+
+                                               indexdef                                                
+-------------------------------------------------------------------------------------------------------
+ CREATE UNIQUE INDEX audit_log_pkey ON public.audit_log USING btree (id)
+ CREATE INDEX audit_tenant_time ON public.audit_log USING btree (tenant_id, occurred_at DESC, id DESC)
+(2 rows)
+
+              conname               | contype 
+------------------------------------+---------
+ audit_log_actor_display_name_check | c
+ audit_log_action_check             | c
+ audit_log_target_type_check        | c
+ audit_log_data_check               | c
+ audit_log_pkey                     | p
+(5 rows)
+

@@ -1,0 +1,31 @@
+# Optional same-origin HTTPS/authentication deployment, combined with compose.yaml.
+# Keys/certificates are supplied at deployment time, never built into an image.
+services:
+  backend:
+    environment:
+      KELIOS_AUTH_PUBLIC_ORIGIN: ${KELIOS_AUTH_PUBLIC_ORIGIN:?Set the exact trusted HTTPS browser origin}
+      KELIOS_AUTH_ISSUER: ${KELIOS_AUTH_ISSUER:?Set the exact KELIOS JWT issuer}
+      KELIOS_AUTH_SIGNING_KEY_ID: ${KELIOS_AUTH_SIGNING_KEY_ID:-main}
+      KELIOS_AUTH_ENCRYPTION_KEY_ID: ${KELIOS_AUTH_ENCRYPTION_KEY_ID:-main}
+      KELIOS_AUTH_TRUSTED_PROVIDER_HOSTS: ${KELIOS_AUTH_TRUSTED_PROVIDER_HOSTS:-}
+      KELIOS_AUTH_PROVIDER_TRUST_STORE: ${KELIOS_AUTH_PROVIDER_TRUST_STORE:-}
+      KELIOS_AUTH_PROVIDER_TRUST_STORE_PASSWORD: ${KELIOS_AUTH_PROVIDER_TRUST_STORE_PASSWORD:-}
+    volumes:
+      - type: bind
+        source: ${KELIOS_AUTH_KEY_DIRECTORY:?Set the external authentication key directory}
+        target: /run/secrets/kelios-auth
+        read_only: true
+        bind: { create_host_path: false }
+  frontend:
+    ports: ["127.0.0.1:${KELIOS_HTTPS_PORT:-8443}:8443"]
+    volumes:
+      - type: bind
+        source: ./nginx/phase2-tls.conf
+        target: /etc/nginx/conf.d/phase2-tls.conf
+        read_only: true
+        bind: { create_host_path: false }
+      - type: bind
+        source: ${KELIOS_TLS_DIRECTORY:?Set the external TLS certificate directory}
+        target: /etc/kelios/tls
+        read_only: true
+        bind: { create_host_path: false }

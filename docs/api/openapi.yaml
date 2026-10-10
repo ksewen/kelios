@@ -1,0 +1,2704 @@
+openapi: 3.1.0
+info:
+  title: KELIOS Phase 3 inventory and identity API
+  version: 0.0.3
+  description: Same-origin HTTPS. Access JWT in memory/Bearer; Refresh HttpOnly cookie. Explicit inventory commands,
+    scoped reads and target-owned administrative audit. No Asset deletion API. Backend authorization is authoritative;
+    no persistent sessions or revocation.
+servers:
+- url: /api/v1
+paths:
+  /status:
+    get:
+      operationId: getStatus
+      summary: Verify backend connectivity
+      security: []
+      responses:
+        '200':
+          description: 'Successful operation. Authentication responses use Cache-Control: no-store.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TechnicalStatus'
+        default: &id001
+          description: RFC 9457 sanitized error; 400 invalid input, 401 authentication failure, 403 denied, 404
+            absent target, 409 conflict, 429 bounded throttling, 503 unavailable verification.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /auth/csrf:
+    get:
+      operationId: getAuthCsrf
+      summary: Obtain signed CSRF proof
+      security: []
+      responses:
+        '200':
+          description: 'Successful operation. Authentication responses use Cache-Control: no-store.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Csrf'
+        default: *id001
+      description: Sets Secure HttpOnly host-only __Secure-kelios-csrf at /api/v1/auth/. Bound to current refresh
+        jti when valid; no server session. Use before unsafe auth operations.
+  /auth/local/login:
+    post:
+      operationId: postAuthLocalLogin
+      summary: Authenticate GLOBAL local credentials
+      security: []
+      responses:
+        '200':
+          description: 'Successful operation. Authentication responses use Cache-Control: no-store.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        default: *id001
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LocalLogin'
+      parameters: &id002
+      - &id004
+        name: Origin
+        in: header
+        required: true
+        description: Exact configured same-origin HTTPS browser origin.
+        schema:
+          type: string
+          format: uri
+      - &id005
+        name: X-CSRF-Token
+        in: header
+        required: true
+        description: Proof from GET /auth/csrf; browser also sends its matching HttpOnly cookie.
+        schema:
+          type: string
+      description: Sets Secure HttpOnly host-only SameSite=Strict Refresh cookie; Access JWT returned to memory
+        only. PENDING may authenticate but has no business access; DISABLED denied.
+  /auth/session/refresh:
+    post:
+      operationId: postAuthSessionRefresh
+      summary: Reload current User and issue Access JWT
+      security: []
+      responses:
+        '200':
+          description: 'Successful operation. Authentication responses use Cache-Control: no-store.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        default: *id001
+      parameters: *id002
+      description: Requires ambient __Secure-kelios-refresh cookie. Validates Refresh purpose/signature/issuer/audience/absolute
+        expiry, reloads KELIOS User, denies DISABLED. Reuses original Refresh JWT/expiry. Does not contact IServ.
+  /auth/session:
+    delete:
+      operationId: deleteAuthSession
+      summary: Discard browser session tokens
+      security: []
+      responses:
+        '200':
+          description: Successful operation; empty response body.
+        default: *id001
+      parameters: *id002
+      description: Clears Refresh/CSRF/OIDC flow cookies. Frontend discards memory Access; no revocation state is
+        created. Copied tokens remain valid under their approved lifetimes.
+  /auth/me:
+    get:
+      operationId: getAuthMe
+      summary: Get authenticated JWT identity
+      security: &id003
+      - AccessBearer: []
+      responses:
+        '200':
+          description: 'Successful operation. Authentication responses use Cache-Control: no-store.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Identity'
+        default: *id001
+      description: Phase 2 current-user infrastructure; PENDING may access this minimal identity. Access reflects
+        issue-time snapshot until refresh/re-login.
+  /auth/local/password:
+    put:
+      operationId: putAuthLocalPassword
+      summary: Change own GLOBAL password with current verification
+      security: *id003
+      responses:
+        '200':
+          description: Successful operation; empty response body.
+        default: *id001
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordChange'
+      parameters: *id002
+      description: ACTIVE GLOBAL user only. Uniform password policy; existing JWTs are not independently revoked.
+  /auth/oidc/{tenant}/start:
+    post:
+      operationId: postAuthOidcTenantStart
+      summary: Initiate configured Tenant IServ login
+      security: []
+      responses:
+        '200':
+          description: 'Successful operation. Authentication responses use Cache-Control: no-store.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OidcStart'
+        default: *id001
+      parameters:
+      - name: tenant
+        in: path
+        required: true
+        schema: &id006
+          type: string
+          format: uuid
+      - *id004
+      - *id005
+      description: Server loads enabled provider by Tenant ID, uses Discovery, state/nonce/PKCE S256 and encrypted
+        HttpOnly flow cookie. No caller-supplied issuer, identities, group facts or callback URI.
+  /auth/oidc/{tenant}/callback:
+    get:
+      operationId: getAuthOidcTenantCallback
+      summary: Complete protected Tenant OIDC flow
+      security: []
+      responses:
+        '303':
+          description: Fixed trusted-origin /auth/complete or /auth/failed redirect. Success sets Refresh cookie
+            and clears flow cookie.
+          headers:
+            Location:
+              schema:
+                type: string
+                format: uri
+        default: *id001
+      parameters:
+      - name: tenant
+        in: path
+        required: true
+        schema: *id006
+      - name: state
+        in: query
+        required: false
+        schema: &id007
+          type: string
+      - name: code
+        in: query
+        required: false
+        schema: *id007
+      - name: iss
+        in: query
+        required: false
+        schema: *id007
+      - name: error
+        in: query
+        required: false
+        schema: *id007
+      description: Requires flow cookie binding. Validated ID token and UserInfo sub, documented iserv:groups UUID
+        intersection, exact issuer/subject identity, JIT TENANT/USER/PENDING. Provider tokens discarded. No tokens
+        or provider error details in frontend redirect.
+  /tenants:
+    get:
+      operationId: getTenants
+      summary: List authorized Tenant identifiers
+      security: *id003
+      responses:
+        '200':
+          description: 'Successful operation. Authentication responses use Cache-Control: no-store.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tenants'
+        default: *id001
+      description: ACTIVE GLOBAL users read all; ACTIVE TENANT users read only their Tenant. PENDING/DISABLED have
+        no business data.
+    post:
+      operationId: postTenants
+      summary: Create Tenant (GLOBAL ADMIN)
+      security: *id003
+      responses:
+        '200':
+          description: 'Successful operation. Authentication responses use Cache-Control: no-store.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Uuid'
+        default: *id001
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TenantInput'
+  /users:
+    get:
+      operationId: getUsers
+      summary: List administratively manageable users
+      security: *id003
+      responses:
+        '200':
+          description: 'Successful operation. Authentication responses use Cache-Control: no-store.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Identities'
+        default: *id001
+      description: GLOBAL ADMIN all; TENANT ADMIN own ordinary USER accounts only. Readers denied.
+  /users/global:
+    post:
+      operationId: postUsersGlobal
+      summary: Create GLOBAL USER ACTIVE (GLOBAL ADMIN)
+      security: *id003
+      responses:
+        '200':
+          description: 'Successful operation. Authentication responses use Cache-Control: no-store.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Identity'
+        default: *id001
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GlobalInput'
+      description: Null Tenant, explicit GLOBAL/USER/ACTIVE. ADMIN grant is separate; initial provided password
+        is actual credential.
+  /users/{id}/approve:
+    post:
+      operationId: postUsersIdApprove
+      summary: Approve PENDING account
+      security: *id003
+      responses:
+        '200':
+          description: 'Successful operation. Authentication responses use Cache-Control: no-store.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Identity'
+        default: *id001
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id006
+      description: GLOBAL ADMIN any; TENANT ADMIN own ordinary USER only, no ADMIN approval.
+  /users/{id}/role:
+    put:
+      operationId: putUsersIdRole
+      summary: Grant or change role (GLOBAL ADMIN)
+      security: *id003
+      responses:
+        '200':
+          description: 'Successful operation. Authentication responses use Cache-Control: no-store.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Identity'
+        default: *id001
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoleInput'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id006
+      description: TENANT ADMIN cannot grant ADMIN. GLOBAL ADMIN cannot demote itself. No permanent last-admin invariant.
+  /users/{id}/disable:
+    post:
+      operationId: postUsersIdDisable
+      summary: Disable managed account
+      security: *id003
+      responses:
+        '200':
+          description: 'Successful operation. Authentication responses use Cache-Control: no-store.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Identity'
+        default: *id001
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id006
+      description: GLOBAL ADMIN any other account; TENANT ADMIN own ordinary USER only. GLOBAL ADMIN self-disable
+        denied. Future Refresh denied; issued Access expires naturally.
+  /users/{id}/local-credential:
+    put:
+      operationId: putUsersIdLocal-credential
+      summary: Create/reset GLOBAL credential (GLOBAL ADMIN)
+      security: *id003
+      responses:
+        '200':
+          description: Successful operation; empty response body.
+        default: *id001
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CredentialInput'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id006
+      description: No TENANT credentials. Uniform policy; no forced-change state or JWT revocation.
+  /tenants/{id}/oidc:
+    get:
+      operationId: getTenantsIdOidc
+      summary: Read sanitized Tenant OIDC configuration (GLOBAL ADMIN)
+      security: *id003
+      responses:
+        '200':
+          description: 'Successful operation. Authentication responses use Cache-Control: no-store.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OidcConfiguration'
+        default: *id001
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id006
+    put:
+      operationId: putTenantsIdOidc
+      summary: Create/update Tenant OIDC and group UUID allowlist (GLOBAL ADMIN)
+      security: *id003
+      responses:
+        '200':
+          description: 'Successful operation. Authentication responses use Cache-Control: no-store.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OidcConfiguration'
+        default: *id001
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProviderInput'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id006
+      description: Atomic versioned settings/secret/allowlist change. Omit/null version on first create; current
+        version on update. Initial clientSecret required; null on update retains/re-encrypts existing secret. Secret
+        only accepted as write-only input, never returned. Empty allowlist denies login. Runtime changes need no
+        image rebuild; in-flight old-config login fails closed.
+  /tenants/{tenantId}/assets:
+    post:
+      operationId: postTenantsTenantidAssets
+      summary: Register Asset; ADMIN only
+      description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
+        operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
+        remains visible.
+      security: &id008
+      - AccessBearer: []
+      responses:
+        '201':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Asset'
+          headers:
+            Location:
+              schema:
+                type: string
+              description: Created resource path
+        default: &id009
+          description: RFC 9457. 400 INVALID_INPUT; 401 AUTHENTICATION_REQUIRED; 403 FORBIDDEN; 404 NOT_FOUND including
+            out-of-scope object; 409 guard/version/concurrency/constraint conflict; 503 SERVICE_UNAVAILABLE. No
+            automatic mutation retry.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      parameters:
+      - name: tenantId
+        in: path
+        required: true
+        schema: &id010
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssetRegistration'
+    get:
+      operationId: getTenantsTenantidAssets
+      summary: Read authorized Tenant Assets
+      description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
+        operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
+        remains visible.
+      security: *id008
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetPage'
+        default: *id009
+      parameters:
+      - name: tenantId
+        in: path
+        required: true
+        schema: *id010
+      - &id011
+        name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+      - &id012
+        name: size
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 25
+      - &id013
+        name: q
+        in: query
+        required: false
+        schema:
+          type: string
+          maxLength: 128
+          description: Literal case-insensitive substring of tag, local identifier, serial and external inventory number; SQL wildcards
+            escaped.
+      - &id014
+        name: sort
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - tag
+          - createdAt
+          - lifecycle
+          - condition
+          default: createdAt
+      - &id015
+        name: direction
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - asc
+          - desc
+          default: desc
+      - &id016
+        name: locationId
+        in: query
+        required: false
+        schema: *id010
+      - &id017
+        name: ownerId
+        in: query
+        required: false
+        schema: *id010
+      - &id018
+        name: categoryId
+        in: query
+        required: false
+        schema: *id010
+      - &id019
+        name: manufacturerId
+        in: query
+        required: false
+        schema: *id010
+      - &id020
+        name: productId
+        in: query
+        required: false
+        schema: *id010
+      - &id021
+        name: lifecycle
+        in: query
+        required: false
+        schema: &id032
+          type: string
+          enum:
+          - REGISTERED
+          - IN_STOCK
+          - DEPLOYED
+          - DEREGISTERED
+      - &id022
+        name: condition
+        in: query
+        required: false
+        schema: &id033
+          type: string
+          enum:
+          - UNKNOWN
+          - WORKING
+          - DEFECTIVE
+          - UNUSABLE
+      - &id023
+        name: loaned
+        in: query
+        required: false
+        schema:
+          type: boolean
+  /assets:
+    get:
+      operationId: getAssets
+      summary: GLOBAL-only all-Tenant Asset read
+      description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
+        operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
+        remains visible.
+      security: *id008
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetPage'
+        default: *id009
+      parameters:
+      - *id011
+      - *id012
+      - *id013
+      - *id014
+      - *id015
+      - *id016
+      - *id017
+      - *id018
+      - *id019
+      - *id020
+      - *id021
+      - *id022
+      - *id023
+      - name: tenantId
+        in: query
+        required: false
+        schema: *id010
+  /assets/{id}:
+    get:
+      operationId: getAssetsId
+      summary: Read scoped Asset
+      description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
+        operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
+        remains visible.
+      security: *id008
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetDetail'
+        default: *id009
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id010
+  /assets/{id}/events:
+    get:
+      operationId: getAssetsIdEvents
+      summary: Read immutable scoped Asset history
+      description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
+        operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
+        remains visible.
+      security: *id008
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventPage'
+        default: *id009
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id010
+      - *id011
+      - *id012
+  /assets/{id}/metadata:
+    put:
+      operationId: putAssetsIdMetadata
+      summary: ADMIN explicit metadata command; expectedVersion required
+      description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
+        operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
+        remains visible.
+      security: *id008
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Asset'
+        default: *id009
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id010
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MetadataCommand'
+  /assets/{id}/catalog:
+    put:
+      operationId: putAssetsIdCatalog
+      summary: ADMIN explicit catalog command; expectedVersion required
+      description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
+        operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
+        remains visible.
+      security: *id008
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Asset'
+        default: *id009
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id010
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssetCatalogCommand'
+  /assets/{id}/loanability:
+    put:
+      operationId: putAssetsIdLoanability
+      summary: ADMIN explicit loanability command; expectedVersion required
+      description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
+        operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
+        remains visible.
+      security: *id008
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Asset'
+        default: *id009
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id010
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoanabilityCommand'
+  /assets/{id}/lifecycle-transitions:
+    post:
+      operationId: postAssetsIdLifecycle-transitions
+      summary: ADMIN explicit lifecycle-transitions command; expectedVersion required
+      description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
+        operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
+        remains visible.
+      security: *id008
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Asset'
+        default: *id009
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id010
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LifecycleCommand'
+  /assets/{id}/condition-transitions:
+    post:
+      operationId: postAssetsIdCondition-transitions
+      summary: ADMIN explicit condition-transitions command; expectedVersion required
+      description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
+        operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
+        remains visible.
+      security: *id008
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Asset'
+        default: *id009
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id010
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConditionCommand'
+  /assets/{id}/location:
+    put:
+      operationId: putAssetsIdLocation
+      summary: ADMIN explicit location command; expectedVersion required
+      description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
+        operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
+        remains visible.
+      security: *id008
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Asset'
+        default: *id009
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id010
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LocationCommand'
+  /assets/{id}/owner:
+    put:
+      operationId: putAssetsIdOwner
+      summary: ADMIN explicit owner command; expectedVersion required
+      description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
+        operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
+        remains visible.
+      security: *id008
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Asset'
+        default: *id009
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id010
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OwnerCommand'
+  /assets/{id}/loan:
+    post:
+      operationId: postAssetsIdLoan
+      summary: ADMIN explicit loan command; expectedVersion required
+      description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
+        operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
+        remains visible.
+      security: *id008
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Asset'
+        default: *id009
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id010
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoanCommand'
+  /assets/{id}/return:
+    post:
+      operationId: postAssetsIdReturn
+      summary: ADMIN explicit return command; expectedVersion required
+      description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
+        operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
+        remains visible.
+      security: *id008
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Asset'
+        default: *id009
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id010
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VersionCommand'
+  /catalog/categories:
+    get:
+      operationId: getCatalogCategories
+      summary: Read visible categories
+      description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
+        operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
+        remains visible.
+      security: *id008
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogPage'
+        default: *id009
+      parameters:
+      - *id011
+      - *id012
+      - &id024
+        name: q
+        in: query
+        required: false
+        schema:
+          type: string
+          maxLength: 128
+      - &id025
+        name: deleted
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - 'false'
+          - 'true'
+          - all
+          default: 'false'
+      - name: visibility
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - GLOBAL
+          - TENANT
+    post:
+      operationId: postCatalogCategories
+      summary: Create authorized categories
+      description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
+        operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
+        remains visible.
+      security: *id008
+      responses:
+        '201':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatedId'
+          headers:
+            Location:
+              schema:
+                type: string
+              description: Created resource path
+        default: *id009
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CatalogNameCommand'
+  /tenants/{tenantId}/catalog/categories:
+    get:
+      operationId: getTenantsTenantidCatalogCategories
+      summary: Read visible categories
+      description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
+        operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
+        remains visible.
+      security: *id008
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogPage'
+        default: *id009
+      parameters:
+      - name: tenantId
+        in: path
+        required: true
+        schema: *id010
+      - *id011
+      - *id012
+      - *id024
+      - *id025
+      - name: visibility
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - GLOBAL
+          - TENANT
+    post:
+      operationId: postTenantsTenantidCatalogCategories
+      summary: Create authorized categories
+      description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
+        operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
+        remains visible.
+      security: *id008
+      responses:
+        '201':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatedId'
+          headers:
+            Location:
+              schema:
+                type: string
+              description: Created resource path
+        default: *id009
+      parameters:
+      - name: tenantId
+        in: path
+        required: true
+        schema: *id010
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CatalogNameCommand'
+  /catalog/categories/{id}:
+    get:
+      operationId: getCatalogCategoriesId
+      summary: Read scoped categories
+      description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
+        operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
+        remains visible.
+      security: *id008
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogEntry'
+        default: *id009
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id010
+    put:
+      operationId: putCatalogCategoriesId
+      summary: Edit guarded categories
+      description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
+        operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
+        remains visible.
+      security: *id008
+      responses:
+        '204':
+          description: Successful operation
+        default: *id009
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id010
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CatalogNameCommand'
+    delete:
+      operationId: deleteCatalogCategoriesId
+      summary: Soft-delete guarded categories
+      description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
+        operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
+        remains visible.
+      security: *id008
+      responses:
+        '204':
+          description: Successful operation
+        default: *id009
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id010
+  /catalog/categories/{id}/publish:
+    post:
+      operationId: postCatalogCategoriesIdPublish
+      summary: GLOBAL ADMIN same-ID publication; capture pre-operation Tenant
+      description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
+        operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
+        remains visible.
+      security: *id008
+      responses:
+        '204':
+          description: Successful operation
+        default: *id009
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id010
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyCommand'
+  /catalog/categories/merge-preview:
+    post:
+      operationId: postCatalogCategoriesMerge-preview
+      summary: GLOBAL ADMIN advisory retained impact; may become stale
+      description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
+        operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
+        remains visible.
+      security: *id008
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MergePreview'
+        default: *id009
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MergeCommand'
+  /catalog/categories/merge:
+    post:
+      operationId: postCatalogCategoriesMerge
+      summary: GLOBAL ADMIN atomic Merge; fresh validation, one source-attributed audit
+      description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
+        operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
+        remains visible.
+      security: *id008
+      responses:
+        '204':
+          description: Successful operation
+        default: *id009
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MergeCommand'
+  /catalog/manufacturers:
+    get:
+      operationId: getCatalogManufacturers
+      summary: Read visible manufacturers
+      description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
+        operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
+        remains visible.
+      security: *id008
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogPage'
+        default: *id009
+      parameters:
+      - *id011
+      - *id012
+      - *id024
+      - *id025
+      - name: visibility
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - GLOBAL
+          - TENANT
+    post:
+      operationId: postCatalogManufacturers
+      summary: Create authorized manufacturers
+      description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
+        operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
+        remains visible.
+      security: *id008
+      responses:
+        '201':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatedId'
+          headers:
+            Location:
+              schema:
+                type: string
+              description: Created resource path
+        default: *id009
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CatalogNameCommand'
+  /tenants/{tenantId}/catalog/manufacturers:
+    get:
+      operationId: getTenantsTenantidCatalogManufacturers
+      summary: Read visible manufacturers
+      description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
+        operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
+        remains visible.
+      security: *id008
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogPage'
+        default: *id009
+      parameters:
+      - name: tenantId
+        in: path
+        required: true
+        schema: *id010
+      - *id011
+      - *id012
+      - *id024
+      - *id025
+      - name: visibility
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - GLOBAL
+          - TENANT
+    post:
+      operationId: postTenantsTenantidCatalogManufacturers
+      summary: Create authorized manufacturers
+      description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
+        operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
+        remains visible.
+      security: *id008
+      responses:
+        '201':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatedId'
+          headers:
+            Location:
+              schema:
+                type: string
+              description: Created resource path
+        default: *id009
+      parameters:
+      - name: tenantId
+        in: path
+        required: true
+        schema: *id010
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CatalogNameCommand'
+  /catalog/manufacturers/{id}:
+    get:
+      operationId: getCatalogManufacturersId
+      summary: Read scoped manufacturers
+      description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
+        operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
+        remains visible.
+      security: *id008
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogEntry'
+        default: *id009
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id010
+    put:
+      operationId: putCatalogManufacturersId
+      summary: Edit guarded manufacturers
+      description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
+        operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
+        remains visible.
+      security: *id008
+      responses:
+        '204':
+          description: Successful operation
+        default: *id009
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id010
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CatalogNameCommand'
+    delete:
+      operationId: deleteCatalogManufacturersId
+      summary: Soft-delete guarded manufacturers
+      description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
+        operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
+        remains visible.
+      security: *id008
+      responses:
+        '204':
+          description: Successful operation
+        default: *id009
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id010
+  /catalog/manufacturers/{id}/publish:
+    post:
+      operationId: postCatalogManufacturersIdPublish
+      summary: GLOBAL ADMIN same-ID publication; capture pre-operation Tenant
+      description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
+        operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
+        remains visible.
+      security: *id008
+      responses:
+        '204':
+          description: Successful operation
+        default: *id009
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id010
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyCommand'
+  /catalog/manufacturers/merge-preview:
+    post:
+      operationId: postCatalogManufacturersMerge-preview
+      summary: GLOBAL ADMIN advisory retained impact; may become stale
+      description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
+        operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
+        remains visible.
+      security: *id008
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MergePreview'
+        default: *id009
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MergeCommand'
+  /catalog/manufacturers/merge:
+    post:
+      operationId: postCatalogManufacturersMerge
+      summary: GLOBAL ADMIN atomic Merge; fresh validation, one source-attributed audit
+      description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
+        operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
+        remains visible.
+      security: *id008
+      responses:
+        '204':
+          description: Successful operation
+        default: *id009
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MergeCommand'
+  /catalog/products:
+    get:
+      operationId: getCatalogProducts
+      summary: Read visible products
+      description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
+        operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
+        remains visible.
+      security: *id008
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogPage'
+        default: *id009
+      parameters:
+      - *id011
+      - *id012
+      - *id024
+      - *id025
+      - name: visibility
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - GLOBAL
+          - TENANT
+    post:
+      operationId: postCatalogProducts
+      summary: Create authorized products
+      description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
+        operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
+        remains visible.
+      security: *id008
+      responses:
+        '201':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatedId'
+          headers:
+            Location:
+              schema:
+                type: string
+              description: Created resource path
+        default: *id009
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductCommand'
+  /tenants/{tenantId}/catalog/products:
+    get:
+      operationId: getTenantsTenantidCatalogProducts
+      summary: Read visible products
+      description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
+        operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
+        remains visible.
+      security: *id008
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogPage'
+        default: *id009
+      parameters:
+      - name: tenantId
+        in: path
+        required: true
+        schema: *id010
+      - *id011
+      - *id012
+      - *id024
+      - *id025
+      - name: visibility
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - GLOBAL
+          - TENANT
+    post:
+      operationId: postTenantsTenantidCatalogProducts
+      summary: Create authorized products
+      description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
+        operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
+        remains visible.
+      security: *id008
+      responses:
+        '201':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatedId'
+          headers:
+            Location:
+              schema:
+                type: string
+              description: Created resource path
+        default: *id009
+      parameters:
+      - name: tenantId
+        in: path
+        required: true
+        schema: *id010
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductCommand'
+  /catalog/products/{id}:
+    get:
+      operationId: getCatalogProductsId
+      summary: Read scoped products
+      description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
+        operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
+        remains visible.
+      security: *id008
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogEntry'
+        default: *id009
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id010
+    put:
+      operationId: putCatalogProductsId
+      summary: Edit guarded products
+      description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
+        operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
+        remains visible.
+      security: *id008
+      responses:
+        '204':
+          description: Successful operation
+        default: *id009
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id010
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductCommand'
+    delete:
+      operationId: deleteCatalogProductsId
+      summary: Soft-delete guarded products
+      description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
+        operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
+        remains visible.
+      security: *id008
+      responses:
+        '204':
+          description: Successful operation
+        default: *id009
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id010
+  /catalog/products/{id}/publish:
+    post:
+      operationId: postCatalogProductsIdPublish
+      summary: GLOBAL ADMIN same-ID publication; capture pre-operation Tenant
+      description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
+        operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
+        remains visible.
+      security: *id008
+      responses:
+        '204':
+          description: Successful operation
+        default: *id009
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id010
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyCommand'
+  /tenants/{tenantId}/locations:
+    get:
+      operationId: getTenantsTenantidLocations
+      summary: Read own authorized Tenant locations
+      description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
+        operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
+        remains visible.
+      security: *id008
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlacePage'
+        default: *id009
+      parameters:
+      - name: tenantId
+        in: path
+        required: true
+        schema: *id010
+      - *id011
+      - *id012
+      - *id024
+      - *id025
+    post:
+      operationId: postTenantsTenantidLocations
+      summary: ADMIN create Tenant locations
+      description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
+        operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
+        remains visible.
+      security: *id008
+      responses:
+        '201':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatedId'
+          headers:
+            Location:
+              schema:
+                type: string
+              description: Created resource path
+        default: *id009
+      parameters:
+      - name: tenantId
+        in: path
+        required: true
+        schema: *id010
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CatalogNameCommand'
+  /locations/{id}:
+    get:
+      operationId: getLocationsId
+      summary: Read scoped locations
+      description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
+        operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
+        remains visible.
+      security: *id008
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaceDetail'
+        default: *id009
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id010
+    put:
+      operationId: putLocationsId
+      summary: ADMIN edit guarded locations
+      description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
+        operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
+        remains visible.
+      security: *id008
+      responses:
+        '204':
+          description: Successful operation
+        default: *id009
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id010
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CatalogNameCommand'
+    delete:
+      operationId: deleteLocationsId
+      summary: ADMIN delete guarded locations
+      description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
+        operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
+        remains visible.
+      security: *id008
+      responses:
+        '204':
+          description: Successful operation
+        default: *id009
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id010
+  /tenants/{tenantId}/owners:
+    get:
+      operationId: getTenantsTenantidOwners
+      summary: Read own authorized Tenant owners
+      description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
+        operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
+        remains visible.
+      security: *id008
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlacePage'
+        default: *id009
+      parameters:
+      - name: tenantId
+        in: path
+        required: true
+        schema: *id010
+      - *id011
+      - *id012
+      - *id024
+      - *id025
+    post:
+      operationId: postTenantsTenantidOwners
+      summary: ADMIN create Tenant owners
+      description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
+        operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
+        remains visible.
+      security: *id008
+      responses:
+        '201':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatedId'
+          headers:
+            Location:
+              schema:
+                type: string
+              description: Created resource path
+        default: *id009
+      parameters:
+      - name: tenantId
+        in: path
+        required: true
+        schema: *id010
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CatalogNameCommand'
+  /owners/{id}:
+    get:
+      operationId: getOwnersId
+      summary: Read scoped owners
+      description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
+        operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
+        remains visible.
+      security: *id008
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaceDetail'
+        default: *id009
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id010
+    put:
+      operationId: putOwnersId
+      summary: ADMIN edit guarded owners
+      description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
+        operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
+        remains visible.
+      security: *id008
+      responses:
+        '204':
+          description: Successful operation
+        default: *id009
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id010
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CatalogNameCommand'
+    delete:
+      operationId: deleteOwnersId
+      summary: ADMIN delete guarded owners
+      description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
+        operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
+        remains visible.
+      security: *id008
+      responses:
+        '204':
+          description: Successful operation
+        default: *id009
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id010
+  /audit-log:
+    get:
+      operationId: getAudit-log
+      summary: ADMIN only; GLOBAL all, TENANT own captured Tenant in SQL
+      description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
+        operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
+        remains visible.
+      security: *id008
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditPage'
+        default: *id009
+      parameters:
+      - *id011
+      - *id012
+      - name: action
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: targetType
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: targetId
+        in: query
+        required: false
+        schema: *id010
+      - name: tenantId
+        in: query
+        required: false
+        schema: *id010
+      - name: globalOnly
+        in: query
+        required: false
+        schema:
+          type: boolean
+  /audit-log/{id}:
+    get:
+      operationId: getAudit-logId
+      summary: ADMIN scoped audit detail; out-of-scope is indistinguishable from absent
+      description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
+        operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
+        remains visible.
+      security: *id008
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditRecord'
+        default: *id009
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id010
+components:
+  securitySchemes:
+    AccessBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: RS256 purpose Access, current signed scope/role/status snapshot. Refresh cookie is never an API
+        business credential.
+  schemas:
+    Problem:
+      type: object
+      required:
+      - type
+      - title
+      - status
+      properties:
+        type:
+          type: string
+          format: uri-reference
+        title: *id007
+        status:
+          type: integer
+        detail: *id007
+        instance:
+          type: string
+          format: uri-reference
+        code:
+          type: string
+          description: Stable safe business error, including INVALID_INPUT, STALE_ASSET_VERSION, INVALID_TRANSITION,
+            LOAN_GUARD, NO_CURRENT_LOAN, OUTSTANDING_LOAN, REFERENCED, PRODUCT_EDIT_FROZEN, PROTECTED_UNKNOWN, DELETED_TARGET,
+            INVALID_DEPENDENCY, CONCURRENT_OPERATION, CONSTRAINT_CONFLICT and SERVICE_UNAVAILABLE.
+    TechnicalStatus:
+      type: object
+      required:
+      - application
+      - status
+      properties:
+        application:
+          type: string
+          const: KELIOS
+        status:
+          type: string
+          const: ready
+    Uuid: *id006
+    Identity:
+      type: object
+      required:
+      - id
+      - scope
+      - role
+      - status
+      - displayName
+      properties:
+        id: *id006
+        scope:
+          type: string
+          enum:
+          - GLOBAL
+          - TENANT
+        tenantId:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        role:
+          type: string
+          enum:
+          - ADMIN
+          - USER
+        status:
+          type: string
+          enum:
+          - PENDING
+          - ACTIVE
+          - DISABLED
+        displayName: *id007
+    Identities:
+      type: array
+      items:
+        $ref: '#/components/schemas/Identity'
+    Tenant:
+      type: object
+      required:
+      - id
+      - name
+      properties:
+        id: *id006
+        name: *id007
+    Tenants:
+      type: array
+      items:
+        $ref: '#/components/schemas/Tenant'
+    Session:
+      type: object
+      required:
+      - accessToken
+      - expiresIn
+      - user
+      properties:
+        accessToken:
+          type: string
+          description: RS256 Access JWT; memory only, never URL/browser persistent storage.
+        expiresIn:
+          type: integer
+          const: 900
+        user:
+          $ref: '#/components/schemas/Identity'
+    Csrf:
+      type: object
+      required:
+      - token
+      properties:
+        token: *id007
+    LocalLogin:
+      type: object
+      required:
+      - login
+      - password
+      properties:
+        login: &id026
+          type: string
+          minLength: 3
+          maxLength: 64
+          pattern: ^[A-Za-z0-9._-]{3,64}$
+          description: Canonicalized to lowercase; unique GLOBAL credential identifier, unrelated to display name/email.
+        password:
+          type: string
+          writeOnly: true
+    PasswordChange:
+      type: object
+      required:
+      - currentPassword
+      - newPassword
+      properties:
+        currentPassword:
+          type: string
+          writeOnly: true
+        newPassword: &id027
+          type: string
+          writeOnly: true
+          description: 15–128 Unicode code points, not trimmed; uppercase, lowercase, digit and non-alphanumeric
+            required. No forced-change state.
+    OidcStart:
+      type: object
+      required:
+      - authorizationUrl
+      properties:
+        authorizationUrl:
+          type: string
+          format: uri
+    TenantInput:
+      type: object
+      required:
+      - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+    GlobalInput:
+      type: object
+      required:
+      - login
+      - displayName
+      - password
+      properties:
+        login: *id026
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 256
+        password: *id027
+    RoleInput:
+      type: object
+      required:
+      - role
+      properties:
+        role:
+          type: string
+          enum:
+          - ADMIN
+          - USER
+    CredentialInput:
+      type: object
+      required:
+      - login
+      - password
+      properties:
+        login: *id026
+        password: *id027
+    ProviderInput:
+      type: object
+      required:
+      - issuer
+      - clientId
+      - enabled
+      - allowedGroupIds
+      properties:
+        issuer:
+          type: string
+          format: uri
+          maxLength: 2048
+          description: Exact HTTPS IServ issuer; Discovery issuer must match.
+        clientId:
+          type: string
+          minLength: 1
+          maxLength: 2048
+        clientSecret:
+          type:
+          - string
+          - 'null'
+          writeOnly: true
+          maxLength: 2048
+        enabled:
+          type: boolean
+        version:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+        allowedGroupIds:
+          type: array
+          uniqueItems: true
+          maxItems: 256
+          items: *id006
+    OidcConfiguration:
+      type: object
+      required:
+      - tenantId
+      - issuer
+      - clientId
+      - secretConfigured
+      - enabled
+      - version
+      - allowedGroupIds
+      - callbackUri
+      properties:
+        tenantId: *id006
+        issuer: *id007
+        clientId: *id007
+        secretConfigured:
+          type: boolean
+        enabled:
+          type: boolean
+        version:
+          type: integer
+          minimum: 0
+        allowedGroupIds:
+          type: array
+          uniqueItems: true
+          items: *id006
+        callbackUri:
+          type: string
+          format: uri
+    CatalogSelection:
+      oneOf:
+      - type: object
+        additionalProperties: false
+        properties:
+          productId: *id010
+        required:
+        - productId
+      - type: object
+        additionalProperties: false
+        properties:
+          productId:
+            type: 'null'
+          categoryId: *id010
+          manufacturerId: *id010
+        required:
+        - categoryId
+        - manufacturerId
+    AssetRegistration:
+      oneOf:
+      - type: object
+        additionalProperties: false
+        properties:
+          productId: *id010
+          locationId: *id010
+          ownerId: &id029
+            type:
+            - string
+            - 'null'
+            format: uuid
+          loanable: &id030
+            type: boolean
+          localIdentifier:
+            type: [string, 'null']
+            maxLength: 128
+            description: Optional non-unique organization-assigned operational label. Outer whitespace is stripped; blank becomes null. Case and internal whitespace are preserved. Maximum 128 Unicode code points; Cc controls and U+2028/U+2029 are rejected.
+          serialNumber: &id028
+            type:
+            - string
+            - 'null'
+          externalInventoryNumber: *id028
+          note: *id028
+        required:
+        - productId
+        - locationId
+        - loanable
+      - type: object
+        additionalProperties: false
+        properties:
+          productId:
+            type: 'null'
+          categoryId: *id010
+          manufacturerId: *id010
+          locationId: *id010
+          ownerId: *id029
+          loanable: *id030
+          localIdentifier:
+            type: [string, 'null']
+            maxLength: 128
+            description: Optional non-unique organization-assigned operational label. Outer whitespace is stripped; blank becomes null. Case and internal whitespace are preserved. Maximum 128 Unicode code points; Cc controls and U+2028/U+2029 are rejected.
+          serialNumber: *id028
+          externalInventoryNumber: *id028
+          note: *id028
+        required:
+        - categoryId
+        - manufacturerId
+        - locationId
+        - loanable
+    AssetCatalogCommand:
+      oneOf:
+      - type: object
+        additionalProperties: false
+        properties:
+          productId: *id010
+          expectedVersion: &id031
+            type: integer
+            minimum: 0
+        required:
+        - productId
+        - expectedVersion
+      - type: object
+        additionalProperties: false
+        properties:
+          productId:
+            type: 'null'
+          categoryId: *id010
+          manufacturerId: *id010
+          expectedVersion: *id031
+        required:
+        - categoryId
+        - manufacturerId
+        - expectedVersion
+    MetadataCommand:
+      type: object
+      additionalProperties: false
+      properties:
+        localIdentifier:
+          type: [string, 'null']
+          maxLength: 128
+          description: Optional non-unique organization-assigned operational label; independent of the KELIOS Asset Tag and other identifiers. Metadata replacement omission or explicit null clears it.
+        serialNumber: *id028
+        externalInventoryNumber: *id028
+        note: *id028
+        expectedVersion: *id031
+      required:
+      - expectedVersion
+    LoanabilityCommand:
+      type: object
+      additionalProperties: false
+      properties:
+        expectedVersion: *id031
+        loanable:
+          type: boolean
+      required:
+      - expectedVersion
+      - loanable
+    LocationCommand:
+      type: object
+      additionalProperties: false
+      properties:
+        expectedVersion: *id031
+        locationId: *id010
+      required:
+      - expectedVersion
+      - locationId
+    OwnerCommand:
+      type: object
+      additionalProperties: false
+      properties:
+        expectedVersion: *id031
+        ownerId:
+          type:
+          - string
+          - 'null'
+          format: uuid
+      required:
+      - expectedVersion
+      - ownerId
+    LifecycleCommand:
+      oneOf:
+      - type: object
+        additionalProperties: false
+        properties:
+          expectedVersion: *id031
+          target:
+            type: string
+            enum:
+            - REGISTERED
+            - IN_STOCK
+            - DEPLOYED
+          note: *id028
+        required:
+        - expectedVersion
+        - target
+      - type: object
+        additionalProperties: false
+        properties:
+          expectedVersion: *id031
+          target:
+            const: DEREGISTERED
+          reason:
+            type: string
+            enum:
+            - TRANSFER
+            - DISPOSAL
+            - LOST
+            - ERROR
+          note: *id028
+        required:
+        - expectedVersion
+        - target
+        - reason
+    ConditionCommand:
+      type: object
+      additionalProperties: false
+      properties:
+        expectedVersion: *id031
+        target:
+          type: string
+          enum:
+          - UNKNOWN
+          - WORKING
+          - DEFECTIVE
+          - UNUSABLE
+        note: *id028
+      required:
+      - expectedVersion
+      - target
+    LoanCommand:
+      type: object
+      additionalProperties: false
+      properties:
+        expectedVersion: *id031
+        borrower:
+          type: string
+          minLength: 1
+        expectedReturnAt: &id034
+          type:
+          - string
+          - 'null'
+          format: date-time
+        loanNote: *id028
+      required:
+      - expectedVersion
+      - borrower
+    VersionCommand:
+      type: object
+      additionalProperties: false
+      properties:
+        expectedVersion: *id031
+      required:
+      - expectedVersion
+    CatalogNameCommand:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+      required:
+      - name
+    ProductCommand:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+        categoryId: *id010
+        manufacturerId: *id010
+        manufacturerNumber: *id028
+      required:
+      - name
+      - categoryId
+      - manufacturerId
+    MergeCommand:
+      type: object
+      additionalProperties: false
+      properties:
+        sourceId: *id010
+        targetId: *id010
+      required:
+      - sourceId
+      - targetId
+    EmptyCommand:
+      type: object
+      additionalProperties: false
+      properties: {}
+    Asset:
+      type: object
+      additionalProperties: false
+      properties:
+        id: *id010
+        tenantId: *id010
+        assetTag: &id035
+          type: string
+        version: *id031
+        categoryId: *id010
+        manufacturerId: *id010
+        productId: &id036
+          type:
+          - string
+          - 'null'
+          format: uuid
+        locationId: *id010
+        ownerId: *id029
+        loanable: *id030
+        localIdentifier:
+          type: [string, 'null']
+          maxLength: 128
+          description: Optional non-unique organization-assigned operational label; independent of the KELIOS Asset Tag and other identifiers. Metadata replacement omission or explicit null clears it.
+        serialNumber: *id028
+        externalInventoryNumber: *id028
+        note: *id028
+        lifecycle: *id032
+        condition: *id033
+        loanedTo: *id028
+        loanedAt: *id034
+        expectedReturnAt: *id034
+        loanNote: *id028
+        createdAt: *id034
+        updatedAt: *id034
+        createdBy: *id010
+        updatedBy: *id010
+        deletedAt: *id034
+      required:
+      - id
+      - tenantId
+      - assetTag
+      - version
+      - categoryId
+      - manufacturerId
+      - locationId
+      - loanable
+      - lifecycle
+      - condition
+    AssetDetail:
+      type: object
+      additionalProperties: false
+      properties:
+        id: *id010
+        tenantId: *id010
+        assetTag: *id035
+        version: *id031
+        categoryId: *id010
+        manufacturerId: *id010
+        productId: *id036
+        locationId: *id010
+        ownerId: *id029
+        loanable: *id030
+        localIdentifier:
+          type: [string, 'null']
+          maxLength: 128
+          description: Optional non-unique organization-assigned operational label; independent of the KELIOS Asset Tag and other identifiers. Metadata replacement omission or explicit null clears it.
+        serialNumber: *id028
+        externalInventoryNumber: *id028
+        note: *id028
+        lifecycle: *id032
+        condition: *id033
+        loanedTo: *id028
+        loanedAt: *id034
+        expectedReturnAt: *id034
+        loanNote: *id028
+        createdAt: *id034
+        updatedAt: *id034
+        createdBy: *id010
+        updatedBy: *id010
+        deletedAt: *id034
+        tenantName: *id028
+        categoryName: *id028
+        manufacturerName: *id028
+        productName: *id028
+        locationName: *id028
+        ownerName: *id028
+        deletedBy:
+          type:
+          - string
+          - 'null'
+          format: uuid
+      required:
+      - id
+      - tenantId
+      - assetTag
+      - version
+    AssetEvent:
+      type: object
+      additionalProperties: false
+      properties:
+        id: *id010
+        assetId: *id010
+        tenantId: *id010
+        type:
+          type: string
+          enum:
+          - REGISTERED
+          - LIFECYCLE_CHANGED
+          - CONDITION_CHANGED
+          - LOCATION_CHANGED
+          - OWNER_CHANGED
+          - LOANED
+          - RETURNED
+          - DEREGISTERED
+          - UPDATED
+        occurredAt: *id034
+        createdAt: *id034
+        actorId: *id010
+        actorDisplayName:
+          type: string
+        data:
+          type: object
+          additionalProperties: true
+        note: *id028
+    AuditRecord:
+      type: object
+      additionalProperties: false
+      properties:
+        id: *id010
+        tenantId:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        actorId: *id010
+        actorDisplayName:
+          type: string
+        action:
+          type: string
+        targetType:
+          type: string
+        targetId: *id010
+        occurredAt: *id034
+        data:
+          type: object
+          additionalProperties: true
+    CatalogEntry:
+      type: object
+      additionalProperties: false
+      properties:
+        id: *id010
+        name:
+          type: string
+        tenantId:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        deleted:
+          type: boolean
+        categoryId:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        manufacturerId:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        manufacturerNumber: *id028
+    CatalogRow:
+      type: object
+      additionalProperties: false
+      properties:
+        id: *id010
+        name:
+          type: string
+        tenantId:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        visibility:
+          type: string
+          enum:
+          - GLOBAL
+          - TENANT
+        deletedAt: *id034
+        deletedBy:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        categoryId: *id010
+        manufacturerId: *id010
+        manufacturerNumber: *id028
+    PlaceRow:
+      type: object
+      additionalProperties: false
+      properties:
+        id: *id010
+        name:
+          type: string
+        tenantId: *id010
+        deletedAt: *id034
+        deletedBy:
+          type:
+          - string
+          - 'null'
+          format: uuid
+    PlaceDetail:
+      type: object
+      additionalProperties: false
+      properties:
+        id: *id010
+        name:
+          type: string
+        tenantId: *id010
+        deleted:
+          type: boolean
+    CreatedId:
+      type: object
+      additionalProperties: false
+      properties:
+        id: *id010
+      required:
+      - id
+    MergePreview:
+      type: object
+      additionalProperties: false
+      properties:
+        productCount:
+          type: integer
+        assetCount:
+          type: integer
+        affectedTenants:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              tenantId:
+                type:
+                - string
+                - 'null'
+                format: uuid
+              referenceCount:
+                type: integer
+        blockers:
+          type: array
+          items:
+            type: string
+    AssetPage:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AssetDetail'
+        page:
+          type: integer
+        size:
+          type: integer
+        totalElements:
+          type: integer
+    EventPage:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AssetEvent'
+        page:
+          type: integer
+        size:
+          type: integer
+        totalElements:
+          type: integer
+    AuditPage:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditRecord'
+        page:
+          type: integer
+        size:
+          type: integer
+        totalElements:
+          type: integer
+    CatalogPage:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CatalogRow'
+        page:
+          type: integer
+        size:
+          type: integer
+        totalElements:
+          type: integer
+    PlacePage:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlaceRow'
+        page:
+          type: integer
+        size:
+          type: integer
+        totalElements:
+          type: integer

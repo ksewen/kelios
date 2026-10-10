@@ -1,0 +1,13 @@
+
+> kelios-frontend@0.0.1 test
+> vitest run
+
+
+ RUN  v5.0.3 /Users/ksewen/IdeaProjects/github/kelios/frontend
+
+
+ Test Files  4 passed (4)
+      Tests  47 passed (47)
+   Start at  21:48:45
+   Duration  272ms (transform 51%, tests 24%, import 22%, worker 3%)
+

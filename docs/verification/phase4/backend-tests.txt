@@ -1,0 +1,11 @@
+surefire com.github.ksewen.kelios.engine.statemachine.StateMachineTest: tests=34 failures=0 errors=0 skipped=0
+surefire com.github.ksewen.kelios.identity.auth.AuthPolicyTest: tests=16 failures=0 errors=0 skipped=0
+surefire com.github.ksewen.kelios.identity.auth.JwtAndBrowserTest: tests=16 failures=0 errors=0 skipped=0
+surefire com.github.ksewen.kelios.platform.StatusControllerTest: tests=2 failures=0 errors=0 skipped=0
+surefire com.github.ksewen.kelios.platform.security.BusinessProblemsTest: tests=6 failures=0 errors=0 skipped=0
+surefire TOTAL: tests=74 failures=0 errors=0 skipped=0
+failsafe com.github.ksewen.kelios.identity.auth.IdentityAuthenticationIT: tests=47 failures=0 errors=0 skipped=0
+failsafe com.github.ksewen.kelios.identity.auth.Phase3InventoryIT: tests=97 failures=0 errors=0 skipped=0
+failsafe com.github.ksewen.kelios.identity.auth.Phase4MetadataIT: tests=23 failures=0 errors=0 skipped=0
+failsafe com.github.ksewen.kelios.inventory.DomainFoundationIT: tests=72 failures=0 errors=0 skipped=0
+failsafe TOTAL: tests=239 failures=0 errors=0 skipped=0

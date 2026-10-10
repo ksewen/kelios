@@ -1,0 +1,8 @@
+Real PostgreSQL 17.11 / postgres:17-alpine Testcontainers: 239 integration tests; no H2, failures/errors/skips 0.
+Fresh V1→V6: all integration databases migrated successfully.
+Populated V5→V6: all 16 business/history/identity/security tables compared exactly (new Asset column excluded from preexisting-row comparison); V1–V5 checksums unchanged; existing localIdentifier null; no dedicated index.
+Independent connection races: metadata/metadata; Merge winning before metadata (stale rollback); metadata winning before Merge (fresh merged snapshot preserves identifier). pg_stat_activity Lock waits observed, no timing-only success assertion or retry.
+New snapshot history: REGISTERED/UPDATED/all exercised workflow snapshots include field; old immutable JSON remains byte-equivalent and has no inferred key.
+Actual pg_dump -Fc / createdb / pg_restore --no-owner: all 17 restored tables compare exactly. Restored encrypted OIDC client secret decrypts with external key, missing key fails closed with 503, restoring same key succeeds.
+UTF-8 char_length and explicit Cc/U+2028/U+2029 CHECKs: accepted 128 astral code points, rejected 129 and forbidden normalized controls; Java stripping/case/internal whitespace/nonbreaking-space behavior verified.
+Escaped literal ILIKE: ASCII wildcards/backslash and Unicode case-insensitive label search combined with Product filter; Tenant counts/rows remain scoped.
