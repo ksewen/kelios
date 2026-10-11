@@ -64,3 +64,18 @@ describe('Phase 3 safe Bearer command transport', () => {
   it('discards an in-flight read when logout changes the session generation',async()=>{const s=await loggedIn();let resolve!: (v:Response)=>void;fetcher.mockImplementationOnce(()=>new Promise<Response>(r=>{resolve=r;})).mockResolvedValueOnce(response({token:'proof'})).mockResolvedValueOnce(new Response(null,{status:204}));const read=s.request('/api/v1/assets');await s.logout();resolve(response({items:[]}));await expect(read).rejects.toThrow('Session changed');});
   it('protects own password changes with CSRF plus memory Bearer',async()=>{const s=await loggedIn();fetcher.mockResolvedValueOnce(response({token:'csrf'})).mockResolvedValueOnce(new Response(null,{status:204}));await s.request('/api/v1/auth/local/password','PUT',{currentPassword:'old',newPassword:'new'});expect(fetcher.mock.calls[3][1].headers).toEqual({Authorization:'Bearer access','Content-Type':'application/json','X-CSRF-Token':'csrf'});});
 });
+
+describe('anonymous organization routing',()=>{
+ afterEach(()=>vi.unstubAllGlobals());
+ it('uses bounded public discovery without Bearer credentials or identity guesses',async()=>{
+  const directory={items:[{routingId:'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',name:'KBS'}],totalElements:1};const fetcher=vi.fn().mockResolvedValue(response(directory));vi.stubGlobal('fetch',fetcher);expect(await new AuthSession().organizations(0,'KBS')).toEqual(directory);expect(fetcher.mock.calls[0][0]).toBe('/api/v1/auth/oidc/organizations?page=0&size=25&q=KBS');expect(fetcher.mock.calls[0][1].headers).toBeUndefined();
+ });
+ it('rejects malformed routing data instead of navigating using it',async()=>{vi.stubGlobal('fetch',vi.fn().mockResolvedValue(response({items:[{routingId:'../other',name:'KBS'}],totalElements:1})));await expect(new AuthSession().organizations()).rejects.toThrow('PROVIDER_FAILED');});
+});
+
+describe('shared presentation session state',()=>{
+ afterEach(()=>vi.unstubAllGlobals());
+ it('notifies the shell when normal refresh loses authentication, without a business-request revocation lookup',async()=>{
+  const fetcher=vi.fn().mockResolvedValueOnce(response({token:'proof'})).mockResolvedValueOnce(response({accessToken:'access',expiresIn:900,user})).mockResolvedValueOnce(response({token:'proof'})).mockResolvedValueOnce(response({},403));vi.stubGlobal('fetch',fetcher);const s=new AuthSession();const updates:(typeof user|null)[]=[];s.subscribe(u=>updates.push(u as typeof user|null));await s.login('admin','fixture');expect(updates).toEqual([user]);await s.refresh();expect(updates).toEqual([user,null]);expect(s.current()).toBeNull();
+ });
+});

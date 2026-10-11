@@ -385,4 +385,30 @@ class IdentityAuthenticationIT {
         assertEquals(Role.ADMIN,identities.load(target.id(),"").role());assertEquals(Status.PENDING,identities.load(target.id(),"").status());assertEquals(0,auditCount("USER_APPROVED",target.id()));
     }
 
+
+    @Test void organizationDiscoveryIsBoundedMinimalAndDoesNotGrantMembership()throws Exception {
+        var result=mvc.perform(get("/api/v1/auth/oidc/organizations").secure(true)).andReturn();
+        assertEquals(200,result.getResponse().getStatus());
+        var directory=body(result);assertEquals(1,((Number)directory.get("totalElements")).intValue());
+        var item=(Map<?,?>)((List<?>)directory.get("items")).getFirst();
+        assertEquals(Set.of("routingId","name"),item.keySet());assertEquals(tenant.toString(),item.get("routingId"));assertEquals("Tenant",item.get("name"));
+        assertEquals(0,((Number)body(mvc.perform(get("/api/v1/auth/oidc/organizations").param("q","%").secure(true)).andReturn()).get("totalElements")).intValue());
+        assertEquals(400,mvc.perform(get("/api/v1/auth/oidc/organizations").param("size","101").secure(true)).andReturn().getResponse().getStatus());
+        assertEquals(400,mvc.perform(get("/api/v1/auth/oidc/organizations").param("page","-1").secure(true)).andReturn().getResponse().getStatus());
+        assertEquals(403,mvc.perform(post("/api/v1/auth/oidc/"+tenant+"/start").secure(true)).andReturn().getResponse().getStatus());
+        var completed=loginOidc();var user=auth.refresh(cookie(completed,BrowserTokens.REFRESH).getValue()).user();
+        assertEquals(tenant,user.tenantId());assertEquals(Status.PENDING,user.status());assertEquals(Role.USER,user.role());
+        configure(other,null,Set.of(PROVIDER.group));
+        var first=body(mvc.perform(get("/api/v1/auth/oidc/organizations").param("size","1").secure(true)).andReturn());
+        assertEquals(2,((Number)first.get("totalElements")).intValue());assertEquals("Other",((Map<?,?>)((List<?>)first.get("items")).getFirst()).get("name"));
+        var second=body(mvc.perform(get("/api/v1/auth/oidc/organizations").param("size","1").param("page","1").secure(true)).andReturn());
+        assertEquals("Tenant",((Map<?,?>)((List<?>)second.get("items")).getFirst()).get("name"));
+        assertEquals(400,mvc.perform(get("/api/v1/auth/oidc/organizations").param("q","x".repeat(129)).secure(true)).andReturn().getResponse().getStatus());
+        assertEquals(403,assertThrows(AuthFailure.class,()->provisioning.complete(other,0,PROVIDER.issuer,PROVIDER.subject,"Same name",Set.of(PROVIDER.group))).status());
+    }
+    @Test void organizationDiscoveryOmitsDisabledAndUnconfiguredProviders()throws Exception {
+        var p=configurations.get(admin,tenant);configurations.put(admin,tenant,p.issuer(),p.clientId(),null,false,p.version(),p.allowedGroupIds());
+        assertEquals(0,((Number)body(mvc.perform(get("/api/v1/auth/oidc/organizations").secure(true)).andReturn()).get("totalElements")).intValue());
+        assertNotEquals(200,unsafe(post("/api/v1/auth/oidc/"+tenant+"/start"),null).getResponse().getStatus());
+    }
 }

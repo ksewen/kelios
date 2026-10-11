@@ -140,6 +140,50 @@ paths:
               $ref: '#/components/schemas/PasswordChange'
       parameters: *id002
       description: ACTIVE GLOBAL user only. Uniform password policy; existing JWTs are not independently revoked.
+  /auth/oidc/organizations:
+    get:
+      operationId: getAuthOidcOrganizations
+      summary: Discover enabled organizations for authentication routing
+      description: Anonymous bounded directory. Names and routing IDs only; selection grants no Tenant authority. No default-provider inference.
+      security: []
+      parameters:
+        - in: query
+          name: page
+          schema: {type: integer, minimum: 0, maximum: 100000, default: 0}
+        - in: query
+          name: size
+          schema: {type: integer, minimum: 1, maximum: 100, default: 25}
+        - in: query
+          name: q
+          description: Literal case-insensitive organization-name substring
+          schema: {type: string, maxLength: 128, default: ''}
+      responses:
+        '200':
+          description: Enabled configured organizations only
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, totalElements, page, size]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [routingId, name]
+                      properties:
+                        routingId: {type: string, format: uuid, description: Untrusted routing handle used in the existing OIDC start path}
+                        name: {type: string}
+                  totalElements: {type: integer, format: int64}
+                  page: {type: integer}
+                  size: {type: integer}
+        '400':
+          description: Invalid bounded directory query
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
   /auth/oidc/{tenant}/start:
     post:
       operationId: postAuthOidcTenantStart

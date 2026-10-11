@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import {account} from './ui-helpers';
 import { readFileSync } from 'node:fs';
 
 const login = process.env.KELIOS_TEST_LOGIN ?? 'phase2-smoke-admin';
@@ -7,7 +8,7 @@ const password = () => readFileSync(process.env.KELIOS_TEST_PASSWORD_FILE!, 'utf
 async function signIn(page: import('@playwright/test').Page) {
   await page.goto('/');
   await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeEnabled();
-  await page.getByLabel('Login identifier').fill(login);
+  await page.getByLabel('Username',{exact:true}).fill(login);
   await page.getByLabel('Password', { exact: true }).fill(password());
   const response = page.waitForResponse('**/api/v1/auth/local/login');
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
@@ -18,7 +19,7 @@ async function signIn(page: import('@playwright/test').Page) {
 
 test('real HTTPS login, memory transport, reload refresh and logout', async ({ page, context }) => {
   const result = await signIn(page);
-  await expect(page.getByText('Signed in as Phase 2 smoke administrator')).toBeVisible();
+  await expect(page.getByRole('heading',{name:'Dashboard',exact:true})).toBeVisible();
   const refresh = (await context.cookies()).find(cookie => cookie.name === '__Secure-kelios-refresh');
   expect(Boolean(refresh?.secure && refresh.httpOnly && refresh.sameSite === 'Strict' && refresh.path === '/api/v1/auth/')).toBe(true);
   expect(await page.evaluate(() => ({ local: localStorage.length, session: sessionStorage.length, cookies: document.cookie }))).toEqual({ local: 0, session: 0, cookies: '' });
@@ -26,8 +27,8 @@ test('real HTTPS login, memory transport, reload refresh and logout', async ({ p
   const refreshResponse = page.waitForResponse('**/api/v1/auth/session/refresh');
   await page.reload();
   expect((await refreshResponse).status()).toBe(200);
-  await expect(page.getByText('Signed in as Phase 2 smoke administrator')).toBeVisible();
-  await page.getByRole('button', { name: 'Sign out' }).click();
+  await expect(page.getByRole('heading',{name:'Dashboard',exact:true})).toBeVisible();
+  await account(page,'Sign out');
   await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeEnabled();
   expect((await context.cookies()).some(cookie => cookie.name === '__Secure-kelios-refresh')).toBe(false);
   await page.reload();
@@ -50,17 +51,17 @@ test('real disabled account loses refresh while issued Access expires naturally'
   expect(created.status()).toBe(200);
   const user = await created.json() as { id: string; scope: string; role: string; status: string };
   expect([user.scope, user.role, user.status]).toEqual(['GLOBAL', 'USER', 'ACTIVE']);
-  await page.getByRole('button', { name: 'Sign out' }).click();
-  await page.getByLabel('Login identifier').fill(username);
+  await account(page,'Sign out');
+  await page.getByLabel('Username',{exact:true}).fill(username);
   await page.getByLabel('Password', { exact: true }).fill(password());
   const loginResponse = page.waitForResponse('**/api/v1/auth/local/login');
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   const issued = await (await loginResponse).json() as { accessToken: string };
-  await expect(page.getByText('Signed in as Disabled browser fixture')).toBeVisible();
+  await expect(page.getByRole('heading',{name:'Dashboard',exact:true})).toBeVisible();
   expect((await page.request.post(`/api/v1/users/${user.id}/disable`, { headers: { Authorization: `Bearer ${admin.accessToken}` } })).status()).toBe(200);
   expect((await page.request.get('/api/v1/auth/me', { headers: { Authorization: `Bearer ${issued.accessToken}` } })).status()).toBe(200);
-  await page.getByRole('button', { name: 'Refresh account status' }).click();
-  await expect(page.getByRole('alert')).toHaveText('Session expired or account disabled. Sign in again.');
+  await page.reload();
+  await expect(page.getByRole('button',{name:'Sign in',exact:true})).toBeEnabled();
 });
 
 test('frontend Tenant initiation/completion shows mandatory pending state without business requests', async ({ page, baseURL }) => {
@@ -75,7 +76,7 @@ test('frontend Tenant initiation/completion shows mandatory pending state withou
     : route.fulfill({ status: 401, json: { status: 401, detail: 'Authentication required' } }));
   await page.route(`**/api/v1/auth/oidc/${tenant}/start`, route => { ready = true; return route.fulfill({ json: { authorizationUrl: `${baseURL}/auth/complete` } }); });
   await page.goto(`/login/tenant/${tenant}`);
-  await expect(page.getByLabel('Tenant ID')).toHaveValue(tenant);
+  await expect(page.getByLabel('Tenant ID')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Sign in with IServ' })).toBeEnabled();
   await page.getByRole('button', { name: 'Sign in with IServ' }).click();
   await expect(page).toHaveURL(`${baseURL}/auth/complete`);

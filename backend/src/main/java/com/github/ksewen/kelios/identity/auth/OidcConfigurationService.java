@@ -15,6 +15,18 @@ public class OidcConfigurationService {
     public record Provider(UUID tenantId,String issuer,String clientId,String encryptedSecret,boolean enabled,long version,Set<UUID> allowedGroupIds) {
         @Override public String toString(){return "Provider[tenant="+tenantId+",version="+version+"]";}
     }
+    /** Public routing directory: no identity facts, issuer, credentials or provider policy. */
+    public record Organization(UUID routingId,String name) {}
+    public record Organizations(List<Organization> items,long totalElements,int page,int size) {}
+    @Transactional(readOnly=true) public Organizations organizations(int page,int size,String q){
+        if(page<0 || page>100000 || size<1 || size>100 || q==null || q.codePointCount(0,q.length())>128)throw new AuthFailure(400,"Invalid organization query");
+        String pattern="%"+q.replace("\\","\\\\").replace("%","\\%").replace("_","\\_")+"%";
+        String from=" FROM tenant t JOIN tenant_oidc_config p ON p.tenant_id=t.id WHERE p.enabled AND t.name ILIKE ? ESCAPE E'\\\\'";
+        long total=jdbc.queryForObject("SELECT count(*)"+from,Long.class,pattern);
+        var rows=jdbc.query("SELECT t.id,t.name"+from+" ORDER BY lower(t.name),t.id LIMIT ? OFFSET ?",
+            (rs,n)->new Organization(rs.getObject("id",UUID.class),rs.getString("name")),pattern,size,(long)page*size);
+        return new Organizations(rows,total,page,size);
+    }
     private final JdbcTemplate jdbc;private final TenantService tenants;private final SecretEnvelope secrets;private final AuthSettings settings;private final AuditService audit;
     public OidcConfigurationService(JdbcTemplate jdbc,TenantService tenants,SecretEnvelope secrets,AuthSettings settings,AuditService audit){this.jdbc=jdbc;this.tenants=tenants;this.secrets=secrets;this.settings=settings;this.audit=audit;}
     public static String context(UUID tenant,String issuer,String client){return "oidc-secret:"+tenant+":"+issuer+":"+client;}
