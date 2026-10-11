@@ -1,0 +1,358 @@
+#!/bin/sh
+# Guided local deployment only. Application policy remains in the backend.
+set -eu
+set +x
+# Remove inherited export attributes before assigning any private input.
+unset PASSWORD FIRST DB_PASSWORD encoded
+umask 077
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+STATE=$ROOT/.kelios
+LOCK=$ROOT/.kelios.lock
+LOCKED=0
+ECHO_OFF=0
+TEMP=
+ENV_FILE=
+fail() { printf 'KELIOS: %s\n' "$*" >&2; exit 1; }
+cleanup() {
+  if [ "$ECHO_OFF" = 1 ]; then stty echo </dev/tty 2>/dev/null || :; fi
+  if [ -n "$TEMP" ] && [ -d "$TEMP" ]; then rm -f "$TEMP/password" "$TEMP/compose.yaml" "$TEMP/output"; rmdir "$TEMP" 2>/dev/null || :; fi
+  if [ -n "$ENV_FILE" ]; then rm -f "$ENV_FILE"; fi
+  if [ "$LOCKED" = 1 ]; then rmdir "$LOCK" 2>/dev/null || :; fi
+}
+trap cleanup 0
+trap 'exit 130' INT
+trap 'exit 143' TERM HUP
+usage() { printf 'Usage: ./kelios {install|start|stop|status|config|uninstall|recover-admin}\n'; }
+[ "$#" = 1 ] || { usage; exit 1; }
+COMMAND=$1
+case "$COMMAND" in install|start|stop|status|config|uninstall|recover-admin) ;; *) usage; exit 1;; esac
+case "$ROOT" in *[\'\"\$\`\\]* ) fail 'Repository path contains unsupported quoting characters.';; esac
+[ ! -L "$STATE" ] || fail 'Installation directory must not be a symlink.'
+prerequisites() {
+  command -v docker >/dev/null 2>&1 || fail 'Install Docker with Docker Compose first.'
+  docker info >/dev/null 2>&1 || fail 'Docker daemon is unavailable.'
+  docker compose version >/dev/null 2>&1 || fail 'Docker Compose v2 is required.'
+  command -v openssl >/dev/null 2>&1 || fail 'OpenSSL is required for key generation and validation.'
+}
+lock() {
+  [ ! -L "$LOCK" ] || fail 'Unsafe installation lock.'
+  mkdir "$LOCK" 2>/dev/null || fail 'Another operation or an abandoned .kelios.lock exists. Inspect before removing the lock.'
+  LOCKED=1
+}
+terminal() { [ -t 0 ] && [ -t 1 ] || fail 'This command requires an interactive terminal.'; }
+prompt() {
+  printf '%s [%s]: ' "$1" "$2"
+  IFS= read -r ANSWER || fail 'Input interrupted.'
+  [ -n "$ANSWER" ] || ANSWER=$2
+}
+password() {
+  stty -echo </dev/tty; ECHO_OFF=1
+  printf '%s: ' "$1"
+  IFS= read -r PASSWORD || fail 'Input interrupted.'
+  stty echo </dev/tty; ECHO_OFF=0; printf '\n'
+  [ -n "$PASSWORD" ] || fail 'Password cannot be empty.'
+}
+port() { case "$1" in ''|*[!0-9]*|0*) fail 'Port must be an integer from 1 to 65535, without leading zeros.';; esac; [ "${#1}" -le 5 ] && [ "$1" -le 65535 ] || fail 'Invalid port.'; }
+identifier() { case "$1" in ''|*[!A-Za-z0-9_.-]*) fail 'Use letters, digits, dot, underscore or hyphen.';; esac; [ "${#1}" -le 64 ] || fail 'Identifier too long.'; }
+host() { case "$1" in ''|*[!A-Za-z0-9.:-]*|-*|.*) fail 'Invalid host.';; esac; [ "${#1}" -le 253 ] || fail 'Host too long.'; }
+bind() {
+  case "$1" in *:*) printf '%s\n' "$1" | LC_ALL=C awk '
+      /[^0-9a-fA-F:]/ || /:::/ {exit 1}
+      {n=split($0,halves,"::"); if(n>2) exit 1; count=0;
+       for(h=1;h<=n;h++) {if(halves[h]=="") continue; m=split(halves[h],groups,":");
+         for(i=1;i<=m;i++) if(groups[i]!~/^[0-9a-fA-F]+$/ || length(groups[i])>4) exit 1; count+=m}
+       if((n==1 && count!=8) || (n==2 && count>=8)) exit 1}' || fail 'Invalid IPv6 bind address.';;
+    *) printf '%s\n' "$1" | awk -F. 'NF!=4 {exit 1} {for(i=1;i<=4;i++) if($i!~/^[0-9]+$/ || length($i)>3 || $i>255) exit 1}' || fail 'Invalid IPv4 bind address.';; esac
+}
+validate() {
+  [ "$SCHEMA" = 1 ] || fail 'Unsupported installation schema.'
+  case "$PROJECT" in kelios-local-*) ;; *) fail 'Invalid installation identity.';; esac
+  identifier "$PROJECT"
+  case "$MODE" in managed|external) ;; *) fail 'Invalid database mode.';; esac
+  case "$PHASE" in prepared|initialized|data-deleted) ;; *) fail 'Invalid installation state.';; esac
+  bind "$BIND"; port "$HTTP_PORT"; port "$HTTPS_PORT"
+  [ "$HTTP_PORT" != "$HTTPS_PORT" ] || fail 'HTTP and HTTPS ports must differ.'
+  host "$BROWSER_HOST"; host "$DB_HOST"; port "$DB_PORT"; identifier "$DB_NAME"; identifier "$DB_USER"
+  case "$BROWSER_HOST" in *:*) fail 'Use a DNS name or IPv4 address for the browser host (IPv6 bind is supported).';; esac
+  case "$ISSUER" in https://*) ;; *) fail 'Invalid JWT issuer.';; esac
+  case "$ISSUER" in *[!A-Za-z0-9.:/-]*) fail 'Invalid JWT issuer.';; esac
+  for color in "$BACKGROUND" "$FOREGROUND" "$PRIMARY" "$PRIMARY_FOREGROUND" "$ACCENT" "$ACCENT_FOREGROUND"; do
+    printf '%s\n' "$color" | LC_ALL=C awk '!/^#[0-9a-fA-F]{6}$/ {exit 1}' || fail 'Theme colors must be six-digit hexadecimal values.'
+  done
+  case "$LOGO" in logo.svg|logo.png|logo.jpg|logo.webp) ;; *) fail 'Invalid logo state.';; esac
+}
+load() {
+  [ -f "$STATE/installation.conf" ] && [ ! -L "$STATE/installation.conf" ] || fail 'Installation is not initialized. Run ./kelios install.'
+  [ -z "$(find "$STATE" -type l -print)" ] || fail 'Installation state contains unsafe symlinks.'
+  SEEN='|'
+  while IFS='=' read -r key value; do
+    case "$SEEN" in *"|$key|"*) fail 'Duplicate installation field.';; esac
+    SEEN=$SEEN$key'|'
+    case "$key" in
+      SCHEMA) SCHEMA=$value;; PROJECT) PROJECT=$value;; MODE) MODE=$value;; PHASE) PHASE=$value;;
+      BIND) BIND=$value;; HTTP_PORT) HTTP_PORT=$value;; HTTPS_PORT) HTTPS_PORT=$value;; BROWSER_HOST) BROWSER_HOST=$value;; ISSUER) ISSUER=$value;;
+      DB_HOST) DB_HOST=$value;; DB_PORT) DB_PORT=$value;; DB_NAME) DB_NAME=$value;; DB_USER) DB_USER=$value;;
+      BACKGROUND) BACKGROUND=$value;; FOREGROUND) FOREGROUND=$value;; PRIMARY) PRIMARY=$value;; PRIMARY_FOREGROUND) PRIMARY_FOREGROUND=$value;;
+      ACCENT) ACCENT=$value;; ACCENT_FOREGROUND) ACCENT_FOREGROUND=$value;; LOGO) LOGO=$value;; *) fail 'Unknown installation field.';;
+    esac
+  done < "$STATE/installation.conf"
+  [ "$SEEN" = '|SCHEMA|PROJECT|MODE|PHASE|BIND|HTTP_PORT|HTTPS_PORT|BROWSER_HOST|ISSUER|DB_HOST|DB_PORT|DB_NAME|DB_USER|BACKGROUND|FOREGROUND|PRIMARY|PRIMARY_FOREGROUND|ACCENT|ACCENT_FOREGROUND|LOGO|' ] || fail 'Incomplete or reordered installation configuration.'
+  validate
+}
+save() {
+  validate
+  MANIFEST_TEMP=$(mktemp "$STATE/installation.XXXXXXXX")
+  { for field in SCHEMA PROJECT MODE PHASE BIND HTTP_PORT HTTPS_PORT BROWSER_HOST ISSUER DB_HOST DB_PORT DB_NAME DB_USER BACKGROUND FOREGROUND PRIMARY PRIMARY_FOREGROUND ACCENT ACCENT_FOREGROUND LOGO; do
+      # Explicit cases: no eval and never execute saved data.
+      case "$field" in SCHEMA) v=$SCHEMA;; PROJECT) v=$PROJECT;; MODE) v=$MODE;; PHASE) v=$PHASE;; BIND) v=$BIND;; HTTP_PORT) v=$HTTP_PORT;; HTTPS_PORT) v=$HTTPS_PORT;; BROWSER_HOST) v=$BROWSER_HOST;; ISSUER) v=$ISSUER;; DB_HOST) v=$DB_HOST;; DB_PORT) v=$DB_PORT;; DB_NAME) v=$DB_NAME;; DB_USER) v=$DB_USER;; BACKGROUND) v=$BACKGROUND;; FOREGROUND) v=$FOREGROUND;; PRIMARY) v=$PRIMARY;; PRIMARY_FOREGROUND) v=$PRIMARY_FOREGROUND;; ACCENT) v=$ACCENT;; ACCENT_FOREGROUND) v=$ACCENT_FOREGROUND;; LOGO) v=$LOGO;; esac
+      printf '%s=%s\n' "$field" "$v"
+    done; } > "$MANIFEST_TEMP"
+  mv -f "$MANIFEST_TEMP" "$STATE/installation.conf"
+}
+branding() {
+  BRANDING_TEMP=$(mktemp "$STATE/branding/config.XXXXXXXX")
+  printf '{"schemaVersion":1,"logoUrl":"/runtime/logos/%s","theme":{"background":"%s","foreground":"%s","primary":"%s","primaryForeground":"%s","accent":"%s","accentForeground":"%s"}}\n' "$LOGO" "$BACKGROUND" "$FOREGROUND" "$PRIMARY" "$PRIMARY_FOREGROUND" "$ACCENT" "$ACCENT_FOREGROUND" > "$BRANDING_TEMP"
+  chmod 444 "$BRANDING_TEMP"
+  mv -f "$BRANDING_TEMP" "$STATE/branding/config.json"
+}
+compose_env() {
+  case "$BIND" in *:*) PUBLISH_BIND=[$BIND];; *) PUBLISH_BIND=$BIND;; esac
+  case "$DB_HOST" in *:*) JDBC_HOST=[$DB_HOST];; *) JDBC_HOST=$DB_HOST;; esac
+  [ -d "$STATE/temporary" ] && [ ! -L "$STATE/temporary" ] || fail 'Unsafe temporary directory.'
+  if [ -n "$ENV_FILE" ]; then rm -f "$ENV_FILE"; fi
+  ENV_FILE=$(mktemp "$STATE/temporary/compose.XXXXXXXX")
+  { printf 'KELIOS_BIND_ADDRESS=%s\nKELIOS_HTTP_PORT=%s\nKELIOS_HTTPS_PORT=%s\n' "$PUBLISH_BIND" "$HTTP_PORT" "$HTTPS_PORT"
+    printf 'KELIOS_DATABASE_URL=jdbc:postgresql://%s:%s/%s\nKELIOS_DATABASE_USER=%s\n' "$JDBC_HOST" "$DB_PORT" "$DB_NAME" "$DB_USER"
+    printf "KELIOS_DB_PASSWORD_FILE='%s/secrets/db-password'\nKELIOS_AUTH_KEY_DIRECTORY='%s/secrets/auth'\nKELIOS_TLS_DIRECTORY='%s/secrets/tls'\nKELIOS_BRANDING_DIRECTORY='%s/branding'\nKELIOS_LOGO_DIRECTORY='%s/branding/logos'\n" "$STATE" "$STATE" "$STATE" "$STATE" "$STATE"
+    printf 'KELIOS_AUTH_PUBLIC_ORIGIN=https://%s:%s\nKELIOS_AUTH_ISSUER=%s\n' "$BROWSER_HOST" "$HTTPS_PORT" "$ISSUER"
+  } > "$ENV_FILE"
+  # Ambient shell deployment settings must not override recorded installation.
+  unset COMPOSE_PROFILES COMPOSE_PROJECT_NAME COMPOSE_FILE KELIOS_BIND_ADDRESS KELIOS_HTTP_PORT KELIOS_HTTPS_PORT KELIOS_DATABASE_URL KELIOS_DATABASE_USER KELIOS_DATABASE_PASSWORD KELIOS_DB_PASSWORD_FILE KELIOS_AUTH_KEY_DIRECTORY KELIOS_TLS_DIRECTORY KELIOS_BRANDING_DIRECTORY KELIOS_LOGO_DIRECTORY KELIOS_AUTH_PUBLIC_ORIGIN KELIOS_AUTH_ISSUER KELIOS_AUTH_SIGNING_KEY_ID KELIOS_AUTH_ENCRYPTION_KEY_ID KELIOS_AUTH_TRUSTED_PROVIDER_HOSTS KELIOS_AUTH_PROVIDER_TRUST_STORE KELIOS_AUTH_PROVIDER_TRUST_STORE_PASSWORD
+}
+compose() {
+  if [ "$MODE" = managed ]; then
+    docker compose --env-file "$ENV_FILE" -p "$PROJECT" -f "$ROOT/deploy/compose.yaml" -f "$ROOT/deploy/compose.postgres.yaml" -f "$ROOT/deploy/compose.auth.yaml" "$@"
+  else
+    docker compose --env-file "$ENV_FILE" -p "$PROJECT" -f "$ROOT/deploy/compose.yaml" -f "$ROOT/deploy/compose.auth.yaml" "$@"
+  fi
+}
+owned() {
+  if [ "$MODE" = managed ] && docker volume inspect "${PROJECT}_postgres-data" >/dev/null 2>&1; then
+    volume_owner=$(docker volume inspect --format '{{index .Labels "com.docker.compose.project"}}' "${PROJECT}_postgres-data")
+    volume_kind=$(docker volume inspect --format '{{index .Labels "com.docker.compose.volume"}}' "${PROJECT}_postgres-data")
+    [ "$volume_owner" = "$PROJECT" ] && [ "$volume_kind" = postgres-data ] || fail 'Managed volume ownership mismatch.'
+  fi
+  # Inspect only IDs bearing the exact recorded project label. Never broad prune.
+  for id in $(docker ps -aq --filter "label=com.docker.compose.project=$PROJECT"); do
+    label=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$id")
+    [ "$label" = "$PROJECT" ] || fail 'Container ownership mismatch.'
+    wd=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$id")
+    [ "$wd" = "$ROOT/deploy" ] || fail 'Project identity is already used by another deployment directory.'
+  done
+}
+files() {
+  for f in installation.conf secrets/db-password secrets/auth/main.private.pem secrets/auth/main.public.pem secrets/auth/main.aes secrets/tls/certificate.pem secrets/tls/private.pem branding/config.json "branding/logos/$LOGO"; do
+    [ -f "$STATE/$f" ] && [ ! -L "$STATE/$f" ] || fail "Required installation file missing or unsafe: $f"
+  done
+  for dir in secrets secrets/auth secrets/tls branding branding/logos temporary; do [ -d "$STATE/$dir" ] && [ ! -L "$STATE/$dir" ] || fail "Unsafe directory: $dir"; done
+}
+crypto() {
+  openssl pkey -in "$STATE/secrets/auth/main.private.pem" -passin pass: -check -noout >/dev/null 2>&1 || fail 'Signing private key unavailable/invalid.'
+  a=$(openssl pkey -in "$STATE/secrets/auth/main.private.pem" -pubout 2>/dev/null | openssl dgst -sha256)
+  b=$(openssl pkey -pubin -in "$STATE/secrets/auth/main.public.pem" -pubout 2>/dev/null | openssl dgst -sha256)
+  [ "$a" = "$b" ] || fail 'Signing key pair mismatch.'
+  bits=$(openssl pkey -pubin -in "$STATE/secrets/auth/main.public.pem" -text -noout 2>/dev/null | head -1)
+  case "$bits" in *3072*|*4096*|*6144*|*8192*) ;; *) fail 'Supply an RSA key of at least 3072 bits (supported sizes: 3072/4096/6144/8192).';; esac
+  for aes_file in "$STATE/secrets/auth/"*.aes; do
+    encoded=$(cat "$aes_file")
+    printf '%s\n' "$encoded" | LC_ALL=C awk '$0 !~ /^[A-Za-z0-9+\/]{43}=$/ {exit 1}' || fail 'AES keys must be single-line base64-encoded 32 bytes.'
+    bytes=$(openssl base64 -d -A < "$aes_file" | wc -c | tr -d ' ')
+    [ "$bytes" = 32 ] || fail 'AES key must be base64-encoded 32 bytes.'
+    unset encoded
+  done
+  tls "$STATE/secrets/tls/certificate.pem" "$STATE/secrets/tls/private.pem"
+}
+tls() {
+  [ -f "$1" ] && [ -f "$2" ] || fail 'Supply readable local TLS certificate and private-key files. Automatic issuance is not supported.'
+  openssl x509 -in "$1" -checkend 0 -noout >/dev/null 2>&1 || fail 'TLS certificate invalid or expired.'
+  openssl pkey -in "$2" -passin pass: -check -noout >/dev/null 2>&1 || fail 'TLS key must be readable, valid and unencrypted for nginx.'
+  a=$(openssl x509 -in "$1" -pubkey -noout 2>/dev/null | openssl dgst -sha256)
+  b=$(openssl pkey -in "$2" -passin pass: -pubout 2>/dev/null | openssl dgst -sha256)
+  [ "$a" = "$b" ] || fail 'TLS certificate/private-key mismatch.'
+  case "$BROWSER_HOST" in *[!0-9.]* ) check=-checkhost;; *) check=-checkip;; esac
+  openssl x509 -in "$1" "$check" "$BROWSER_HOST" -noout >/dev/null 2>&1 || fail 'TLS certificate does not cover the browser host.'
+}
+start_runtime() {
+  [ "$PHASE" != data-deleted ] || fail 'Managed data was permanently deleted. Archive/remove preserved .kelios state explicitly before a fresh install.'
+  files; crypto; branding; compose_env; owned
+  if [ "$MODE" = managed ] && [ "$PHASE" = initialized ]; then
+    docker volume inspect "${PROJECT}_postgres-data" >/dev/null 2>&1 || fail 'Initialized managed database volume is missing; refused to create an empty replacement.'
+  fi
+  compose config --quiet >/dev/null 2>&1 || fail 'Deployment configuration invalid.'
+  for image in $(compose config --images); do
+    docker image inspect "$image" >/dev/null 2>&1 || fail 'A required image is missing. Build/pull the maintained deployment images explicitly before start.'
+  done
+  compose up -d --wait --wait-timeout 180 --no-build --pull never >/dev/null 2>&1 || fail 'Runtime failed to become healthy. Check Docker, ports, database access and migrations. Configuration and data were preserved.'
+}
+recovery() {
+  prompt 'GLOBAL ADMIN login' 'manual-admin'; LOGIN=$ANSWER
+  identifier "$LOGIN"; [ "${#LOGIN}" -ge 3 ] || fail 'Login must contain at least three characters.'
+  prompt 'Display name' 'KELIOS Administrator'; DISPLAY=$ANSWER
+  [ "${#DISPLAY}" -le 256 ] || fail 'Display name too long.'
+  password 'Administrator password'; FIRST=$PASSWORD
+  password 'Confirm password'; [ "$PASSWORD" = "$FIRST" ] || fail 'Passwords do not match.'
+  TEMP=$(mktemp -d "$STATE/temporary/recovery.XXXXXXXX")
+  printf '%s' "$FIRST" > "$TEMP/password"; unset FIRST PASSWORD
+  chmod 444 "$TEMP/password"
+  # Docker mounts this one file, not the private temporary directory or output.
+  if compose run --rm --no-deps -v "$TEMP/password:/run/secrets/kelios-recovery/password:ro" backend --spring.main.web-application-type=none --kelios.recovery.enabled=true "--kelios.recovery.login=$LOGIN" "--kelios.recovery.display-name=$DISPLAY" --kelios.recovery.password-file=/run/secrets/kelios-recovery/password > "$TEMP/output" 2>&1; then
+    printf 'GLOBAL ADMIN created through the protected backend recovery command.\n'
+  else
+    fail 'Administrator creation refused or failed. A usable GLOBAL ADMIN may already exist; verify input policy/database. No force bypass is available.'
+  fi
+  rm -f "$TEMP/password" "$TEMP/output"; rmdir "$TEMP"; TEMP=
+  if [ "$PHASE" = prepared ]; then PHASE=initialized; save; fi
+}
+logo_copy() {
+  [ -f "$1" ] && [ -r "$1" ] || fail 'Logo file is unavailable.'
+  [ "$(wc -c < "$1" | tr -d ' ')" -le 2097152 ] || fail 'Logo must be at most 2 MiB.'
+  case "$1" in *.svg) LOGO=logo.svg;; *.png) LOGO=logo.png;; *.jpg|*.jpeg) LOGO=logo.jpg;; *.webp) LOGO=logo.webp;; *) fail 'Logo must be SVG, PNG, JPG or WebP.';; esac
+  LOGO_TEMP=$(mktemp "$STATE/branding/logos/asset.XXXXXXXX")
+  cp "$1" "$LOGO_TEMP"; chmod 444 "$LOGO_TEMP"; mv -f "$LOGO_TEMP" "$STATE/branding/logos/$LOGO"
+}
+theme() {
+  case "$1" in green) BACKGROUND='#f2faf5'; FOREGROUND='#16372b'; PRIMARY='#087f5b'; PRIMARY_FOREGROUND='#ffffff'; ACCENT='#d8f2e4'; ACCENT_FOREGROUND='#14543c';;
+    blue) BACKGROUND='#f4f7ff'; FOREGROUND='#172033'; PRIMARY='#2458d3'; PRIMARY_FOREGROUND='#ffffff'; ACCENT='#e1eaff'; ACCENT_FOREGROUND='#243b75';; *) fail 'Select blue or green.';; esac
+}
+install() {
+  terminal
+  [ ! -e "$STATE" ] || fail 'Installation state already exists; use start or recover-admin. Nothing was overwritten.'
+  SCHEMA=1; PROJECT=kelios-local-$(openssl rand -hex 6); PHASE=prepared
+  prompt 'Listen address' '127.0.0.1'; BIND=$ANSWER; bind "$BIND"
+  case "$BIND" in 127.*|::1) ;; *) printf 'Warning: this bind may expose the local installation beyond this machine.\n';; esac
+  prompt 'HTTP technical/health port' '8080'; HTTP_PORT=$ANSWER; port "$HTTP_PORT"
+  prompt 'HTTPS application port' '8443'; HTTPS_PORT=$ANSWER; port "$HTTPS_PORT"
+  prompt 'Browser hostname (certificate must cover it)' 'localhost'; BROWSER_HOST=$ANSWER; host "$BROWSER_HOST"
+  ISSUER=https://$BROWSER_HOST:$HTTPS_PORT
+  prompt 'TLS certificate path (required)' ''; CERT=$ANSWER
+  prompt 'TLS private-key path (required)' ''; KEY=$ANSWER
+  tls "$CERT" "$KEY"
+  prompt 'Database mode: managed or external' 'managed'; MODE=$ANSWER
+  DB_HOST=postgres; DB_PORT=5432; DB_NAME=kelios; DB_USER=kelios
+  case "$MODE" in managed) DB_PASSWORD=$(openssl rand -hex 32);;
+    external)
+      printf 'Use a dedicated KELIOS database reachable from containers. Flyway will migrate it. External data is never deleted.\n'
+      prompt 'Database host (container localhost is not the host machine)' ''; DB_HOST=$ANSWER; host "$DB_HOST"
+      prompt 'Database port' '5432'; DB_PORT=$ANSWER; port "$DB_PORT"
+      prompt 'Database name' 'kelios'; DB_NAME=$ANSWER; identifier "$DB_NAME"
+      prompt 'Database username' 'kelios'; DB_USER=$ANSWER; identifier "$DB_USER"
+      password 'Database password'; DB_PASSWORD=$PASSWORD; unset PASSWORD;; *) fail 'Select managed or external.';; esac
+  prompt 'Runtime theme: blue or green' 'green'; BRAND=$ANSWER; theme "$BRAND"
+  prompt 'Logo path' "$ROOT/deploy/branding/$BRAND/logo.svg"; LOGO_SOURCE=$ANSWER
+  [ -f "$LOGO_SOURCE" ] || fail 'Logo is unavailable.'
+  prompt 'Existing authentication key directory (empty for a new database)' ''; SUPPLIED_KEYS=$ANSWER
+  if [ -n "$SUPPLIED_KEYS" ]; then
+    for f in main.private.pem main.public.pem main.aes; do [ -f "$SUPPLIED_KEYS/$f" ] || fail 'Supplied key directory incomplete.'; done
+  fi
+  mkdir "$STATE"; chmod 700 "$STATE"
+  mkdir -p "$STATE/secrets/auth" "$STATE/secrets/tls" "$STATE/branding/logos" "$STATE/temporary"
+  chmod 755 "$STATE/secrets/auth" "$STATE/secrets/tls" "$STATE/branding" "$STATE/branding/logos"
+  printf '%s' "$DB_PASSWORD" > "$STATE/secrets/db-password"; unset DB_PASSWORD
+  cp "$CERT" "$STATE/secrets/tls/certificate.pem"; cp "$KEY" "$STATE/secrets/tls/private.pem"
+  if [ -n "$SUPPLIED_KEYS" ]; then
+    for supplied in "$SUPPLIED_KEYS/"*; do
+      [ -f "$supplied" ] || fail 'Supplied authentication directory must contain key files only.'
+      filename=${supplied##*/}
+      case "$filename" in *.private.pem) key_id=${filename%.private.pem};; *.public.pem) key_id=${filename%.public.pem};; *.aes) key_id=${filename%.aes};; *) fail 'Unsupported file in supplied authentication key directory.';; esac
+      case "$key_id" in ''|*[!A-Za-z0-9_-]*) fail 'Invalid supplied key identifier.';; esac
+      [ "${#key_id}" -le 64 ] || fail 'Supplied key identifier too long.'
+      cp "$supplied" "$STATE/secrets/auth/$filename"
+    done
+  else
+    openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out "$STATE/secrets/auth/main.private.pem" 2>/dev/null
+    openssl pkey -in "$STATE/secrets/auth/main.private.pem" -pubout -out "$STATE/secrets/auth/main.public.pem" 2>/dev/null
+    openssl rand -base64 32 > "$STATE/secrets/auth/main.aes"
+  fi
+  chmod 444 "$STATE/secrets/db-password" "$STATE/secrets/auth/"* "$STATE/secrets/tls/"*
+  logo_copy "$LOGO_SOURCE"; save; branding; compose_env; crypto; owned
+  # Reserve the unique project before creating resources; refuse accidental collisions.
+  [ -z "$(docker ps -aq --filter "label=com.docker.compose.project=$PROJECT")" ] || fail 'Project identity already exists.'
+  [ -z "$(docker volume ls -q --filter "label=com.docker.compose.project=$PROJECT")" ] || fail 'Project volume identity already exists.'
+  printf 'Building the existing independent images; this may require registry/dependency network access.\n'
+  compose build > "$STATE/temporary/build-output" 2>&1 || fail 'Image build failed; private build-output is retained for local inspection. Run the maintained Docker build, then start/recover-admin to resume.'
+  rm -f "$STATE/temporary/build-output"
+  if [ "$MODE" = managed ]; then
+    compose pull --quiet postgres >/dev/null 2>&1 || fail 'Cannot obtain the maintained PostgreSQL image; installation state preserved.'
+  fi
+  start_runtime; recovery; start_runtime
+  printf 'KELIOS installation ready: https://%s:%s\n' "$BROWSER_HOST" "$HTTPS_PORT"
+}
+status() {
+  if [ ! -e "$STATE" ]; then printf 'KELIOS\n\nStatus: not initialized\n'; return; fi
+  load; compose_env; owned
+  SUMMARY=running; ROWS=
+  SERVICES='backend frontend'; [ "$MODE" != managed ] || SERVICES="$SERVICES postgres"
+  for service in $SERVICES; do
+    id=$(compose ps --all --quiet "$service")
+    if [ -z "$id" ]; then info=absent; else info=$(docker inspect --format '{{.State.Status}} ({{if .State.Health}}{{.State.Health.Status}}{{else}}no health signal{{end}})' "$id"); fi
+    [ "$info" = 'running (healthy)' ] || SUMMARY=stopped-or-degraded
+    ROWS="$ROWS$service: $info
+"
+  done
+  printf 'KELIOS\n\nStatus: %s\n\n%s\nURL: https://%s:%s\nDatabase: %s PostgreSQL\n' "$SUMMARY" "$ROWS" "$BROWSER_HOST" "$HTTPS_PORT" "$MODE"
+  [ "$PHASE" != prepared ] || printf 'Installation incomplete: finish protected recover-admin after healthy startup.\n'
+  [ "$PHASE" != data-deleted ] || printf 'Managed database permanently deleted.\n'
+}
+configure() {
+  terminal; files
+  NEW_LOGO=
+  printf 'Changes apply on next ./kelios start; branding then appears on page reload. TLS rotation is not supported here.\n'
+  while :; do
+    printf '\nKELIOS Configuration\n1. HTTP port\n2. HTTPS port\n3. Listen address\n4. Theme\n5. Six theme colors\n6. Logo\n7. Save and exit\n0. Exit without changes\n'
+    prompt 'Choice' '0'
+    case "$ANSWER" in
+      1) prompt 'HTTP port' "$HTTP_PORT"; port "$ANSWER"; HTTP_PORT=$ANSWER;;
+      2) prompt 'HTTPS port' "$HTTPS_PORT"; port "$ANSWER"; HTTPS_PORT=$ANSWER; printf 'OIDC client redirect registration must match the new HTTPS origin. JWT issuer stays unchanged.\n';;
+      3) prompt 'Listen address' "$BIND"; bind "$ANSWER"; BIND=$ANSWER; printf 'Changing bind does not change the configured browser hostname. Non-loopback exposure is operator-controlled.\n';;
+      4) prompt 'Theme' 'green'; theme "$ANSWER";;
+      5) prompt 'Background' "$BACKGROUND"; BACKGROUND=$ANSWER; prompt 'Foreground' "$FOREGROUND"; FOREGROUND=$ANSWER; prompt 'Primary' "$PRIMARY"; PRIMARY=$ANSWER; prompt 'Primary foreground' "$PRIMARY_FOREGROUND"; PRIMARY_FOREGROUND=$ANSWER; prompt 'Accent' "$ACCENT"; ACCENT=$ANSWER; prompt 'Accent foreground' "$ACCENT_FOREGROUND"; ACCENT_FOREGROUND=$ANSWER;;
+      6) prompt 'Logo path' ''; [ -f "$ANSWER" ] || fail 'Logo file unavailable.'; NEW_LOGO=$ANSWER;;
+      7) validate; if [ -n "$NEW_LOGO" ]; then logo_copy "$NEW_LOGO"; fi; save; printf 'Saved. Run ./kelios start to apply; no image rebuild is required.\n'; return;;
+      0) printf 'No configuration changes saved.\n'; return;; *) printf 'Select a listed option.\n';;
+    esac
+  done
+}
+uninstall() {
+  terminal; compose_env; owned
+  prompt "Remove runtime for $PROJECT, preserving database/configuration/keys? yes/no" 'no'
+  [ "$ANSWER" = yes ] || { printf 'Canceled.\n'; return; }
+  compose down >/dev/null 2>&1 || fail 'Runtime removal failed; persistent state preserved.'
+  if [ "$MODE" = external ]; then printf 'Runtime removed. External PostgreSQL was not changed. ./kelios start restores runtime.\n'; return; fi
+  prompt 'Permanently delete managed database? yes/no' 'no'
+  [ "$ANSWER" = yes ] || { printf 'Runtime removed. Data and keys preserved; ./kelios start restores installation.\n'; return; }
+  printf 'IRREVERSIBLE: all managed database data will be lost.\n'
+  prompt "Type DELETE $PROJECT exactly" ''
+  [ "$ANSWER" = "DELETE $PROJECT" ] || { printf 'Confirmation mismatch: database preserved.\n'; return; }
+  volume=${PROJECT}_postgres-data
+  if docker volume inspect "$volume" >/dev/null 2>&1; then
+    owner=$(docker volume inspect --format '{{index .Labels "com.docker.compose.project"}}' "$volume")
+    name=$(docker volume inspect --format '{{index .Labels "com.docker.compose.volume"}}' "$volume")
+    [ "$owner" = "$PROJECT" ] && [ "$name" = postgres-data ] || fail 'Volume ownership mismatch; refused deletion.'
+    [ -z "$(docker ps -aq --filter "volume=$volume")" ] || fail 'Volume still has consumers; refused deletion.'
+    docker volume rm "$volume" >/dev/null || fail 'Volume deletion failed.'
+  fi
+  PHASE=data-deleted; save
+  printf 'Managed database deleted. Configuration/keys preserved. Archive/remove .kelios explicitly before a fresh install.\n'
+}
+prerequisites
+if [ "$COMMAND" = status ]; then status; exit; fi
+lock
+if [ "$COMMAND" = install ]; then install; exit; fi
+load
+case "$COMMAND" in
+  start) start_runtime; printf 'KELIOS: https://%s:%s\n' "$BROWSER_HOST" "$HTTPS_PORT";;
+  stop) compose_env; owned; compose stop >/dev/null 2>&1 || fail 'Stop failed.'; printf 'Stopped; configuration, data and keys preserved.\n';;
+  config) configure;;
+  recover-admin) terminal; printf 'Ensuring the configured runtime/database is available.\n'; start_runtime; recovery;;
+  uninstall) uninstall;;
+esac

@@ -1,41 +1,26 @@
 name: kelios-phase0
 services:
-  postgres:
-    image: postgres:17-alpine
-    environment:
-      POSTGRES_DB: kelios
-      POSTGRES_USER: kelios
-      POSTGRES_PASSWORD_FILE: /run/secrets/db-password
-    secrets: [db-password]
-    volumes: [postgres-data:/var/lib/postgresql/data]
-    healthcheck:
-      test: [CMD-SHELL, "pg_isready -U kelios -d kelios"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
   backend:
     image: kelios-backend:phase0
     build: ../backend
     environment:
-      KELIOS_DATABASE_URL: jdbc:postgresql://postgres:5432/kelios
-      KELIOS_DATABASE_USER: kelios
+      KELIOS_DATABASE_URL: ${KELIOS_DATABASE_URL:-jdbc:postgresql://postgres:5432/kelios}
+      KELIOS_DATABASE_USER: ${KELIOS_DATABASE_USER:-kelios}
     secrets: [db-password]
-    depends_on:
-      postgres: { condition: service_healthy }
   frontend:
     image: kelios-frontend:phase0
     build: ../frontend
     environment:
       KELIOS_CONFIG_FILE: /etc/kelios/branding/config.json
-    ports: ["127.0.0.1:${KELIOS_HTTP_PORT:-8080}:8080"]
+    ports: ["${KELIOS_BIND_ADDRESS:-127.0.0.1}:${KELIOS_HTTP_PORT:-8080}:8080"]
     volumes:
       - type: bind
-        source: ./branding/${KELIOS_BRAND:-blue}/config.json
-        target: /etc/kelios/branding/config.json
+        source: ${KELIOS_BRANDING_DIRECTORY:-./branding/${KELIOS_BRAND:-blue}}
+        target: /etc/kelios/branding
         read_only: true
         bind: { create_host_path: false }
       - type: bind
-        source: ./branding/${KELIOS_BRAND:-blue}
+        source: ${KELIOS_LOGO_DIRECTORY:-./branding/${KELIOS_BRAND:-blue}}
         target: /usr/share/nginx/html/runtime/logos
         read_only: true
         bind: { create_host_path: false }
@@ -43,6 +28,4 @@ services:
       backend: { condition: service_healthy }
 secrets:
   db-password:
-    file: ./secrets/db-password
-volumes:
-  postgres-data:
+    file: ${KELIOS_DB_PASSWORD_FILE:-./secrets/db-password}

@@ -9,7 +9,7 @@ test -s "$KELIOS_AUTH_KEY_DIRECTORY/main.private.pem"
 test -s "$KELIOS_AUTH_KEY_DIRECTORY/main.public.pem"
 mkdir -p .cache/phase4-private docs/verification/phase4
 chmod 700 .cache/phase4-private
-compose() { docker compose -f deploy/compose.yaml -f deploy/compose.auth.yaml "$@"; }
+compose() { docker compose -f deploy/compose.yaml -f deploy/compose.postgres.yaml -f deploy/compose.auth.yaml "$@"; }
 # Seed an encrypted disposable provider through the real authorized API, without provider network access.
 python3 - <<'PYSEED'
 import os,json,ssl,urllib.request,http.cookiejar,secrets,uuid
@@ -40,7 +40,7 @@ compose exec -T postgres psql -U kelios -d "$restored" -At < .cache/phase4-priva
 cmp docs/verification/phase4/restore-source-digests.txt docs/verification/phase4/restore-restored-digests.txt
 printf 'services:\n  backend:\n    environment:\n      KELIOS_DATABASE_URL: jdbc:postgresql://postgres:5432/%s\n' "$restored" > .cache/phase4-private/restore.compose.yaml
 # Switch only disposable runtime to the restored database; original database is untouched.
-docker compose -f deploy/compose.yaml -f deploy/compose.auth.yaml -f .cache/phase4-private/restore.compose.yaml up -d --no-build --no-deps --force-recreate --wait --wait-timeout 180 backend
+docker compose -f deploy/compose.yaml -f deploy/compose.postgres.yaml -f deploy/compose.auth.yaml -f .cache/phase4-private/restore.compose.yaml up -d --no-build --no-deps --force-recreate --wait --wait-timeout 180 backend
 compose exec -T backend sh -ec 'test -s /run/secrets/kelios-auth/main.aes; test -s /run/secrets/kelios-auth/main.private.pem; wget -q -O - http://127.0.0.1:8081/actuator/health/readiness' > docs/verification/phase4/restore-readiness.txt
 # Real HTTPS login against restored credentials, keeping CSRF/tokens/password entirely in memory.
 KELIOS_RESTORE_DATABASE="$restored" python3 - <<'PY'

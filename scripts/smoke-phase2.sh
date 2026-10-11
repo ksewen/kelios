@@ -39,7 +39,7 @@ if [ ! -s "$KELIOS_AUTH_KEY_DIRECTORY/main.private.pem" ]; then
   chmod 755 "$KELIOS_AUTH_KEY_DIRECTORY"
   chmod 444 "$KELIOS_AUTH_KEY_DIRECTORY"/*
 fi
-compose() { docker compose -f deploy/compose.yaml -f deploy/compose.auth.yaml "$@"; }
+compose() { docker compose -f deploy/compose.yaml -f deploy/compose.postgres.yaml -f deploy/compose.auth.yaml "$@"; }
 compose config --quiet
 KELIOS_BRAND=blue compose up -d --no-build --wait --wait-timeout 180
 # Check before command invocation so a rerun does not turn an expected recovery refusal into a false failure.

@@ -1,0 +1,17 @@
+
+> kelios-frontend@0.0.1 test:smoke
+> playwright test tests/runtime-branding.spec.ts
+
+
+Running 6 tests using 1 worker
+
+(node:10823) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 tests/runtime-branding.spec.ts:3:1 › mounted logo and palette render, and API proxy connects (1.2s)
+  ✓  2 tests/runtime-branding.spec.ts:17:3 › missing branding safely renders defaults (902ms)
+  ✓  3 tests/runtime-branding.spec.ts:17:3 › malformed branding safely renders defaults (920ms)
+  ✓  4 tests/runtime-branding.spec.ts:17:3 › unsupported branding safely renders defaults (901ms)
+  ✓  5 tests/runtime-branding.spec.ts:17:3 › timeout branding safely renders defaults (3.9s)
+  ✓  6 tests/runtime-branding.spec.ts:31:1 › broken logo falls back without hiding the application (944ms)
+
+  6 passed (9.5s)

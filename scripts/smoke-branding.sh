@@ -7,8 +7,8 @@ export TMPDIR="$PWD/.cache/tmp"
 export npm_config_cache="$PWD/.cache/npm"
 initial_image=''
 for brand in blue green; do
-  KELIOS_BRAND="$brand" docker compose -f deploy/compose.yaml up -d --no-build --no-deps --force-recreate --wait frontend
-  frontend_id=$(docker compose -f deploy/compose.yaml ps -q frontend)
+  KELIOS_BRAND="$brand" docker compose -f deploy/compose.yaml -f deploy/compose.postgres.yaml up -d --no-build --no-deps --force-recreate --wait frontend
+  frontend_id=$(docker compose -f deploy/compose.yaml -f deploy/compose.postgres.yaml ps -q frontend)
   current_image=$(docker inspect --format '{{.Image}}' "$frontend_id")
   if [ -n "$initial_image" ]; then test "$initial_image" = "$current_image"; fi
   initial_image="$current_image"

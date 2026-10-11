@@ -1,4 +1,4 @@
-# Optional same-origin HTTPS/authentication deployment, combined with compose.yaml.
+# Optional same-origin HTTPS/authentication deployment, combined with compose.yaml (and compose.postgres.yaml for managed PostgreSQL).
 # Keys/certificates are supplied at deployment time, never built into an image.
 services:
   backend:
@@ -17,7 +17,7 @@ services:
         read_only: true
         bind: { create_host_path: false }
   frontend:
-    ports: ["127.0.0.1:${KELIOS_HTTPS_PORT:-8443}:8443"]
+    ports: ["${KELIOS_BIND_ADDRESS:-127.0.0.1}:${KELIOS_HTTPS_PORT:-8443}:8443"]
     volumes:
       - type: bind
         source: ./nginx/phase2-tls.conf

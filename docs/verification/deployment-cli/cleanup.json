@@ -1,0 +1,17 @@
+{
+  "checked_disposable_projects": [
+    "kelios-local-0359ce624908",
+    "kelios-local-2e06c822e777",
+    "kelios-local-6c9891955fac",
+    "kelios-local-71645d8ccb6e",
+    "kelios-local-7bf2dd5bcd44",
+    "kelios-local-a2f4c90bc212",
+    "kelios-local-c90439ce242b",
+    "kelios-local-d4ecdaf35442",
+    "kelios-local-edc983b76da2",
+    "kelios-local-fb700231f412"
+  ],
+  "remaining_containers_networks_database_volumes": [],
+  "external_disposable_fixture_removed": true,
+  "private_ignored_fixture_files_retained": true
+}

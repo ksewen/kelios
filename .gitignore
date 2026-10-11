@@ -8,3 +8,9 @@ deploy/secrets/*
 !deploy/secrets/.gitkeep
 .env
 *.log
+
+# Guided local deployment state, credentials and supplied TLS material
+.kelios/
+
+.kelios.lock/
+scripts/__pycache__/

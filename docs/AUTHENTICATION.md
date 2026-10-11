@@ -26,8 +26,8 @@ Base `deploy/compose.yaml` retains HTTP technical/health/branding regression. Au
 
 ```sh
 # Set paths/origin/issuer to actual private deployment configuration; no secret values here.
-docker compose -f deploy/compose.yaml -f deploy/compose.auth.yaml config --quiet
-docker compose -f deploy/compose.yaml -f deploy/compose.auth.yaml up -d --wait
+docker compose -f deploy/compose.yaml -f deploy/compose.postgres.yaml -f deploy/compose.auth.yaml config --quiet
+docker compose -f deploy/compose.yaml -f deploy/compose.postgres.yaml -f deploy/compose.auth.yaml up -d --wait
 ```
 
 The backend key directory is mounted read-only. Keep backend/PostgreSQL/management endpoints private. For private-network IServ or explicitly trusted secondary endpoint hosts, supply exact comma-separated `KELIOS_AUTH_TRUSTED_PROVIDER_HOSTS`. Provider calls otherwise reject private/loopback/link-local addresses at connection-time DNS resolution, and metadata endpoints outside the issuer host. No wildcard hosts. HTTPS hostname and certificate verification remains mandatory, including trusted private hosts.
@@ -41,7 +41,7 @@ Recovery is an **explicit deployment command**, not normal startup or HTTP. Oper
 Run a one-off backend with the same database/secret configuration:
 
 ```sh
-docker compose -f deploy/compose.yaml -f deploy/compose.auth.yaml run --rm --no-deps backend \
+docker compose -f deploy/compose.yaml -f deploy/compose.postgres.yaml -f deploy/compose.auth.yaml run --rm --no-deps backend \
   --spring.main.web-application-type=none \
   --kelios.recovery.enabled=true \
   --kelios.recovery.login=operator-chosen-login \
@@ -84,3 +84,5 @@ Identity mutation request bodies are bounded to 32 KiB before JSON/password proc
 ## Browser organization selection
 
 The root login iServ button opens a searchable organization selector. Anonymous `GET /api/v1/auth/oidc/organizations?page=0&size=25&q=` returns enabled configured organization names and UUID routing handles only; it exposes no issuer, client details, secrets, allowlist or identity information. Maximum size is 100 and query length is 128. A handle selects the existing `/api/v1/auth/oidc/{tenant}/start` flow; it is not proof of membership. Organization-specific `/login/tenant/{uuid}` links remain supported. There is no default/first-provider inference or user-entered technical identifier. Exact verified `(issuer,subject)` and the stored KELIOS User govern scope/Tenant/role/status. Existing incompatible Tenant mappings are rejected. iServ-initiated login is out of scope; real interoperability remains pending manual verification.
+
+The repository-level [Deployment CLI](DEPLOYMENT_CLI.md) wraps this same recovery command and existing HTTPS overlay. It accepts supplied TLS files and adds no HTTP authentication or alternate administrator creation path.

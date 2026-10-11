@@ -35,9 +35,9 @@ mkdir -p deploy/secrets
 chmod 700 deploy/secrets
 openssl rand -hex 32 > deploy/secrets/db-password
 chmod 444 deploy/secrets/db-password
-docker compose -f deploy/compose.yaml config --quiet
-docker compose -f deploy/compose.yaml build
-docker compose -f deploy/compose.yaml up -d --wait
+docker compose -f deploy/compose.yaml -f deploy/compose.postgres.yaml config --quiet
+docker compose -f deploy/compose.yaml -f deploy/compose.postgres.yaml build
+docker compose -f deploy/compose.yaml -f deploy/compose.postgres.yaml up -d --wait
 curl -fsS http://127.0.0.1:8080/api/v1/status
 ```
 
@@ -46,10 +46,10 @@ The secret directory is private to its host owner. Its mounted file is readable 
 Open `http://127.0.0.1:8080`. `KELIOS_HTTP_PORT` changes the loopback port. Backend and PostgreSQL are not published to the host. The frontend proxies `/api/` to backend port 8080. Internal backend management port 8081 exposes only health; readiness checks PostgreSQL and liveness does not. Frontend `/healthz` checks its HTTP server. Flyway preserves V1 and applies V2 domain foundation V3 narrow history/UNKNOWN protection, and V4 dedicated authentication structures, recording each in PostgreSQL schema history. Hibernate validates the resulting mappings rather than creating tables. A failed migration prevents backend startup.
 
 ```sh
-KELIOS_BRAND=green docker compose -f deploy/compose.yaml up -d --no-build --force-recreate frontend
-docker compose -f deploy/compose.yaml ps
-docker compose -f deploy/compose.yaml logs backend
-docker compose -f deploy/compose.yaml stop
+KELIOS_BRAND=green docker compose -f deploy/compose.yaml -f deploy/compose.postgres.yaml up -d --no-build --force-recreate frontend
+docker compose -f deploy/compose.yaml -f deploy/compose.postgres.yaml ps
+docker compose -f deploy/compose.yaml -f deploy/compose.postgres.yaml logs backend
+docker compose -f deploy/compose.yaml -f deploy/compose.postgres.yaml stop
 ```
 
 `stop` preserves the PostgreSQL volume. Never use `down -v` on data you intend to keep. Public images contain no secret or district branding; PostgreSQL gets its password through a Compose secret and Spring Boot loads the same mounted file via `configtree`. Production uses managed secrets, HTTPS at the ingress, explicit image release tags/digest pins, backups, and restricted management networking. Local Compose credentials are a development facility.
@@ -70,7 +70,7 @@ After full Maven verification and creating the local secret, run Phase 4 invento
 ./scripts/smoke-phase4.sh
 ```
 
-It reuses the Phase 0 container checks in a separate current-phase workflow, builds both images, starts Compose, checks migration/API/health and runtime image contents, then runs both browser suites against the same frontend image with two mounted brands. It also adds disposable local TLS/key/password fixtures and verifies actual local login/refresh/logout/CSRF/disable and deployment bootstrap refusal. New evidence goes to `docs/verification/phase4/`; accepted Phase 0–3 evidence is preserved. Buildx, Maven/npm and browser caches stay in `.cache/`. It leaves the stack running with the green sample and HTTPS on localhost:9443 in the isolated kelios-phase4 project; use `docker compose -p kelios-phase4 -f deploy/compose.yaml stop` when finished.
+It reuses the Phase 0 container checks in a separate current-phase workflow, builds both images, starts Compose, checks migration/API/health and runtime image contents, then runs both browser suites against the same frontend image with two mounted brands. It also adds disposable local TLS/key/password fixtures and verifies actual local login/refresh/logout/CSRF/disable and deployment bootstrap refusal. New evidence goes to `docs/verification/phase4/`; accepted Phase 0–3 evidence is preserved. Buildx, Maven/npm and browser caches stay in `.cache/`. It leaves the stack running with the green sample and HTTPS on localhost:9443 in the isolated kelios-phase4 project; use `docker compose -p kelios-phase4 -f deploy/compose.yaml -f deploy/compose.postgres.yaml stop` when finished.
 
 Browser assertions run separately against the active deployment:
 
@@ -85,3 +85,7 @@ The Phase 4 script recreates only the frontend for each browser sample and verif
 The browser checks rendered colors, logo loading, proxy connectivity, and malformed/missing/timeout branding fallback. Tests and container logs are evidence, not a substitute for the Phase 0 acceptance gate.
 
 Phase 4 documentation: [ADR 0005](docs/adr/0005-phase-4-stabilization-and-localization.md), [localization](docs/LOCALIZATION.md), [disposable restoration](docs/RESTORE_VERIFICATION.md), [invariant coverage](docs/analysis/PHASE_4_INVARIANT_COVERAGE.md) and [verification](docs/verification/PHASE_4.md).
+
+## Guided local deployment
+
+The approved seven-command [Deployment CLI](docs/DEPLOYMENT_CLI.md) is available through `./kelios install`. Supply operator-owned local TLS certificate/key material; authenticated operation remains same-origin HTTPS. Generated configuration and secrets stay in ignored `.kelios/`. Default uninstall preserves data and keys. This is not production TLS automation.
