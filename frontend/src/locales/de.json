@@ -1,5 +1,6 @@
 {
   "ui": {
+    "assetIdentifiers": "Asset-Kennungen",
     "tagline": "Eine klare Grundlage für Ihr Inventar.",
     "connection": "Verbindung",
     "itAssetManagement": "IT-Inventarverwaltung",
@@ -31,7 +32,8 @@
     "administrativeAudit": "Verwaltungsprotokoll",
     "previewHelp": "Die unverbindliche Vorschau kann veralten. Bei der Ausführung werden Prüfung und Ermittlung erneut durchgeführt.",
     "after": "Nachher",
-    "allTenantsRead": "Alle Mandanten (Lesen)",
+    "allTenantsRead": "Alle Mandanten",
+    "globalContext": "Global",
     "allowedIServGroupUUIDs": "Zugelassene IServ-Gruppen-UUIDs",
     "approveUser": "Benutzer freigeben",
     "assetHistory": "Asset-Verlauf",
@@ -53,7 +55,7 @@
     "changeOwnPassword": "Eigenes Passwort ändern",
     "conditionFilter": "Zustandsfilter",
     "conditionTarget": "Zielzustand",
-    "confirmMerge": "Zusammenführung bestätigen",
+    "confirmMerge": "Bestätigen",
     "createGLOBALUser": "Globalen Benutzer erstellen",
     "createTenant": "Mandant erstellen",
     "globalCreationHelp": "Erstellt ein aktives globales Benutzerkonto. Die Administratorrolle wird separat vergeben.",
@@ -102,7 +104,7 @@
     "open": "Öffnen",
     "auditHelp": "Die organisatorische Zuordnung folgt dem protokollierten Ziel. Die Identität des Akteurs ist unabhängig.",
     "owner": "Eigentümer",
-    "previewMerge": "Zusammenführung vorschauen",
+    "previewMerge": "Vorschau",
     "previousPage": "Vorherige Seite",
     "product": "Produkt",
     "providerEnabled": "Anbieter aktiviert",
@@ -332,10 +334,16 @@
     "unknownBlocker": "Ein Hindernis muss geprüft werden"
   },
   "redesign": {
+    "navigationIserv": "IServ",
+    "navigationAudit": "Protokoll",
+    "homeLink": "KELIOS — Übersicht",
+    "updatingResults": "Ergebnisse werden aktualisiert…",
     "close": "Schließen",
     "cancel": "Abbrechen",
     "confirm": "Bestätigen",
     "confirmTitle": "Aktion bestätigen",
+    "collapseSidebar": "Seitenleiste einklappen",
+    "expandSidebar": "Seitenleiste ausklappen",
     "toggleNavigation": "Navigation umschalten",
     "navigation": "Navigation",
     "dashboard": "Übersicht",
@@ -386,5 +394,15 @@
     "advancedIdentifiers": "Erweitert: über Kennung auswählen",
     "assetActions": "Asset-Aktionen",
     "configureProvider": "Noch keine iServ-Verbindung konfiguriert. Tragen Sie unten die Anbieterdaten der Organisation ein."
+  },
+  "mergeCombobox": {
+    "clearSelection": "Auswahl löschen",
+    "searching": "Suche läuft…"
+  },
+  "actions": {
+    "filter": "Filter",
+    "moreFilters": "Weitere Filter",
+    "create": "Erstellen",
+    "merge": "Merge"
   }
 }

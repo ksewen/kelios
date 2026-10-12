@@ -79,3 +79,14 @@ describe('shared presentation session state',()=>{
   const fetcher=vi.fn().mockResolvedValueOnce(response({token:'proof'})).mockResolvedValueOnce(response({accessToken:'access',expiresIn:900,user})).mockResolvedValueOnce(response({token:'proof'})).mockResolvedValueOnce(response({},403));vi.stubGlobal('fetch',fetcher);const s=new AuthSession();const updates:(typeof user|null)[]=[];s.subscribe(u=>updates.push(u as typeof user|null));await s.login('admin','fixture');expect(updates).toEqual([user]);await s.refresh();expect(updates).toEqual([user,null]);expect(s.current()).toBeNull();
  });
 });
+
+it('presentation session boundary changes on login/logout, not ordinary token refresh',async()=>{
+ const current={id:'same-user',scope:'GLOBAL',tenantId:null,role:'ADMIN',status:'ACTIVE',displayName:'Admin'};
+ const fetcher=vi.fn(async(path:string)=>path.endsWith('/csrf')?response({token:'proof'}):path.endsWith('/session')?new Response(null,{status:204}):response({accessToken:'fixture',expiresIn:900,user:current}));
+ vi.stubGlobal('fetch',fetcher);
+ try{
+  const session=new AuthSession();const initial=session.contextVersion();await session.refresh();expect(session.contextVersion()).toBe(initial);
+  await session.login('fixture','fixture');expect(session.contextVersion()).toBe(initial+1);await session.refresh();expect(session.contextVersion()).toBe(initial+1);
+  await session.logout();expect(session.contextVersion()).toBe(initial+2);
+ }finally{vi.unstubAllGlobals();}
+});

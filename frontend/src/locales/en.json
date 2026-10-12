@@ -1,5 +1,6 @@
 {
   "ui": {
+    "assetIdentifiers": "Asset identifiers",
     "tagline": "A clear foundation for your inventory.",
     "connection": "Connection",
     "itAssetManagement": "IT asset management",
@@ -31,7 +32,8 @@
     "administrativeAudit": "Administrative audit",
     "previewHelp": "Advisory preview may become stale. Execution performs fresh validation and discovery.",
     "after": "After",
-    "allTenantsRead": "All Tenants (read)",
+    "allTenantsRead": "All Tenants",
+    "globalContext": "Global",
     "allowedIServGroupUUIDs": "Allowed IServ group UUIDs",
     "approveUser": "Approve User",
     "assetHistory": "Asset history",
@@ -53,7 +55,7 @@
     "changeOwnPassword": "Change own password",
     "conditionFilter": "Condition filter",
     "conditionTarget": "Condition target",
-    "confirmMerge": "Confirm Merge",
+    "confirmMerge": "Confirm",
     "createGLOBALUser": "Create GLOBAL User",
     "createTenant": "Create Tenant",
     "globalCreationHelp": "Creates GLOBAL / USER / ACTIVE. ADMIN grant is separate.",
@@ -102,7 +104,7 @@
     "open": "Open",
     "auditHelp": "Organizational attribution follows the audited target. Actor identity is independent.",
     "owner": "Owner",
-    "previewMerge": "Preview Merge",
+    "previewMerge": "Preview",
     "previousPage": "Previous page",
     "product": "Product",
     "providerEnabled": "Provider enabled",
@@ -332,10 +334,16 @@
     "unknownBlocker": "A blocker requires review"
   },
   "redesign": {
+    "navigationIserv": "IServ",
+    "navigationAudit": "Log",
+    "homeLink": "KELIOS — Home",
+    "updatingResults": "Updating results…",
     "close": "Close",
     "cancel": "Cancel",
     "confirm": "Confirm",
     "confirmTitle": "Confirm this action",
+    "collapseSidebar": "Collapse sidebar",
+    "expandSidebar": "Expand sidebar",
     "toggleNavigation": "Toggle navigation",
     "navigation": "Navigation",
     "dashboard": "Dashboard",
@@ -386,5 +394,15 @@
     "advancedIdentifiers": "Advanced: select by identifier",
     "assetActions": "Asset actions",
     "configureProvider": "No iServ connection is configured yet. Enter the organization’s provider settings below."
+  },
+  "mergeCombobox": {
+    "clearSelection": "Clear selection",
+    "searching": "Searching…"
+  },
+  "actions": {
+    "filter": "Filter",
+    "moreFilters": "More filters",
+    "create": "Create",
+    "merge": "Merge"
   }
 }

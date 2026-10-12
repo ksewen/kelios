@@ -15,6 +15,8 @@ export class AuthSession {
   subscribe(listener:(user:Identity|null)=>void):()=>void {this.listeners.add(listener);return()=>{this.listeners.delete(listener);};}
   private changed(){for(const listener of this.listeners)listener(this.user);}
   current(): Identity | null { return this.user; }
+  /** Presentation boundary only: login/logout change generation; ordinary refresh does not. */
+  contextVersion(): number { return this.generation; }
   private install(data: Session): Identity {
     const u = data.user;
     if (typeof data.accessToken !== 'string' || !data.accessToken || typeof data.expiresIn !== 'number' || data.expiresIn <= 0
