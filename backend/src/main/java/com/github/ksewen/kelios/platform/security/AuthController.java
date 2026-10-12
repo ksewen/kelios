@@ -9,16 +9,16 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/v1/auth")
 public class AuthController {
-    public record Login(String login,String password){@Override public String toString(){return "Login[redacted]";}}
-    public record PasswordChange(String currentPassword,String newPassword){@Override public String toString(){return "PasswordChange[redacted]";}}
+    public record Login(String email,String password){@com.fasterxml.jackson.annotation.JsonCreator(mode=com.fasterxml.jackson.annotation.JsonCreator.Mode.DELEGATING) public static Login bind(Map<String,Object> b){var c=new CommandInput(b,"email","password");return new Login(c.text("email"),c.text("password"));}@Override public String toString(){return "Login[redacted]";}}
+    public record PasswordChange(String currentPassword,String newPassword){@com.fasterxml.jackson.annotation.JsonCreator(mode=com.fasterxml.jackson.annotation.JsonCreator.Mode.DELEGATING) public static PasswordChange bind(Map<String,Object> b){var c=new CommandInput(b,"currentPassword","newPassword");return new PasswordChange(c.text("currentPassword"),c.text("newPassword"));}@Override public String toString(){return "PasswordChange[redacted]";}}
     public record Session(String accessToken,long expiresIn,Identity user){@Override public String toString(){return "Session[redacted]";}}
     private final OidcConfigurationService providers;private final AuthenticationService auth;private final BrowserTokens browser;private final OidcLogin oidc;private final AuthSettings settings;private final LoginThrottle throttle;private final SecurityEvents events;
     public AuthController(AuthenticationService auth,BrowserTokens browser,OidcLogin oidc,AuthSettings settings,LoginThrottle throttle,SecurityEvents events,OidcConfigurationService providers){this.providers=providers;this.auth=auth;this.browser=browser;this.oidc=oidc;this.settings=settings;this.throttle=throttle;this.events=events;}
     @GetMapping("/csrf") public Map<String,String> csrf(HttpServletRequest request,HttpServletResponse response){return Map.of("token",browser.csrf(request,response));}
     private Session session(HttpServletResponse response,JwtTokens.Pair pair){browser.issue(response,pair);return new Session(pair.accessToken(),pair.expiresIn(),pair.user());}
     @PostMapping("/local/login") public Session login(@RequestBody Login command,HttpServletResponse response){
-        String key=command.login()==null?"invalid":command.login().toLowerCase(Locale.ROOT);
-        if(key.length()>64)key="invalid";throttle.check("login:"+key,10);return session(response,auth.login(command.login(),command.password()));
+        String key=command.email()==null?"invalid":command.email().strip().toLowerCase(Locale.ROOT);
+        if(key.length()>254)key="invalid";throttle.check("login:"+key,10);return session(response,auth.login(command.email(),command.password()));
     }
     @PostMapping("/session/refresh") public Session refresh(HttpServletRequest request,HttpServletResponse response){return session(response,auth.refresh(browser.cookie(request,BrowserTokens.REFRESH)));}
     @DeleteMapping("/session") public void logout(HttpServletResponse response){browser.clear(response);}

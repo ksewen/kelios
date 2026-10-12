@@ -14,10 +14,10 @@ class AuthPolicyTest {
     @NullSource @ValueSource(strings={"Short1!","lowercaseonly123!","UPPERCASEONLY123!","NoDigitsHereLong!","NoSpecialChars1234","               "})
     void policyRejects(String value){assertThrows(AuthFailure.class,()->passwords.validate(value));}
     @Test void codePointLimitsCompositionAndNoTrimming(){
-        String minimum="Aa1!"+"x".repeat(11);passwords.validate(minimum);passwords.validate("Aa1!"+"😀".repeat(124));
+        String minimum="Aa1!"+"x".repeat(8);assertThrows(AuthFailure.class,()->passwords.validate("Aa1!"+"x".repeat(7)));passwords.validate(minimum);passwords.validate("Aa1!"+"😀".repeat(124));
         assertThrows(AuthFailure.class,()->passwords.validate("Aa1!"+"😀".repeat(125)));
         String hash=passwords.hash(" "+minimum+" ");assertTrue(passwords.matches(" "+minimum+" ",hash));assertFalse(passwords.matches(minimum,hash));
-        passwords.validate("Ää١!"+"😀".repeat(11));
+        passwords.validate("Ää١!"+"😀".repeat(8));
     }
     @Test void argon2idSaltParametersAndBoundedBenchmark(){
         long[] measured=new long[5];String previous=null;
@@ -30,7 +30,7 @@ class AuthPolicyTest {
         Arrays.sort(measured);System.out.printf("Argon2id benchmark: m=19456 KiB t=2 p=1, 5 encode+verify samples, median=%d ms, max=%d ms, maxHeap=%d MiB, processors=%d%n",measured[2],measured[4],Runtime.getRuntime().maxMemory()/1048576,Runtime.getRuntime().availableProcessors());
         assertFalse(passwords.usable("malformed"));assertFalse(passwords.matches("wrong",null));
     }
-    @Test void loginIdentifierRules(){assertEquals("admin.test_25-",passwords.login("ADMIN.Test_25-"));for(String invalid:List.of("ab","x".repeat(65),"a b","äbc","test@example.org"))assertThrows(AuthFailure.class,()->passwords.login(invalid));}
+    @Test void emailIdentifierRules(){assertEquals("admin.test@example.org",passwords.email(" ADMIN.Test@EXAMPLE.ORG "));for(String invalid:List.of("admin","a b@example.org","a..b@example.org","a@-example.org","a@localhost","x".repeat(65)+"@example.org","a@example.org\nBcc:x@example.org"))assertThrows(AuthFailure.class,()->passwords.email(invalid));}
     @ParameterizedTest(name="matrix case {index}") @CsvSource({"GLOBAL,ADMIN,true,true","GLOBAL,USER,true,false","TENANT,ADMIN,true,true","TENANT,USER,true,false"})
     void explicitMatrix(Scope scope,Role role,boolean readable,boolean writable){
         UUID own=UUID.randomUUID(),other=UUID.randomUUID();var actor=new Identity(UUID.randomUUID(),scope,scope==Scope.TENANT?own:null,role,Status.ACTIVE,"Actor");

@@ -10,21 +10,16 @@ import org.springframework.transaction.annotation.Transactional;
 public class TenantService {
     private final EntityManager em;
     private final AuditService audit;
-    public TenantService(EntityManager em, AuditService audit) { this.em=em; this.audit=audit; }
+    private final java.time.Clock clock;
+    public TenantService(EntityManager em, AuditService audit, java.time.Clock clock) { this.em=em; this.audit=audit; this.clock=clock; }
     @Transactional public UUID create(String name, Actor actor) {
         if (name == null || name.isBlank()) throw new IllegalArgumentException("Tenant name required");
-        Tenant tenant=new Tenant(); tenant.id=UUID.randomUUID(); tenant.name=name.strip(); em.persist(tenant); em.flush();
+        Tenant tenant=new Tenant(); tenant.id=UUID.randomUUID(); tenant.name=name.strip(); tenant.createdBy=actor.id(); tenant.updatedBy=actor.id(); tenant.createdAt=java.time.Instant.now(clock); tenant.updatedAt=tenant.createdAt; em.persist(tenant); em.flush();
         audit.record(actor,tenant.id,"TENANT_CREATED","TENANT",tenant.id,Map.of("name",tenant.name)); return tenant.id;
     }
     @Transactional(propagation=org.springframework.transaction.annotation.Propagation.MANDATORY)
     public void lock(UUID id) {
         if(id==null || em.find(Tenant.class,id,jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)==null)throw new IllegalArgumentException("Tenant not found");
-    }
-    public record View(UUID id,String name) {}
-    @Transactional(readOnly=true) public java.util.List<View> list(UUID onlyTenant) {
-        var query=em.createQuery("SELECT t FROM Tenant t"+(onlyTenant==null?"":" WHERE t.id=:id")+" ORDER BY t.id",Tenant.class);
-        if(onlyTenant!=null)query.setParameter("id",onlyTenant);
-        return query.getResultStream().map(t->new View(t.id,t.name)).toList();
     }
     @Transactional(readOnly=true) public void require(UUID id) {
         if (id==null || em.find(Tenant.class,id)==null) throw new IllegalArgumentException("Tenant not found");

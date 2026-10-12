@@ -1,5 +1,8 @@
 > Implementation authorization update: the user explicitly approved Phase 3 implementation after this finalized specification. The original planning review below is retained as the implementation contract. No P1–P8 decision changed. Actual implementation results belong in [Phase 3 evidence](../verification/PHASE_3.md), and user acceptance remains pending review. No Phase 4, commit or push is authorized.
 
+**Historical accepted implementation record.** Preserve the decisions and evidence below as implementation-time history. Current normative Domain/identity/query requirements are in [DOMAIN.md](../../DOMAIN.md) and [ARCHITECTURE.md](../../ARCHITECTURE.md); separately approved future work follows [the consolidated implementation gates](COLLECTION_QUERY_IMPLEMENTATION_PLAN.md). Earlier login identifiers/password minima, paging defaults, deleted selectors, sort ties and phase-specific exclusions are not competing target requirements.
+
+
 # Phase 3 plan — Inventory workflows and UI
 
 Status: **P1–P8 and the DEREGISTERED event convention approved; Phase 3 implementation explicitly approved. User acceptance pending review.** Phases 0, 1 and 2 are accepted. The design below was finalized during planning and is now the approved implementation contract; actual results are recorded separately in Phase 3 verification. Real IServ interoperability remains separately pending manual evidence and does not block this plan.

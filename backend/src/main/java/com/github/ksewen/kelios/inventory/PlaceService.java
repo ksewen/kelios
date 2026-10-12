@@ -17,8 +17,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class PlaceService {
     public enum Kind { LOCATION, OWNER }
-    public record Place(UUID id, UUID tenantId, String name, boolean deleted) {
-        public Map<String,Object> snapshot() { return Map.of("id",id.toString(),"tenantId",tenantId.toString(),"name",name); }
+    public record Place(UUID id, UUID tenantId, String name, boolean deleted, String note, com.github.ksewen.kelios.audit.BusinessMetadata metadata) {
+        public Map<String,Object> snapshot() { var result=new java.util.LinkedHashMap<String,Object>();result.put("id",id.toString());result.put("tenantId",tenantId.toString());result.put("name",name);result.put("note",note);return result; }
     }
     private final JdbcTemplate jdbc;
     private final TenantService tenants;
@@ -26,13 +26,14 @@ public class PlaceService {
     private final Clock clock;
     public PlaceService(JdbcTemplate jdbc,TenantService tenants,AuditService audit,Clock clock) {this.jdbc=jdbc;this.tenants=tenants;this.audit=audit;this.clock=clock;}
     private String table(Kind kind) {return kind==Kind.LOCATION?"location":"owner";}
+    private String optional(String value) {return value==null||value.isBlank()?null:value.strip();}
     private String required(String value) {if(value==null||value.isBlank())throw new BusinessFailure("INVALID_INPUT","Name required");return value.strip();}
     private Place load(Kind kind,UUID tenant,UUID id,String lock) {
-        var rows=jdbc.query("SELECT * FROM "+table(kind)+" WHERE id=? AND tenant_id=?"+lock,(rs,n)->new Place(rs.getObject("id",UUID.class),rs.getObject("tenant_id",UUID.class),rs.getString("name"),rs.getTimestamp("deleted_at")!=null),id,tenant);
+        var rows=jdbc.query("SELECT * FROM "+table(kind)+" WHERE id=? AND tenant_id=?"+lock,(rs,n)->new Place(rs.getObject("id",UUID.class),rs.getObject("tenant_id",UUID.class),rs.getString("name"),rs.getTimestamp("deleted_at")!=null,rs.getString("note"),com.github.ksewen.kelios.audit.BusinessMetadata.read(rs)),id,tenant);
         if(rows.isEmpty())throw new BusinessFailure("NOT_FOUND","Place not found in Tenant");return rows.getFirst();
     }
     @Transactional(readOnly=true) public Place read(Kind kind,UUID id) {
-        var rows=jdbc.query("SELECT * FROM "+table(kind)+" WHERE id=?",(rs,n)->new Place(rs.getObject("id",UUID.class),rs.getObject("tenant_id",UUID.class),rs.getString("name"),rs.getTimestamp("deleted_at")!=null),id);
+        var rows=jdbc.query("SELECT * FROM "+table(kind)+" WHERE id=?",(rs,n)->new Place(rs.getObject("id",UUID.class),rs.getObject("tenant_id",UUID.class),rs.getString("name"),rs.getTimestamp("deleted_at")!=null,rs.getString("note"),com.github.ksewen.kelios.audit.BusinessMetadata.read(rs)),id);
         if(rows.isEmpty())throw new BusinessFailure("NOT_FOUND","Place not found");return rows.getFirst();
     }
     @Transactional(readOnly=true) public Place readScoped(Kind kind,UUID id,UUID onlyTenant){return onlyTenant==null?read(kind,id):load(kind,onlyTenant,id,"");}
@@ -40,23 +41,25 @@ public class PlaceService {
     public Place share(Kind kind,UUID tenant,UUID id,boolean newAssignment) {
         Place p=load(kind,tenant,id," FOR SHARE");if(newAssignment && p.deleted())throw new BusinessFailure("DELETED_TARGET","Deleted Place");return p;
     }
-    @Transactional public UUID create(Kind kind,UUID tenant,String name,Actor actor) {
-        tenants.require(tenant);UUID id=UUID.randomUUID();jdbc.update("INSERT INTO "+table(kind)+"(id,tenant_id,name) VALUES(?,?,?)",id,tenant,required(name));
-        audit.record(actor,tenant,kind+"_CREATED",kind.name(),id,Map.of("name",required(name)));return id;
+    @Transactional public UUID create(Kind kind,UUID tenant,String name,Actor actor) {return create(kind,tenant,name,null,actor);}
+    @Transactional public UUID create(Kind kind,UUID tenant,String name,String note,Actor actor) {
+        tenants.require(tenant);UUID id=UUID.randomUUID();var now=Timestamp.from(Instant.now(clock));jdbc.update("INSERT INTO "+table(kind)+"(id,tenant_id,name,note,created_by,created_at,updated_by,updated_at) VALUES(?,?,?,?,?,?,?,?)",id,tenant,required(name),optional(note),actor.id(),now,actor.id(),now);
+        audit.record(actor,tenant,kind+"_CREATED",kind.name(),id,Map.of("after",read(kind,id).snapshot()));return id;
     }
     private boolean referenced(Kind kind,UUID id) {
         return Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM asset WHERE "+table(kind)+"_id=?)",Boolean.class,id));
     }
-    @Transactional public void edit(Kind kind,UUID tenant,UUID id,String name,Actor actor) {
+    @Transactional public void edit(Kind kind,UUID tenant,UUID id,String name,Actor actor) {edit(kind,tenant,id,name,null,actor);}
+    @Transactional public void edit(Kind kind,UUID tenant,UUID id,String name,String note,Actor actor) {
         Place p=load(kind,tenant,id," FOR UPDATE");if(p.deleted())throw new BusinessFailure("DELETED_TARGET","Place deleted");
         if(kind==Kind.OWNER && referenced(kind,id))throw new BusinessFailure("REFERENCED","Resolve retained Asset references first");
-        jdbc.update("UPDATE "+table(kind)+" SET name=? WHERE id=?",required(name),id);
-        audit.record(actor,p.tenantId(),kind+"_EDITED",kind.name(),id,Map.of("before",p.snapshot(),"name",required(name)));
+        jdbc.update("UPDATE "+table(kind)+" SET name=?,note=?,updated_by=?,updated_at=? WHERE id=?",required(name),optional(note),actor.id(),Timestamp.from(Instant.now(clock)),id);
+        audit.record(actor,p.tenantId(),kind+"_EDITED",kind.name(),id,Map.of("before",p.snapshot(),"after",read(kind,id).snapshot()));
     }
     @Transactional public void delete(Kind kind,UUID tenant,UUID id,Actor actor) {
         Place p=load(kind,tenant,id," FOR UPDATE");if(p.deleted())throw new BusinessFailure("DELETED_TARGET","Place deleted");
         if(referenced(kind,id))throw new BusinessFailure("REFERENCED","Resolve retained Asset references first");
-        jdbc.update("UPDATE "+table(kind)+" SET deleted_at=?,deleted_by=? WHERE id=?",Timestamp.from(Instant.now(clock)),actor.id(),id);
+        var now=Timestamp.from(Instant.now(clock));jdbc.update("UPDATE "+table(kind)+" SET deleted_at=?,deleted_by=?,updated_by=?,updated_at=? WHERE id=?",now,actor.id(),actor.id(),now,id);
         audit.record(actor,p.tenantId(),kind+"_DELETED",kind.name(),id,Map.of("before",p.snapshot()));
     }
     @Transactional(readOnly=true)

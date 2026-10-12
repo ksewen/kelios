@@ -1,5 +1,8 @@
 # Phase 1 — Domain foundation plan
 
+**Historical accepted implementation record.** Preserve the decisions and evidence below as implementation-time history. Current normative Domain/identity/query requirements are in [DOMAIN.md](../../DOMAIN.md) and [ARCHITECTURE.md](../../ARCHITECTURE.md); separately approved future work follows [the consolidated implementation gates](COLLECTION_QUERY_IMPLEMENTATION_PLAN.md). Earlier login identifiers/password minima, paging defaults, deleted selectors, sort ties and phase-specific exclusions are not competing target requirements.
+
+
 Status: Approved by the user on 2026-10-10. The subsequent approval explicitly authorizes Phase 1 implementation and verification only; Phase 2 remains outside scope. Implementation evidence is recorded separately in [Phase 1 verification](../verification/PHASE_1.md).
 
 ## Authority, traceability, and starting point

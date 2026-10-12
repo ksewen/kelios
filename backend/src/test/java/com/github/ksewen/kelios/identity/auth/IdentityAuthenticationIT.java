@@ -64,7 +64,7 @@ class IdentityAuthenticationIT {
         CLOCK.now.updateAndGet(i->i.plusSeconds(120));PROVIDER.reset();SecurityContextHolder.clearContext();
         jdbc.update("DELETE FROM external_identity");jdbc.update("DELETE FROM local_global_credential");jdbc.update("DELETE FROM app_user");
         jdbc.update("DELETE FROM tenant_oidc_allowed_group");jdbc.update("DELETE FROM tenant_oidc_config");
-        admin=auth.bootstrap("initial-admin","Administrator","CorrectHorse25!Battery");
+        admin=auth.bootstrap("initial-admin@example.org","Administrator","CorrectHorse25!Battery");
         tenant=tenants.create("Tenant",admin.actor());other=tenants.create("Other",admin.actor());
         configure(tenant,null,Set.of(PROVIDER.group));mvc=MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build();
     }
@@ -95,7 +95,7 @@ class IdentityAuthenticationIT {
     }
     MvcResult loginOidc()throws Exception{var flow=flow();return callback(flow,flow.authorization().state());}
     @Test void globalLoginCurrentUserAndCookieContract()throws Exception{
-        var result=unsafe(post("/api/v1/auth/local/login").contentType("application/json").content(json.writeValueAsString(Map.of("login","INITIAL-ADMIN","password","CorrectHorse25!Battery"))),null);
+        var result=unsafe(post("/api/v1/auth/local/login").contentType("application/json").content(json.writeValueAsString(Map.of("email","INITIAL-ADMIN@example.org","password","CorrectHorse25!Battery"))),null);
         assertEquals(200,result.getResponse().getStatus());assertFalse(body(result).containsKey("refreshToken"));String access=(String)body(result).get("accessToken");
         var me=mvc.perform(get("/api/v1/auth/me").header("Authorization","Bearer "+access)).andReturn();assertEquals(200,me.getResponse().getStatus());assertEquals("GLOBAL",body(me).get("scope"));
         String setCookie=result.getResponse().getHeader("Set-Cookie");assertTrue(setCookie.contains("Secure") && setCookie.contains("HttpOnly") && setCookie.contains("SameSite=Strict") && !setCookie.contains("Domain="));
@@ -112,46 +112,46 @@ class IdentityAuthenticationIT {
         assertNull(mvc.perform(get("/api/v1/status").header("Origin","https://evil.example")).andReturn().getResponse().getHeader("Access-Control-Allow-Origin"));assertNull(csrf.getRequest().getSession(false));
     }
     @Test void noDefaultPasswordAndBadLoginIsGeneric(){
-        var absent=assertThrows(AuthFailure.class,()->auth.login("unknown-user","WrongPassword25!"));var bad=assertThrows(AuthFailure.class,()->auth.login("initial-admin","WrongPassword25!"));assertEquals(absent.getMessage(),bad.getMessage());
+        var absent=assertThrows(AuthFailure.class,()->auth.login("unknown-user@example.org","WrongPassword25!"));var bad=assertThrows(AuthFailure.class,()->auth.login("initial-admin@example.org","WrongPassword25!"));assertEquals(absent.getMessage(),bad.getMessage());
         assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM local_global_credential",Integer.class));
     }
     @Test void globalCreationIsActiveUserAndSeparateGrantAndNoTenantCredentials(){
-        var created=auth.createGlobal(admin,"Another.Admin","Another","CorrectHorse25!Battery");assertEquals(Scope.GLOBAL,created.scope());assertNull(created.tenantId());assertEquals(Role.USER,created.role());assertEquals(Status.ACTIVE,created.status());
+        var created=auth.createGlobal(admin,"Another.Admin@example.org","Another","CorrectHorse25!Battery");assertEquals(Scope.GLOBAL,created.scope());assertNull(created.tenantId());assertEquals(Role.USER,created.role());assertEquals(Status.ACTIVE,created.status());
         assertEquals(Role.ADMIN,auth.role(admin,created.id(),Role.ADMIN).role());var tenantUser=fixture(Scope.TENANT,tenant,Role.USER,Status.ACTIVE);
-        assertThrows(AuthFailure.class,()->auth.resetCredential(admin,tenantUser.id(),"tenant-local","CorrectHorse25!Battery"));
-        assertThrows(RuntimeException.class,()->jdbc.update("INSERT INTO local_global_credential(user_id,login_name,password_hash) VALUES(?,'tenant-local','invalid')",tenantUser.id()));
+        assertThrows(AuthFailure.class,()->auth.resetCredential(admin,tenantUser.id(),"tenant-local@example.org","CorrectHorse25!Battery"));
+        assertThrows(RuntimeException.class,()->jdbc.update("INSERT INTO local_global_credential(user_id,email,password_hash,email_verified_at) VALUES(?,'tenant-local@example.org','invalid',now())",tenantUser.id()));
     }
     @Test void passwordPolicyEveryCredentialPathAndChangeDoesNotRevoke(){
-        var issued=auth.login("initial-admin","CorrectHorse25!Battery");String invalid="nocapitalletters25!";
-        assertThrows(AuthFailure.class,()->auth.bootstrap("recover","Recovery",invalid));assertThrows(AuthFailure.class,()->auth.createGlobal(admin,"new-global","New",invalid));
-        assertThrows(AuthFailure.class,()->auth.resetCredential(admin,admin.id(),"initial-admin",invalid));assertThrows(AuthFailure.class,()->auth.ownPassword(admin,"CorrectHorse25!Battery",invalid));
-        auth.ownPassword(admin,"CorrectHorse25!Battery","DifferentHorse25!Battery");assertThrows(AuthFailure.class,()->auth.login("initial-admin","CorrectHorse25!Battery"));
+        var issued=auth.login("initial-admin@example.org","CorrectHorse25!Battery");String invalid="nocapitalletters25!";
+        assertThrows(AuthFailure.class,()->auth.bootstrap("recover@example.org","Recovery",invalid));assertThrows(AuthFailure.class,()->auth.createGlobal(admin,"new-global@example.org","New",invalid));
+        assertThrows(AuthFailure.class,()->auth.resetCredential(admin,admin.id(),"initial-admin@example.org",invalid));assertThrows(AuthFailure.class,()->auth.ownPassword(admin,"CorrectHorse25!Battery",invalid));
+        auth.ownPassword(admin,"CorrectHorse25!Battery","DifferentHorse25!Battery");assertThrows(AuthFailure.class,()->auth.login("initial-admin@example.org","CorrectHorse25!Battery"));
         assertDoesNotThrow(()->auth.refresh(issued.refreshToken()));assertDoesNotThrow(()->tokens.verify(issued.accessToken(),"access"));
-        assertDoesNotThrow(()->auth.login("initial-admin","DifferentHorse25!Battery"));assertTrue(auditCount("LOCAL_CREDENTIAL_CHANGED",admin.id())>0);
+        assertDoesNotThrow(()->auth.login("initial-admin@example.org","DifferentHorse25!Battery"));assertTrue(auditCount("LOCAL_CREDENTIAL_CHANGED",admin.id())>0);
     }
     long auditCount(String action,UUID id){return jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE action=? AND target_id=?",Long.class,action,id);}
     @Test void bootstrapRefusesUsableAdminButLaterRecoversAndAudits(){
-        assertThrows(AuthFailure.class,()->auth.bootstrap("second-admin","Second","CorrectHorse25!Battery"));
+        assertThrows(AuthFailure.class,()->auth.bootstrap("second-admin@example.org","Second","CorrectHorse25!Battery"));
         jdbc.update("UPDATE app_user SET status='DISABLED' WHERE id=?",admin.id());
-        var recovered=auth.bootstrap("recovered-admin","Recovery","CorrectHorse25!Battery");assertEquals(Role.ADMIN,recovered.role());assertEquals(Status.ACTIVE,recovered.status());assertEquals(1,auditCount("GLOBAL_ADMIN_BOOTSTRAPPED",recovered.id()));
+        var recovered=auth.bootstrap("recovered-admin@example.org","Recovery","CorrectHorse25!Battery");assertEquals(Role.ADMIN,recovered.role());assertEquals(Status.ACTIVE,recovered.status());assertEquals(1,auditCount("GLOBAL_ADMIN_BOOTSTRAPPED",recovered.id()));
         assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM global_admin_recovery_guard",Integer.class));assertEquals(List.of("id"),jdbc.queryForList("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='global_admin_recovery_guard'",String.class));
     }
     @Test void malformedCredentialAdminDoesNotBlockRecoveryAndFailureRollsBack(){
         jdbc.update("UPDATE local_global_credential SET password_hash='malformed' WHERE user_id=?",admin.id());long count=jdbc.queryForObject("SELECT count(*) FROM app_user",Long.class);
-        assertThrows(RuntimeException.class,()->auth.bootstrap("initial-admin","Collision","CorrectHorse25!Battery"));assertEquals(count,jdbc.queryForObject("SELECT count(*) FROM app_user",Long.class));
-        assertDoesNotThrow(()->auth.bootstrap("repair-admin","Recovery","CorrectHorse25!Battery"));
+        assertThrows(RuntimeException.class,()->auth.bootstrap("initial-admin@example.org","Collision","CorrectHorse25!Battery"));assertEquals(count,jdbc.queryForObject("SELECT count(*) FROM app_user",Long.class));
+        assertDoesNotThrow(()->auth.bootstrap("repair-admin@example.org","Recovery","CorrectHorse25!Battery"));
     }
     @Test void selfDisableDemotionRejectedWithoutLastAdminInvariant(){
         assertThrows(AuthFailure.class,()->auth.disable(admin,admin.id()));assertThrows(AuthFailure.class,()->auth.role(admin,admin.id(),Role.USER));
-        var second=auth.createGlobal(admin,"other-admin","Other","CorrectHorse25!Battery");var promoted=auth.role(admin,second.id(),Role.ADMIN);
+        var second=auth.createGlobal(admin,"other-admin@example.org","Other","CorrectHorse25!Battery");var promoted=auth.role(admin,second.id(),Role.ADMIN);
         auth.disable(admin,promoted.id());auth.disable(promoted,admin.id());assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM app_user WHERE scope='GLOBAL' AND role='ADMIN' AND status='ACTIVE'",Integer.class));
-        assertDoesNotThrow(()->auth.bootstrap("recovery-third","Recovery","CorrectHorse25!Battery"));
+        assertDoesNotThrow(()->auth.bootstrap("recovery-third@example.org","Recovery","CorrectHorse25!Battery"));
     }
     @Test void concurrentRecoveryCommandsCreateExactlyOne()throws Exception{
         jdbc.update("UPDATE app_user SET status='DISABLED' WHERE id=?",admin.id());
         try(var pool=Executors.newFixedThreadPool(2)){
-            var gate=new CountDownLatch(1);var first=pool.submit(()->{gate.await();try{auth.bootstrap("recover-one","One","CorrectHorse25!Battery");return true;}catch(AuthFailure ex){return false;}});
-            var second=pool.submit(()->{gate.await();try{auth.bootstrap("recover-two","Two","CorrectHorse25!Battery");return true;}catch(AuthFailure ex){return false;}});gate.countDown();
+            var gate=new CountDownLatch(1);var first=pool.submit(()->{gate.await();try{auth.bootstrap("recover-one@example.org","One","CorrectHorse25!Battery");return true;}catch(AuthFailure ex){return false;}});
+            var second=pool.submit(()->{gate.await();try{auth.bootstrap("recover-two@example.org","Two","CorrectHorse25!Battery");return true;}catch(AuthFailure ex){return false;}});gate.countDown();
             assertNotEquals(first.get(20,TimeUnit.SECONDS),second.get(20,TimeUnit.SECONDS));
         }
         assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM app_user WHERE scope='GLOBAL' AND role='ADMIN' AND status='ACTIVE'",Integer.class));
@@ -161,13 +161,16 @@ class IdentityAuthenticationIT {
         assertFalse(jdbc.queryForObject("SELECT encrypted_client_secret FROM tenant_oidc_config WHERE tenant_id=?",String.class,tenant).contains("fixture-secret"));assertFalse(json.writeValueAsString(view).contains("fixture-secret"));
         assertThrows(AuthFailure.class,()->configure(tenant,null,Set.of(PROVIDER.group)));
         var updated=configurations.put(admin,tenant,PROVIDER.issuer,"fixture-client",null,true,view.version(),Set.of(PROVIDER.group));assertEquals(1,updated.version());
-        assertThrows(AuthFailure.class,()->configurations.get(fixture(Scope.TENANT,tenant,Role.ADMIN,Status.ACTIVE),tenant));
+        assertEquals(tenant,configurations.get(fixture(Scope.TENANT,tenant,Role.ADMIN,Status.ACTIVE),tenant).tenantId());
         var result=mvc.perform(get("/api/v1/tenants/"+tenant+"/oidc").header("Authorization","Bearer "+tokens.login(admin).accessToken())).andReturn();assertEquals(200,result.getResponse().getStatus());assertFalse(body(result).containsKey("encryptedSecret"));
-        String input=json.writeValueAsString(Map.of("issuer",PROVIDER.issuer,"clientId","fixture-client","enabled",true,"version",1,"allowedGroupIds",List.of(PROVIDER.group),"actorId",UUID.randomUUID()));
+        String input=json.writeValueAsString(Map.of("issuer",PROVIDER.issuer,"clientId","fixture-client","enabled",true,"version",1,"allowedGroupIds",List.of(PROVIDER.group)));
+        String forged=input.substring(0,input.length()-1)+",\"actorId\":\""+UUID.randomUUID()+"\"}";
+        assertEquals(400,mvc.perform(put("/api/v1/tenants/"+tenant+"/oidc").header("Authorization","Bearer "+tokens.login(admin).accessToken()).contentType("application/json").content(forged)).andReturn().getResponse().getStatus());
+        assertEquals(1,configurations.get(admin,tenant).version());
         var saved=mvc.perform(put("/api/v1/tenants/"+tenant+"/oidc").header("Authorization","Bearer "+tokens.login(admin).accessToken()).contentType("application/json").content(input)).andReturn();
         assertEquals(200,saved.getResponse().getStatus());assertEquals(2,((Number)body(saved).get("version")).intValue());assertEquals(true,body(saved).get("secretConfigured"));assertFalse(body(saved).containsKey("clientSecret"));
         var tenantAdmin=fixture(Scope.TENANT,tenant,Role.ADMIN,Status.ACTIVE);
-        assertEquals(403,mvc.perform(put("/api/v1/tenants/"+tenant+"/oidc").header("Authorization","Bearer "+tokens.login(tenantAdmin).accessToken()).contentType("application/json").content(input)).andReturn().getResponse().getStatus());
+        assertEquals(409,mvc.perform(put("/api/v1/tenants/"+tenant+"/oidc").header("Authorization","Bearer "+tokens.login(tenantAdmin).accessToken()).contentType("application/json").content(input)).andReturn().getResponse().getStatus());
         String malformed=input.replace(PROVIDER.group.toString(),"invalid-group-uuid");
         assertEquals(400,mvc.perform(put("/api/v1/tenants/"+tenant+"/oidc").header("Authorization","Bearer "+tokens.login(admin).accessToken()).contentType("application/json").content(malformed)).andReturn().getResponse().getStatus());
         assertEquals(2,configurations.get(admin,tenant).version());assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE action='OIDC_CONFIG_CHANGED' AND target_id=? AND actor_id<>?",Integer.class,tenant,admin.id()));
@@ -210,12 +213,12 @@ class IdentityAuthenticationIT {
     }
     @Test void jitRaceNoOrphansAndNoCrossTenantMapping()throws Exception{
         try(var pool=Executors.newFixedThreadPool(2)){
-            var first=pool.submit(()->provisioning.complete(tenant,0,PROVIDER.issuer,"concurrent-subject","Person",Set.of(PROVIDER.group)));
-            var second=pool.submit(()->provisioning.complete(tenant,0,PROVIDER.issuer,"concurrent-subject","Person",Set.of(PROVIDER.group)));
+            var first=pool.submit(()->provisioning.complete(tenant,0,PROVIDER.issuer,"fixture-client","concurrent-subject","Person",Set.of(PROVIDER.group)));
+            var second=pool.submit(()->provisioning.complete(tenant,0,PROVIDER.issuer,"fixture-client","concurrent-subject","Person",Set.of(PROVIDER.group)));
             assertEquals(first.get(20,TimeUnit.SECONDS).user().id(),second.get(20,TimeUnit.SECONDS).user().id());
         }
         assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM app_user WHERE scope='TENANT'",Integer.class));configure(other,null,Set.of(PROVIDER.group));
-        assertThrows(AuthFailure.class,()->provisioning.complete(other,0,PROVIDER.issuer,"concurrent-subject","Person",Set.of(PROVIDER.group)));
+        assertThrows(AuthFailure.class,()->provisioning.complete(other,0,PROVIDER.issuer,"fixture-client","concurrent-subject","Person",Set.of(PROVIDER.group)));
     }
     @Test void laterGroupRemovalDoesNotSynchronizeOrBlockRefresh()throws Exception{
         var original=auth.refresh(cookie(loginOidc(),BrowserTokens.REFRESH).getValue());auth.approve(admin,original.user().id());configure(tenant,0L,Set.of());PROVIDER.groups=List.of();
@@ -225,11 +228,11 @@ class IdentityAuthenticationIT {
     @Test void tenantAdminApprovalLimitsAndReadOnlyRoles(){
         var tenantAdmin=fixture(Scope.TENANT,tenant,Role.ADMIN,Status.ACTIVE);var pending=fixture(Scope.TENANT,tenant,Role.USER,Status.PENDING);var otherPending=fixture(Scope.TENANT,other,Role.USER,Status.PENDING);var adminPending=fixture(Scope.TENANT,tenant,Role.ADMIN,Status.PENDING);
         assertEquals(Status.ACTIVE,auth.approve(tenantAdmin,pending.id()).status());assertThrows(AuthFailure.class,()->auth.approve(tenantAdmin,otherPending.id()));assertThrows(AuthFailure.class,()->auth.approve(tenantAdmin,adminPending.id()));assertThrows(AuthFailure.class,()->auth.role(tenantAdmin,pending.id(),Role.ADMIN));
-        assertThrows(AuthFailure.class,()->auth.disable(tenantAdmin,adminPending.id()));assertTrue(auth.list(tenantAdmin).stream().allMatch(u->u.tenantId().equals(tenant) && u.role()==Role.USER));
+        assertThrows(AuthFailure.class,()->auth.disable(tenantAdmin,adminPending.id()));assertTrue(auth.list(tenantAdmin,new com.github.ksewen.kelios.identity.UserQuery(0,100,null,null,null,null,null,null,null)).items().stream().allMatch(u->u.tenant().id().equals(tenant) && u.role()==Role.USER));
         for(var reader:List.of(fixture(Scope.GLOBAL,null,Role.USER,Status.ACTIVE),fixture(Scope.TENANT,tenant,Role.USER,Status.ACTIVE)))assertThrows(AuthFailure.class,()->auth.approve(reader,otherPending.id()));
     }
     @Test void currentDatabaseRefreshRoleAndStatusAndAbsoluteExpiry(){
-        var user=auth.createGlobal(admin,"refresh-user","Refresh","CorrectHorse25!Battery");var original=auth.login("refresh-user","CorrectHorse25!Battery");auth.role(admin,user.id(),Role.ADMIN);
+        var user=auth.createGlobal(admin,"refresh-user@example.org","Refresh","CorrectHorse25!Battery");var original=auth.login("refresh-user@example.org","CorrectHorse25!Battery");auth.role(admin,user.id(),Role.ADMIN);
         var current=auth.refresh(original.refreshToken());assertEquals(Role.ADMIN,current.user().role());assertEquals(Role.USER,tokens.verify(original.accessToken(),"access").identity().role());
         CLOCK.now.updateAndGet(i->i.plus(Duration.ofDays(30)).plusSeconds(30));assertThrows(AuthFailure.class,()->auth.refresh(original.refreshToken()));
     }
@@ -237,7 +240,7 @@ class IdentityAuthenticationIT {
         principal(admin);UUID loc=secured.createPlace(PlaceService.Kind.LOCATION,tenant,"Room"),category=secured.category(null,"Type"),manufacturer=secured.manufacturer(null,"Manufacturer");
         var asset=secured.register(tenant,new AssetService.Registration(new AssetService.DirectSelection(category,manufacturer),loc,null,false,null,null,null));
         var tenantReader=fixture(Scope.TENANT,tenant,Role.USER,Status.ACTIVE);principal(tenantReader);assertEquals(asset.id(),secured.asset(asset.id()).id());assertThrows(AuthFailure.class,()->secured.assetText(asset.id(),0,null,null,"illegal"));
-        principal(fixture(Scope.TENANT,other,Role.ADMIN,Status.ACTIVE));assertThrows(AuthFailure.class,()->secured.asset(asset.id()));assertThrows(AuthFailure.class,()->secured.deleteAsset(asset.id(),0));
+        principal(fixture(Scope.TENANT,other,Role.ADMIN,Status.ACTIVE));assertEquals("NOT_FOUND",assertThrows(com.github.ksewen.kelios.platform.BusinessFailure.class,()->secured.asset(asset.id())).code());assertEquals("NOT_FOUND",assertThrows(com.github.ksewen.kelios.platform.BusinessFailure.class,()->secured.deleteAsset(asset.id(),0)).code());
         principal(fixture(Scope.GLOBAL,null,Role.USER,Status.ACTIVE));assertEquals(asset.id(),secured.asset(asset.id()).id());assertThrows(AuthFailure.class,()->secured.publish(CatalogService.Kind.CATEGORY,category));
         principal(fixture(Scope.TENANT,tenant,Role.ADMIN,Status.ACTIVE));assertThrows(AuthFailure.class,()->secured.editLabel(CatalogService.Kind.CATEGORY,category,"No global write"));
         assertEquals(admin.id(),jdbc.queryForObject("SELECT actor_id FROM asset_event WHERE asset_id=?",UUID.class,asset.id()));
@@ -247,11 +250,11 @@ class IdentityAuthenticationIT {
         assertThrows(RuntimeException.class,()->tx(()->{jdbc.update("INSERT INTO external_identity(issuer,subject,user_id,tenant_id) VALUES('https://example.test','wrong',?,?)",user.id(),other);return null;}));
         Flyway.configure().dataSource(PG.getJdbcUrl(),PG.getUsername(),PG.getPassword()).schemas("phase2_upgrade").defaultSchema("phase2_upgrade").target("3").load().migrate();
         UUID retained=UUID.randomUUID();jdbc.update("INSERT INTO phase2_upgrade.app_user(id,scope,role,status,display_name) VALUES(?,'GLOBAL','USER','ACTIVE','Retained')",retained);
-        Flyway.configure().dataSource(PG.getJdbcUrl(),PG.getUsername(),PG.getPassword()).schemas("phase2_upgrade").defaultSchema("phase2_upgrade").load().migrate();
+        Flyway.configure().dataSource(PG.getJdbcUrl(),PG.getUsername(),PG.getPassword()).schemas("phase2_upgrade").defaultSchema("phase2_upgrade").target("4").load().migrate();
         assertEquals("Retained",jdbc.queryForObject("SELECT display_name FROM phase2_upgrade.app_user WHERE id=?",String.class,retained));assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM phase2_upgrade.local_global_credential",Integer.class));
     }
     @Test void disableWinsAgainstWaitingRefreshUsingIndependentConnection()throws Exception{
-        var original=auth.login("initial-admin","CorrectHorse25!Battery");var ready=new CountDownLatch(1);var release=new CountDownLatch(1);
+        var original=auth.login("initial-admin@example.org","CorrectHorse25!Battery");var ready=new CountDownLatch(1);var release=new CountDownLatch(1);
         try(var pool=Executors.newFixedThreadPool(2)){
             var change=pool.submit(()->tx(()->{jdbc.queryForObject("SELECT id FROM app_user WHERE id=? FOR UPDATE",UUID.class,admin.id());ready.countDown();try{assertTrue(release.await(10,TimeUnit.SECONDS));}catch(InterruptedException ex){throw new RuntimeException(ex);}jdbc.update("UPDATE app_user SET status='DISABLED' WHERE id=?",admin.id());return null;}));
             assertTrue(ready.await(10,TimeUnit.SECONDS));var refresh=pool.submit(()->{assertThrows(AuthFailure.class,()->auth.refresh(original.refreshToken()));return null;});
@@ -269,20 +272,20 @@ class IdentityAuthenticationIT {
     @Test void credentialResetWinsAgainstLoginFromOldHash()throws Exception{
         var locked=new CountDownLatch(1);var release=new CountDownLatch(1);
         try(var pool=Executors.newFixedThreadPool(2)){
-            var reset=pool.submit(()->tx(()->{auth.resetCredential(admin,admin.id(),"initial-admin","ReplacementHorse25!Battery");locked.countDown();try{assertTrue(release.await(15,TimeUnit.SECONDS));}catch(InterruptedException ex){throw new RuntimeException(ex);}return null;}));
+            var reset=pool.submit(()->tx(()->{auth.resetCredential(admin,admin.id(),"initial-admin@example.org","ReplacementHorse25!Battery");locked.countDown();try{assertTrue(release.await(15,TimeUnit.SECONDS));}catch(InterruptedException ex){throw new RuntimeException(ex);}return null;}));
             assertTrue(locked.await(10,TimeUnit.SECONDS));
-            var login=pool.submit(()->assertThrows(AuthFailure.class,()->auth.login("initial-admin","CorrectHorse25!Battery")));
+            var login=pool.submit(()->assertThrows(AuthFailure.class,()->auth.login("initial-admin@example.org","CorrectHorse25!Battery")));
             try{awaitDatabaseWait();}finally{release.countDown();}
             reset.get(20,TimeUnit.SECONDS);assertEquals(401,login.get(20,TimeUnit.SECONDS).status());
         }
-        assertDoesNotThrow(()->auth.login("initial-admin","ReplacementHorse25!Battery"));
+        assertDoesNotThrow(()->auth.login("initial-admin@example.org","ReplacementHorse25!Battery"));
     }
     @Test void recoverySerializesWithAdminPromotion()throws Exception{
-        var candidate=auth.createGlobal(admin,"promoted-admin","Promoted","CorrectHorse25!Battery");jdbc.update("UPDATE app_user SET status='DISABLED' WHERE id=?",admin.id());
+        var candidate=auth.createGlobal(admin,"promoted-admin@example.org","Promoted","CorrectHorse25!Battery");jdbc.update("UPDATE app_user SET status='DISABLED' WHERE id=?",admin.id());
         var locked=new CountDownLatch(1);var release=new CountDownLatch(1);
         try(var pool=Executors.newFixedThreadPool(2)){
             var promotion=pool.submit(()->tx(()->{auth.role(admin,candidate.id(),Role.ADMIN);locked.countDown();try{assertTrue(release.await(15,TimeUnit.SECONDS));}catch(InterruptedException ex){throw new RuntimeException(ex);}return null;}));
-            assertTrue(locked.await(10,TimeUnit.SECONDS));var recovery=pool.submit(()->assertThrows(AuthFailure.class,()->auth.bootstrap("blocked-recovery","Recovery","CorrectHorse25!Battery")));
+            assertTrue(locked.await(10,TimeUnit.SECONDS));var recovery=pool.submit(()->assertThrows(AuthFailure.class,()->auth.bootstrap("blocked-recovery@example.org","Recovery","CorrectHorse25!Battery")));
             try{awaitDatabaseWait();}finally{release.countDown();}
             promotion.get(20,TimeUnit.SECONDS);assertEquals(409,recovery.get(20,TimeUnit.SECONDS).status());
         }
@@ -292,7 +295,7 @@ class IdentityAuthenticationIT {
         var locked=new CountDownLatch(1);var release=new CountDownLatch(1);
         try(var pool=Executors.newFixedThreadPool(2)){
             var configuration=pool.submit(()->tx(()->{configure(tenant,0L,Set.of());locked.countDown();try{assertTrue(release.await(15,TimeUnit.SECONDS));}catch(InterruptedException ex){throw new RuntimeException(ex);}return null;}));
-            assertTrue(locked.await(10,TimeUnit.SECONDS));var jit=pool.submit(()->assertThrows(AuthFailure.class,()->provisioning.complete(tenant,0,PROVIDER.issuer,"waiting-subject","Person",Set.of(PROVIDER.group))));
+            assertTrue(locked.await(10,TimeUnit.SECONDS));var jit=pool.submit(()->assertThrows(AuthFailure.class,()->provisioning.complete(tenant,0,PROVIDER.issuer,"fixture-client","waiting-subject","Person",Set.of(PROVIDER.group))));
             try{awaitDatabaseWait();}finally{release.countDown();}
             configuration.get(20,TimeUnit.SECONDS);assertEquals(409,jit.get(20,TimeUnit.SECONDS).status());
         }
@@ -312,10 +315,10 @@ class IdentityAuthenticationIT {
     @Test void administrationHttpMatrixAndAuthoritativeTargets()throws Exception{
         for(var actor:List.of(admin,fixture(Scope.GLOBAL,null,Role.USER,Status.ACTIVE),fixture(Scope.TENANT,tenant,Role.ADMIN,Status.ACTIVE),fixture(Scope.TENANT,tenant,Role.USER,Status.ACTIVE))){
             String bearer=tokens.login(actor).accessToken();
-            var list=mvc.perform(get("/api/v1/tenants").header("Authorization","Bearer "+bearer)).andReturn();assertEquals(200,list.getResponse().getStatus());
-            if(actor.scope()==Scope.TENANT){var rows=json.readValue(list.getResponse().getContentAsByteArray(),List.class);assertEquals(1,rows.size());}
+            var list=mvc.perform(get("/api/v1/tenants").header("Authorization","Bearer "+bearer)).andReturn();assertEquals(actor.globalAdmin()?200:403,list.getResponse().getStatus());
+            assertEquals(actor.role()==Role.ADMIN?200:403,mvc.perform(get("/api/v1/tenants/"+tenant).header("Authorization","Bearer "+bearer)).andReturn().getResponse().getStatus());
             assertEquals(actor.globalAdmin()?200:403,mvc.perform(post("/api/v1/tenants").header("Authorization","Bearer "+bearer).contentType("application/json").content("{\"name\":\"Authorized creation\"}")).andReturn().getResponse().getStatus());
-            assertEquals(actor.globalAdmin()?200:403,mvc.perform(get("/api/v1/tenants/"+tenant+"/oidc").header("Authorization","Bearer "+bearer)).andReturn().getResponse().getStatus());
+            assertEquals(actor.role()==Role.ADMIN?200:403,mvc.perform(get("/api/v1/tenants/"+tenant+"/oidc").header("Authorization","Bearer "+bearer)).andReturn().getResponse().getStatus());
         }
     }
     @Test void providerTransportRejectsUntrustedHostsAndPrivateAddresses()throws Exception{
@@ -330,11 +333,11 @@ class IdentityAuthenticationIT {
     }
 
     @Test void subjectAndIssuerChangesCreateDistinctPendingIdentities(){
-        var first=provisioning.complete(tenant,0,PROVIDER.issuer,"first-subject","Person",Set.of(PROVIDER.group));
-        var second=provisioning.complete(tenant,0,PROVIDER.issuer,"other-subject","Person",Set.of(PROVIDER.group));
+        var first=provisioning.complete(tenant,0,PROVIDER.issuer,"fixture-client","first-subject","Person",Set.of(PROVIDER.group));
+        var second=provisioning.complete(tenant,0,PROVIDER.issuer,"fixture-client","other-subject","Person",Set.of(PROVIDER.group));
         assertNotEquals(first.user().id(),second.user().id());
         String changed="https://other-issuer.example";configurations.put(admin,tenant,changed,"fixture-client",null,true,0L,Set.of(PROVIDER.group));
-        var third=provisioning.complete(tenant,1,changed,"first-subject","Person",Set.of(PROVIDER.group));
+        var third=provisioning.complete(tenant,1,changed,"fixture-client","first-subject","Person",Set.of(PROVIDER.group));
         assertNotEquals(first.user().id(),third.user().id());assertEquals(Status.PENDING,third.user().status());
         assertEquals(3,jdbc.queryForObject("SELECT count(*) FROM external_identity",Integer.class));
         jdbc.update("DELETE FROM external_identity WHERE user_id=?",third.user().id());jdbc.update("DELETE FROM app_user WHERE id=?",third.user().id());
@@ -366,10 +369,10 @@ class IdentityAuthenticationIT {
 
     @Test void pendingAndCredentiallessAdminsDoNotCountAsUsable(){
         jdbc.update("UPDATE app_user SET status='PENDING' WHERE id=?",admin.id());
-        var recovered=auth.bootstrap("pending-recovery","Recovered","CorrectHorse25!Battery");
+        var recovered=auth.bootstrap("pending-recovery@example.org","Recovered","CorrectHorse25!Battery");
         assertEquals(Status.PENDING,identities.load(admin.id(),"").status());
         jdbc.update("DELETE FROM local_global_credential WHERE user_id=?",recovered.id());
-        var again=auth.bootstrap("credentialless-recovery","Recovered again","CorrectHorse25!Battery");
+        var again=auth.bootstrap("credentialless-recovery@example.org","Recovered again","CorrectHorse25!Battery");
         assertEquals(Status.ACTIVE,again.status());assertEquals(1,auditCount("GLOBAL_ADMIN_BOOTSTRAPPED",again.id()));
         assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM app_user u JOIN local_global_credential c ON c.user_id=u.id WHERE u.scope='GLOBAL' AND u.role='ADMIN' AND u.status='ACTIVE'",Integer.class));
     }
@@ -404,11 +407,101 @@ class IdentityAuthenticationIT {
         var second=body(mvc.perform(get("/api/v1/auth/oidc/organizations").param("size","1").param("page","1").secure(true)).andReturn());
         assertEquals("Tenant",((Map<?,?>)((List<?>)second.get("items")).getFirst()).get("name"));
         assertEquals(400,mvc.perform(get("/api/v1/auth/oidc/organizations").param("q","x".repeat(129)).secure(true)).andReturn().getResponse().getStatus());
-        assertEquals(403,assertThrows(AuthFailure.class,()->provisioning.complete(other,0,PROVIDER.issuer,PROVIDER.subject,"Same name",Set.of(PROVIDER.group))).status());
+        assertEquals(403,assertThrows(AuthFailure.class,()->provisioning.complete(other,0,PROVIDER.issuer,"fixture-client",PROVIDER.subject,"Same name",Set.of(PROVIDER.group))).status());
     }
     @Test void organizationDiscoveryOmitsDisabledAndUnconfiguredProviders()throws Exception {
         var p=configurations.get(admin,tenant);configurations.put(admin,tenant,p.issuer(),p.clientId(),null,false,p.version(),p.allowedGroupIds());
         assertEquals(0,((Number)body(mvc.perform(get("/api/v1/auth/oidc/organizations").secure(true)).andReturn()).get("totalElements")).intValue());
         assertNotEquals(200,unsafe(post("/api/v1/auth/oidc/"+tenant+"/start"),null).getResponse().getStatus());
+    }
+
+    @Test void emailCanonicalUniquenessAndEditPreservesIdentityPasswordAndCreationMetadata(){
+        var u=auth.createGlobal(admin," Mixed.Case@EXAMPLE.ORG ","Email owner","Aa1!12345678");
+        assertEquals("mixed.case@example.org",auth.detail(admin,u.id()).globalAccount().email());
+        assertEquals(CLOCK.instant(),auth.detail(admin,u.id()).globalAccount().emailVerifiedAt());
+        var before=jdbc.queryForMap("SELECT * FROM app_user WHERE id=?",u.id());
+        String hash=jdbc.queryForObject("SELECT password_hash FROM local_global_credential WHERE user_id=?",String.class,u.id());
+        long created=auditCount("USER_CREATED",u.id());
+        assertThrows(RuntimeException.class,()->auth.createGlobal(admin,"MIXED.CASE@example.org","Collision","Aa1!12345678"));
+        assertThrows(RuntimeException.class,()->auth.email(admin,u.id(),"INITIAL-ADMIN@example.org"));
+        assertEquals(before,jdbc.queryForMap("SELECT * FROM app_user WHERE id=?",u.id()));
+        CLOCK.now.updateAndGet(t->t.plusSeconds(1));auth.email(admin,u.id()," New.Address@EXAMPLE.ORG ");
+        var after=jdbc.queryForMap("SELECT * FROM app_user WHERE id=?",u.id());
+        for(String field:List.of("id","created_by","created_at","scope","role","status","display_name"))assertEquals(before.get(field),after.get(field));
+        assertEquals(admin.id(),after.get("updated_by"));assertNotEquals(before.get("updated_at"),after.get("updated_at"));
+        assertEquals(hash,jdbc.queryForObject("SELECT password_hash FROM local_global_credential WHERE user_id=?",String.class,u.id()));
+        assertEquals(u.id(),auth.login("NEW.ADDRESS@EXAMPLE.ORG","Aa1!12345678").user().id());
+        assertThrows(AuthFailure.class,()->auth.login("mixed.case@example.org","Aa1!12345678"));
+        assertEquals(created,auditCount("USER_CREATED",u.id()));assertEquals(1,auditCount("GLOBAL_EMAIL_CHANGED",u.id()));
+        assertEquals(admin.id(),jdbc.queryForObject("SELECT actor_id FROM audit_log WHERE action='GLOBAL_EMAIL_CHANGED' AND target_id=?",UUID.class,u.id()));
+        String data=jdbc.queryForObject("SELECT data::text FROM audit_log WHERE action='GLOBAL_EMAIL_CHANGED' AND target_id=?",String.class,u.id());assertFalse(data.contains("@"));
+    }
+    @ParameterizedTest @CsvSource({"ACTIVE,true,true","ACTIVE,false,false","PENDING,true,false","PENDING,false,false","DISABLED,true,false","DISABLED,false,false"})
+    void globalLoginAndRefreshRequireVerificationApprovalAndActive(Status status,boolean verified,boolean allowed){
+        var u=auth.createGlobal(admin,"validity@example.org","Validity","Aa1!12345678");var issued=auth.login("validity@example.org","Aa1!12345678");
+        jdbc.update("UPDATE app_user SET status=? WHERE id=?",status.name(),u.id());
+        if(!verified)jdbc.update("UPDATE local_global_credential SET email_verified_at=NULL WHERE user_id=?",u.id());
+        if(allowed){assertDoesNotThrow(()->auth.login("validity@example.org","Aa1!12345678"));assertDoesNotThrow(()->auth.refresh(issued.refreshToken()));}
+        else{assertEquals(403,assertThrows(AuthFailure.class,()->auth.login("validity@example.org","Aa1!12345678")).status());assertEquals(403,assertThrows(AuthFailure.class,()->auth.refresh(issued.refreshToken())).status());}
+        assertDoesNotThrow(()->tokens.verify(issued.accessToken(),"access"));
+    }
+    @Test void approvalDoesNotFabricateVerificationAndResetRestoresExplicitManualVerification(){
+        var u=auth.createGlobal(admin,"approval@example.org","Approval","Aa1!12345678");jdbc.update("UPDATE app_user SET status='PENDING' WHERE id=?",u.id());jdbc.update("UPDATE local_global_credential SET email_verified_at=NULL WHERE user_id=?",u.id());
+        auth.approve(admin,u.id());assertThrows(AuthFailure.class,()->auth.login("approval@example.org","Aa1!12345678"));
+        auth.resetCredential(admin,u.id(),"reset@example.org","Bb2!12345678");assertEquals(CLOCK.instant(),auth.detail(admin,u.id()).globalAccount().emailVerifiedAt());assertEquals(u.id(),auth.login("RESET@EXAMPLE.ORG","Bb2!12345678").user().id());
+    }
+    @Test void unverifiedAdminDoesNotBlockGuardedRecovery(){
+        jdbc.update("UPDATE local_global_credential SET email_verified_at=NULL WHERE user_id=?",admin.id());
+        var recovered=auth.bootstrap("verified-recovery@example.org","Recovery","Aa1!12345678");assertEquals(CLOCK.instant(),auth.detail(recovered,recovered.id()).globalAccount().emailVerifiedAt());
+        assertThrows(AuthFailure.class,()->auth.bootstrap("another@example.org","No","Aa1!12345678"));
+    }
+    @Test void emailAdministrationRejectsTenantAndOrdinaryUserAndOverposting()throws Exception{
+        var u=auth.createGlobal(admin,"email-admin@example.org","User","Aa1!12345678");
+        for(Identity denied:List.of(u,fixture(Scope.TENANT,tenant,Role.ADMIN,Status.ACTIVE)))assertEquals(403,assertThrows(AuthFailure.class,()->auth.email(denied,u.id(),"changed@example.org")).status());
+        var local=fixture(Scope.TENANT,tenant,Role.USER,Status.ACTIVE);assertEquals(403,assertThrows(AuthFailure.class,()->auth.email(admin,local.id(),"tenant@example.org")).status());
+        String bearer=tokens.login(admin).accessToken();
+        for(Map<String,Object> body:List.of(Map.<String,Object>of("email","changed@example.org","emailVerifiedAt",CLOCK.instant().toString()),Map.<String,Object>of("login","old-login","password","Aa1!12345678")))assertEquals(400,unsafe(put("/api/v1/users/"+u.id()+"/email").contentType("application/json").content(json.writeValueAsString(body)),bearer).getResponse().getStatus());
+        assertEquals(200,unsafe(put("/api/v1/users/"+u.id()+"/email").contentType("application/json").content("{\"email\":\"changed@example.org\"}"),bearer).getResponse().getStatus());
+        var detail=mvc.perform(get("/api/v1/users/"+u.id()).header("Authorization","Bearer "+bearer)).andReturn();String text=detail.getResponse().getContentAsString();assertTrue(text.contains("changed@example.org"));assertTrue(text.contains("emailVerifiedAt"));for(String forbidden:List.of("password","hash","loginName","issuer","subject"))assertFalse(text.contains(forbidden));
+        assertEquals(400,unsafe(post("/api/v1/auth/local/login").contentType("application/json").content("{\"login\":\"initial-admin\",\"password\":\"Aa1!12345678\"}"),null).getResponse().getStatus());
+    }
+    @Test void emailEditAuditFailureRollsBackCredentialVerificationAndMetadata(){
+        var before=jdbc.queryForMap("SELECT * FROM local_global_credential WHERE user_id=?",admin.id());var metadata=jdbc.queryForMap("SELECT * FROM app_user WHERE id=?",admin.id());
+        jdbc.execute("CREATE FUNCTION i1_reject_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.action='GLOBAL_EMAIL_CHANGED' THEN RAISE EXCEPTION 'isolated audit failure'; END IF; RETURN NEW; END; $$");jdbc.execute("CREATE TRIGGER i1_reject_audit BEFORE INSERT ON audit_log FOR EACH ROW EXECUTE FUNCTION i1_reject_audit()");
+        try{assertThrows(RuntimeException.class,()->auth.email(admin,admin.id(),"rollback@example.org"));assertEquals(before,jdbc.queryForMap("SELECT * FROM local_global_credential WHERE user_id=?",admin.id()));assertEquals(metadata,jdbc.queryForMap("SELECT * FROM app_user WHERE id=?",admin.id()));assertEquals(0,auditCount("GLOBAL_EMAIL_CHANGED",admin.id()));}
+        finally{jdbc.execute("DROP TRIGGER i1_reject_audit ON audit_log");jdbc.execute("DROP FUNCTION i1_reject_audit()");}
+    }
+    @Test void emailMigrationCleanTargetAndPopulatedLegacyRefusalWithoutProvenance(){
+        String schema="i1_"+UUID.randomUUID().toString().replace("-","");
+        Flyway.configure().dataSource(PG.getJdbcUrl(),PG.getUsername(),PG.getPassword()).schemas(schema).defaultSchema(schema).target("7").load().migrate();
+        UUID user=UUID.randomUUID();jdbc.update("INSERT INTO "+schema+".app_user(id,scope,role,status,display_name,created_by,updated_by,created_at,updated_at) VALUES(?,'GLOBAL','ADMIN','ACTIVE','Legacy',?,?,now(),now())",user,user,user);
+        jdbc.update("INSERT INTO "+schema+".local_global_credential(user_id,login_name,password_hash) VALUES(?,'legacy','fixture')",user);
+        var migration=Flyway.configure().dataSource(PG.getJdbcUrl(),PG.getUsername(),PG.getPassword()).schemas(schema).defaultSchema(schema).load();assertThrows(RuntimeException.class,migration::migrate);
+        assertEquals("legacy",jdbc.queryForObject("SELECT login_name FROM "+schema+".local_global_credential WHERE user_id=?",String.class,user));
+        assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM information_schema.columns WHERE table_schema=? AND table_name='local_global_credential' AND column_name='email'",Integer.class,schema));
+        assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='local_global_credential' AND column_name='login_name'",Integer.class));
+        assertEquals(8,jdbc.queryForObject("SELECT count(*) FROM public.flyway_schema_history WHERE success",Integer.class));
+    }
+
+    @Test void emailEditWinsAgainstLoginUsingOldEmailEvenWhenPasswordIsUnchanged()throws Exception{
+        var locked=new CountDownLatch(1);var release=new CountDownLatch(1);
+        try(var pool=Executors.newFixedThreadPool(2)){
+            var edit=pool.submit(()->tx(()->{auth.email(admin,admin.id(),"changed-admin@example.org");locked.countDown();try{assertTrue(release.await(15,TimeUnit.SECONDS));}catch(InterruptedException ex){throw new RuntimeException(ex);}return null;}));
+            assertTrue(locked.await(10,TimeUnit.SECONDS));var login=pool.submit(()->assertThrows(AuthFailure.class,()->auth.login("initial-admin@example.org","CorrectHorse25!Battery")));
+            try{awaitDatabaseWait();}finally{release.countDown();}
+            edit.get(20,TimeUnit.SECONDS);assertEquals(401,login.get(20,TimeUnit.SECONDS).status());
+        }
+        assertDoesNotThrow(()->auth.login("changed-admin@example.org","CorrectHorse25!Battery"));
+    }
+
+    @Test void callbackRejectsDeletedCurrentConfigurationAndRecreatedValidFlowMayComplete()throws Exception{
+        var started=flow();configurations.delete(admin,tenant,0);
+        var failed=callback(started,started.authorization().state());assertEquals("https://kelios.example/auth/failed",failed.getResponse().getHeader("Location"));assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM external_identity",Integer.class));assertThrows(AuthFailure.class,()->oidc.start(tenant));
+        configure(tenant,null,Set.of(PROVIDER.group));var valid=flow();configurations.delete(admin,tenant,0);configure(tenant,null,Set.of(PROVIDER.group));
+        var completed=callback(valid,valid.authorization().state());assertEquals("https://kelios.example/auth/complete",completed.getResponse().getHeader("Location"));var pair=auth.refresh(cookie(completed,BrowserTokens.REFRESH).getValue());UUID id=pair.user().id();assertEquals(Status.PENDING,pair.user().status());auth.approve(admin,id);
+        var active=auth.refresh(pair.refreshToken());configurations.delete(admin,tenant,0);assertEquals(id,auth.refresh(active.refreshToken()).user().id());assertDoesNotThrow(()->tokens.verify(active.accessToken(),"access"));assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM external_identity WHERE user_id=?",Integer.class,id));
+    }
+    @Test void callbackRejectsCurrentRecreationThatDoesNotSatisfyClientChecks()throws Exception{
+        var started=flow();configurations.delete(admin,tenant,0);configurations.put(admin,tenant,PROVIDER.issuer,"different-client","fixture-secret",true,null,Set.of(PROVIDER.group));assertEquals("https://kelios.example/auth/failed",callback(started,started.authorization().state()).getResponse().getHeader("Location"));assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM external_identity",Integer.class));
     }
 }

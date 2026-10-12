@@ -16,7 +16,7 @@ public class AdministratorRecoveryCommand implements ApplicationRunner {
         Path file=Path.of(env.getRequiredProperty("kelios.recovery.password-file"));
         if(Files.size(file)>2048)throw new IllegalArgumentException("Password file too large");
         // Preserve password exactly; operator writes a file without an incidental final newline.
-        service.bootstrap(env.getRequiredProperty("kelios.recovery.login"),env.getRequiredProperty("kelios.recovery.display-name"),Files.readString(file));
+        service.bootstrap(env.getRequiredProperty("kelios.recovery.email"),env.getRequiredProperty("kelios.recovery.display-name"),Files.readString(file));
         SpringApplication.exit(context,()->0);
     }
 }

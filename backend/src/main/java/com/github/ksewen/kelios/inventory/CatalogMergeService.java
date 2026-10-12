@@ -25,7 +25,7 @@ public class CatalogMergeService {
         this.catalog=catalog;this.assets=assets;this.history=history;this.jdbc=jdbc;this.em=em;this.clock=clock;
     }
     @Transactional public void merge(MergeKind kind,UUID source,UUID target,Actor actor) {
-        var pair=catalog.lockMerge(kind,source,target);catalog.redirectProducts(pair);
+        var pair=catalog.lockMerge(kind,source,target);catalog.redirectProducts(pair,actor);
         String column=kind==MergeKind.CATEGORY?"category_id":"manufacturer_id";
         var ids=jdbc.query("SELECT id FROM asset WHERE "+column+"=? ORDER BY id FOR UPDATE",(rs,n)->rs.getObject(1,UUID.class),source);
         for(UUID id:ids) {

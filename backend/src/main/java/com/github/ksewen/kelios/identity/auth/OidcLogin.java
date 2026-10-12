@@ -82,7 +82,7 @@ public class OidcLogin {
             var info=http.get(text(doc,"userinfo_endpoint"),provider.issuer(),text(response,"access_token"));
             if(!claims.getSubject().equals(text(info,"sub")))throw AuthFailure.denied();
             String display=info.get("name") instanceof String name?name:null;
-            return provisioning.complete(tenant,flow.version(),flow.issuer(),claims.getSubject(),display,IServGroups.parse(info));
+            return provisioning.complete(tenant,flow.version(),flow.issuer(),flow.clientId(),claims.getSubject(),display,IServGroups.parse(info));
         }catch(AuthFailure ex){throw ex;}catch(Exception ex){throw AuthFailure.provider();}
     }
     private JWTClaimsSet verifyIdToken(String value,Map<String,Object> doc,Flow flow)throws Exception{

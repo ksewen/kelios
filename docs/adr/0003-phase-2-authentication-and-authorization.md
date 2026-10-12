@@ -1,5 +1,8 @@
 # ADR 0003: Phase 2 stateless authentication and explicit authorization
 
+**Historical accepted implementation record.** Preserve the decisions and evidence below as implementation-time history. Current normative Domain/identity/query requirements are in [DOMAIN.md](../../DOMAIN.md) and [ARCHITECTURE.md](../../ARCHITECTURE.md); separately approved future work follows [the consolidated implementation gates](../plans/COLLECTION_QUERY_IMPLEMENTATION_PLAN.md). Earlier login identifiers/password minima, paging defaults, deleted selectors, sort ties and phase-specific exclusions are not competing target requirements.
+
+
 Status: Accepted through the user's Phase 2 implementation approval and D1–D9 decisions, 2026-10-10. Scope: Phase 2 only. Latest clarification permits complete documented IServ implementation without real-provider access this cycle; interoperability remains pending manual evidence.
 
 ## Authority and preserved baseline

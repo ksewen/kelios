@@ -6,6 +6,6 @@ import org.springframework.web.bind.annotation.*;
 public class AuditController {
  private final InventoryOperations ops;
  public AuditController(InventoryOperations ops){this.ops=ops;}
- @GetMapping public Page<Map<String,Object>> list(@RequestParam Map<String,String> q){return ops.audit(q);}
- @GetMapping("/{id}") public Map<String,Object> detail(@PathVariable UUID id){return ops.audit(id);}
+ @GetMapping public Page<AuditDtos.Item> list(@RequestParam Map<String,String> q){return AuditDtos.page(ops.audit(AuditDtos.query(q)));}
+ @GetMapping("/{id}") public AuditDtos.Item detail(@PathVariable UUID id){return AuditDtos.item(ops.audit(id));}
 }

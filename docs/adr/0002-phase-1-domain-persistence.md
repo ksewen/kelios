@@ -1,5 +1,8 @@
 # ADR 0002: Phase 1 persistence and operation-specific transactions
 
+**Historical accepted implementation record.** Preserve the decisions and evidence below as implementation-time history. Current normative Domain/identity/query requirements are in [DOMAIN.md](../../DOMAIN.md) and [ARCHITECTURE.md](../../ARCHITECTURE.md); separately approved future work follows [the consolidated implementation gates](../plans/COLLECTION_QUERY_IMPLEMENTATION_PLAN.md). Earlier login identifiers/password minima, paging defaults, deleted selectors, sort ties and phase-specific exclusions are not competing target requirements.
+
+
 Status: Accepted by the user on 2026-10-10 through approval of the revised [Phase 1 plan](../plans/PHASE_1_PLAN.md). Scope: Phase 1 internal domain foundation only.
 
 ## Context and authority

@@ -23,7 +23,7 @@ public class CatalogService {
     public enum MergeKind { CATEGORY, MANUFACTURER }
     public static final UUID UNKNOWN_CATEGORY=UUID.fromString("00000000-0000-0000-0000-000000000001");
     public static final UUID UNKNOWN_MANUFACTURER=UUID.fromString("00000000-0000-0000-0000-000000000002");
-    public record Entry(UUID id, String name, UUID tenantId, boolean deleted, UUID categoryId, UUID manufacturerId, String manufacturerNumber) {
+    public record Entry(UUID id, String name, UUID tenantId, boolean deleted, UUID categoryId, UUID manufacturerId, String manufacturerNumber, com.github.ksewen.kelios.audit.BusinessMetadata metadata) {
         public boolean global() { return tenantId==null; }
         public Map<String,Object> snapshot() {
             Map<String,Object> result=new LinkedHashMap<>();result.put("id",id.toString());result.put("name",name);
@@ -52,7 +52,7 @@ public class CatalogService {
         var rows=jdbc.query("SELECT * FROM "+kind.table+" WHERE id=?"+(onlyTenant==null?"":" AND (tenant_id IS NULL OR tenant_id=?)")+locking,(rs,n)->new Entry(
             rs.getObject("id",UUID.class),rs.getString("name"),rs.getObject("tenant_id",UUID.class),rs.getTimestamp("deleted_at")!=null,
             kind==Kind.PRODUCT?rs.getObject("category_id",UUID.class):null,kind==Kind.PRODUCT?rs.getObject("manufacturer_id",UUID.class):null,
-            kind==Kind.PRODUCT?rs.getString("manufacturer_number"):null),args.toArray());
+            kind==Kind.PRODUCT?rs.getString("manufacturer_number"):null,com.github.ksewen.kelios.audit.BusinessMetadata.read(rs)),args.toArray());
         if(rows.isEmpty()) throw new BusinessFailure("NOT_FOUND","Catalog entry not found");return rows.getFirst();
     }
     @Transactional(propagation=Propagation.MANDATORY)
@@ -83,49 +83,66 @@ public class CatalogService {
     @Transactional public UUID createCategory(UUID tenantId, String name, Actor actor) { return createLabel(Kind.CATEGORY,tenantId,name,actor); }
     @Transactional public UUID createManufacturer(UUID tenantId, String name, Actor actor) { return createLabel(Kind.MANUFACTURER,tenantId,name,actor); }
     private UUID createLabel(Kind kind, UUID tenantId, String name, Actor actor) {
-        if(tenantId!=null)tenants.require(tenantId);UUID id=UUID.randomUUID();String clean=required(name);
-        jdbc.update("INSERT INTO "+kind.table+"(id,name,visibility,tenant_id) VALUES(?,?,?,?)",id,clean,tenantId==null?"GLOBAL":"TENANT",tenantId);
+        if(tenantId!=null)tenants.require(tenantId);UUID id=UUID.randomUUID();String clean=required(name);var now=Timestamp.from(Instant.now(clock));
+        jdbc.update("INSERT INTO "+kind.table+"(id,name,visibility,tenant_id,created_by,created_at,updated_by,updated_at) VALUES(?,?,?,?,?,?,?,?)",id,clean,tenantId==null?"GLOBAL":"TENANT",tenantId,actor.id(),now,actor.id(),now);
         audit.record(actor,tenantId,kind+"_CREATED",kind.name(),id,Map.of("after",load(kind,id,"").snapshot()));return id;
     }
     @Transactional public UUID createProduct(UUID tenantId, UUID categoryId, UUID manufacturerId, String name, String number, Actor actor) {
         if(tenantId!=null)tenants.require(tenantId);
         requireVisible(share(Kind.CATEGORY,categoryId),tenantId,true);requireVisible(share(Kind.MANUFACTURER,manufacturerId),tenantId,true);
-        UUID id=UUID.randomUUID();jdbc.update("INSERT INTO product(id,name,manufacturer_number,category_id,manufacturer_id,visibility,tenant_id) VALUES(?,?,?,?,?,?,?)",
-            id,required(name),optional(number),categoryId,manufacturerId,tenantId==null?"GLOBAL":"TENANT",tenantId);
+        UUID id=UUID.randomUUID();var now=Timestamp.from(Instant.now(clock));jdbc.update("INSERT INTO product(id,name,manufacturer_number,category_id,manufacturer_id,visibility,tenant_id,created_by,created_at,updated_by,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            id,required(name),optional(number),categoryId,manufacturerId,tenantId==null?"GLOBAL":"TENANT",tenantId,actor.id(),now,actor.id(),now);
         audit.record(actor,tenantId,"PRODUCT_CREATED","PRODUCT",id,Map.of("after",load(Kind.PRODUCT,id,"").snapshot()));return id;
     }
     @Transactional public void editLabel(Kind kind, UUID id, String name, Actor actor) {
         if(kind==Kind.PRODUCT)throw new BusinessFailure("INVALID_INPUT","Use Product edit");
         Entry entry=load(kind,id," FOR UPDATE");protect(kind,id);if(entry.deleted())throw new BusinessFailure("DELETED_TARGET","Entry deleted");
         if(references(kind,id))throw new BusinessFailure("REFERENCED","Resolve retained references first");
-        jdbc.update("UPDATE "+kind.table+" SET name=? WHERE id=?",required(name),id);
+        jdbc.update("UPDATE "+kind.table+" SET name=?,updated_by=?,updated_at=? WHERE id=?",required(name),actor.id(),Timestamp.from(Instant.now(clock)),id);
         audit.record(actor,entry.tenantId(),kind+"_EDITED",kind.name(),id,Map.of("before",entry.snapshot(),"after",load(kind,id,"").snapshot()));
     }
+    /** Product writers follow Merge's label-before-Product order; never expand the label set after locking Product. */
+    private Entry lockProduct(UUID id, UUID requestedCategory, UUID requestedManufacturer) {
+        Entry initial=load(Kind.PRODUCT,id,"");
+        var categories=new TreeSet<UUID>();categories.add(initial.categoryId());if(requestedCategory!=null)categories.add(requestedCategory);
+        var manufacturers=new TreeSet<UUID>();manufacturers.add(initial.manufacturerId());if(requestedManufacturer!=null)manufacturers.add(requestedManufacturer);
+        for(UUID label:categories)load(Kind.CATEGORY,label," FOR SHARE");
+        for(UUID label:manufacturers)load(Kind.MANUFACTURER,label," FOR SHARE");
+        Entry current=load(Kind.PRODUCT,id," FOR UPDATE");
+        if(!Objects.equals(initial.categoryId(),current.categoryId()) || !Objects.equals(initial.manufacturerId(),current.manufacturerId()))
+            throw new org.springframework.orm.ObjectOptimisticLockingFailureException(Product.class,id);
+        return current;
+    }
     @Transactional public void editProduct(UUID id, UUID categoryId, UUID manufacturerId, String name, String number, Actor actor) {
-        Entry entry=load(Kind.PRODUCT,id," FOR UPDATE");
+        editProduct(id,categoryId,manufacturerId,name,number,actor,null);
+    }
+    /** Signed Tenant restriction supplied by the authorized application boundary, never a request ownership fact. */
+    @Transactional public void editProduct(UUID id, UUID categoryId, UUID manufacturerId, String name, String number, Actor actor, UUID onlyTenant) {
+        Entry entry=lockProduct(id,categoryId,manufacturerId);
+        if(onlyTenant!=null && !Objects.equals(onlyTenant,entry.tenantId()))
+            throw new BusinessFailure("FORBIDDEN","Product is no longer writable in the signed Tenant");
         if(entry.deleted())throw new BusinessFailure("DELETED_TARGET","Product deleted");
         if(usage.productEverUsed(id))throw new BusinessFailure("PRODUCT_EDIT_FROZEN","Product has historical Asset usage");
-        share(Kind.CATEGORY,entry.categoryId());share(Kind.MANUFACTURER,entry.manufacturerId());
-        requireVisible(share(Kind.CATEGORY,categoryId),entry.tenantId(),true);requireVisible(share(Kind.MANUFACTURER,manufacturerId),entry.tenantId(),true);
-        jdbc.update("UPDATE product SET name=?,manufacturer_number=?,category_id=?,manufacturer_id=? WHERE id=?",required(name),optional(number),categoryId,manufacturerId,id);
+        requireVisible(load(Kind.CATEGORY,categoryId,""),entry.tenantId(),true);requireVisible(load(Kind.MANUFACTURER,manufacturerId,""),entry.tenantId(),true);
+        jdbc.update("UPDATE product SET name=?,manufacturer_number=?,category_id=?,manufacturer_id=?,updated_by=?,updated_at=? WHERE id=?",required(name),optional(number),categoryId,manufacturerId,actor.id(),Timestamp.from(Instant.now(clock)),id);
         audit.record(actor,entry.tenantId(),"PRODUCT_EDITED","PRODUCT",id,Map.of("before",entry.snapshot(),"after",load(Kind.PRODUCT,id,"").snapshot()));
     }
     @Transactional public void delete(Kind kind, UUID id, Actor actor) {
         Entry entry=load(kind,id," FOR UPDATE");protect(kind,id);
         if(entry.deleted())throw new BusinessFailure("DELETED_TARGET","Entry deleted");
         if(references(kind,id))throw new BusinessFailure("REFERENCED","Resolve retained references first");
-        jdbc.update("UPDATE "+kind.table+" SET deleted_at=?,deleted_by=? WHERE id=?",Timestamp.from(Instant.now(clock)),actor.id(),id);
+        var now=Timestamp.from(Instant.now(clock));jdbc.update("UPDATE "+kind.table+" SET deleted_at=?,deleted_by=?,updated_by=?,updated_at=? WHERE id=?",now,actor.id(),actor.id(),now,id);
         audit.record(actor,entry.tenantId(),kind+"_DELETED",kind.name(),id,Map.of("before",entry.snapshot(),"after",load(kind,id,"").snapshot()));
     }
     @Transactional public void publish(Kind kind, UUID id, Actor actor) {
-        Entry entry=load(kind,id," FOR UPDATE");
+        Entry entry=kind==Kind.PRODUCT?lockProduct(id,null,null):load(kind,id," FOR UPDATE");
         if(entry.deleted())throw new BusinessFailure("DELETED_TARGET","Entry deleted");
         if(entry.global())throw new BusinessFailure("INVALID_DEPENDENCY","Entry is already GLOBAL");
         if(kind==Kind.PRODUCT) {
-            requireVisible(share(Kind.CATEGORY,entry.categoryId()),null,true);
-            requireVisible(share(Kind.MANUFACTURER,entry.manufacturerId()),null,true);
+            requireVisible(load(Kind.CATEGORY,entry.categoryId(),""),null,true);
+            requireVisible(load(Kind.MANUFACTURER,entry.manufacturerId(),""),null,true);
         }
-        jdbc.update("UPDATE "+kind.table+" SET visibility='GLOBAL',tenant_id=NULL WHERE id=?",id);
+        jdbc.update("UPDATE "+kind.table+" SET visibility='GLOBAL',tenant_id=NULL,updated_by=?,updated_at=? WHERE id=?",actor.id(),Timestamp.from(Instant.now(clock)),id);
         audit.record(actor,entry.tenantId(),kind+"_PUBLISHED",kind.name(),id,Map.of("before",entry.snapshot(),"after",load(kind,id,"").snapshot()));
     }
     /** Called only by the inventory Merge coordinator in its transaction. */
@@ -137,7 +154,7 @@ public class CatalogService {
         if(source.deleted() || target.deleted())throw new BusinessFailure("DELETED_TARGET","Deleted Merge entry");return new MergePair(kind,source,target);
     }
     @Transactional(propagation=Propagation.MANDATORY)
-    public void redirectProducts(MergePair pair) {
+    public void redirectProducts(MergePair pair, Actor actor) {
         String column=pair.kind()==Kind.CATEGORY?"category_id":"manufacturer_id";
         List<UUID> ids=jdbc.query("SELECT id FROM product WHERE "+column+"=? ORDER BY id FOR UPDATE",(rs,n)->rs.getObject(1,UUID.class),pair.source().id());
         for(UUID id:ids) {
@@ -148,12 +165,12 @@ public class CatalogService {
             // Existing retained references may themselves be deleted; visibility must still hold.
             requireVisible(share(Kind.CATEGORY,pair.kind()==Kind.CATEGORY?pair.target().id():product.categoryId()),product.tenantId(),false);
             requireVisible(share(Kind.MANUFACTURER,pair.kind()==Kind.MANUFACTURER?pair.target().id():product.manufacturerId()),product.tenantId(),false);
-            jdbc.update("UPDATE product SET "+column+"=? WHERE id=?",pair.target().id(),id);
+            jdbc.update("UPDATE product SET "+column+"=?,updated_by=?,updated_at=? WHERE id=?",pair.target().id(),actor.id(),Timestamp.from(Instant.now(clock)),id);
         }
     }
     @Transactional(propagation=Propagation.MANDATORY)
     public void finishMerge(MergePair pair, Actor actor) {
-        jdbc.update("UPDATE "+pair.kind().table+" SET deleted_at=?,deleted_by=? WHERE id=?",Timestamp.from(Instant.now(clock)),actor.id(),pair.source().id());
+        var now=Timestamp.from(Instant.now(clock));jdbc.update("UPDATE "+pair.kind().table+" SET deleted_at=?,deleted_by=?,updated_by=?,updated_at=? WHERE id=?",now,actor.id(),actor.id(),now,pair.source().id());
         audit.record(actor,pair.source().tenantId(),pair.kind()+"_MERGED",pair.kind().name(),pair.source().id(),Map.of("source",pair.source().snapshot(),"target",pair.target().snapshot()));
     }
     @Transactional(readOnly=true)

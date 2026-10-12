@@ -16,6 +16,9 @@ public final class JdbcRows {
             if(value instanceof Timestamp t)value=t.toInstant();
             if(name.equals("data") && value!=null)value=JSON.readValue(value.toString(),Map.class);
             row.put(key.toString(),value);
-        }return row;
+        }
+        if(row.containsKey("createdBy"))row.put("createdByDisplayName",com.github.ksewen.kelios.audit.SystemActor.displayName((UUID)row.get("createdBy")));
+        if(row.containsKey("updatedBy"))row.put("updatedByDisplayName",com.github.ksewen.kelios.audit.SystemActor.displayName((UUID)row.get("updatedBy")));
+        return row;
     };
 }

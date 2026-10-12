@@ -75,10 +75,10 @@ class DomainFoundationIT {
         UUID u=users.create(UserService.Scope.TENANT,tenant,UserService.Role.USER,UserService.Status.PENDING,"User");
         users.create(UserService.Scope.GLOBAL,null,UserService.Role.ADMIN,UserService.Status.ACTIVE,"Global");
         assertThrows(IllegalArgumentException.class,()->users.create(UserService.Scope.GLOBAL,tenant,UserService.Role.USER,UserService.Status.ACTIVE,"Bad"));
-        assertThrows(RuntimeException.class,()->jdbc.update("INSERT INTO app_user(id,scope,tenant_id,role,status,display_name) VALUES(?,'GLOBAL',?,'USER','ACTIVE','X')",UUID.randomUUID(),tenant));
-        assertThrows(RuntimeException.class,()->jdbc.update("INSERT INTO tenant(id,name) VALUES(?,'  ')",UUID.randomUUID()));
+        assertThrows(RuntimeException.class,()->jdbc.update("INSERT INTO app_user(id,scope,tenant_id,role,status,display_name,created_by,created_at,updated_by,updated_at) VALUES(?,'GLOBAL',?,'USER','ACTIVE','X',?,now(),?,now())",UUID.randomUUID(),tenant,actor.id(),actor.id()));
+        assertThrows(RuntimeException.class,()->jdbc.update("INSERT INTO tenant(id,name,created_by,created_at,updated_by,updated_at) VALUES(?,'  ',?,now(),?,now())",UUID.randomUUID(),actor.id(),actor.id()));
         var columns=jdbc.queryForList("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='app_user'",String.class);
-        assertEquals(Set.of("id","scope","tenant_id","role","status","display_name"),new HashSet<>(columns));
+        assertEquals(Set.of("id","scope","tenant_id","role","status","display_name","created_by","created_at","updated_by","updated_at"),new HashSet<>(columns));
         var a=register();jdbc.update("DELETE FROM app_user WHERE id=?",u);
         assertEquals(actor.displayName(),jdbc.queryForObject("SELECT actor_display_name FROM asset_event WHERE asset_id=?",String.class,a.id()));
         assertEquals(1,audits("TENANT_CREATED",tenant));assertEquals("read committed",jdbc.queryForObject("SHOW transaction_isolation",String.class));
@@ -108,7 +108,7 @@ class DomainFoundationIT {
         assertEquals(1,events(a.id()));
     }
     @Test void freshSchemaAndV1UpgradeUseSameMigrations() {
-        assertEquals(6,jdbc.queryForObject("SELECT count(*) FROM flyway_schema_history WHERE success",Integer.class));
+        assertEquals(8,jdbc.queryForObject("SELECT count(*) FROM flyway_schema_history WHERE success",Integer.class));
         assertEquals(10,jdbc.queryForObject("SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name IN ('tenant','app_user','category','manufacturer','product','location','owner','asset','asset_event','audit_log')",Integer.class));
         Flyway v1=Flyway.configure().dataSource(PG.getJdbcUrl(),PG.getUsername(),PG.getPassword()).schemas("upgrade_test").defaultSchema("upgrade_test").target("1").load();v1.migrate();
         assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM information_schema.tables WHERE table_schema='upgrade_test' AND table_name='asset'",Integer.class));

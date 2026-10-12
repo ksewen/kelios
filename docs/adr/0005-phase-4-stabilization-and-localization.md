@@ -1,5 +1,8 @@
 # ADR 0005 — Phase 4 metadata, bilingual presentation and stabilization
 
+**Historical accepted implementation record.** Preserve the decisions and evidence below as implementation-time history. Current normative Domain/identity/query requirements are in [DOMAIN.md](../../DOMAIN.md) and [ARCHITECTURE.md](../../ARCHITECTURE.md); separately approved future work follows [the consolidated implementation gates](../plans/COLLECTION_QUERY_IMPLEMENTATION_PLAN.md). Earlier login identifiers/password minima, paging defaults, deleted selectors, sort ties and phase-specific exclusions are not competing target requirements.
+
+
 Status: Implementation explicitly approved by the user. Phase 4 user acceptance pending implementation/evidence review.
 
 ## Authority

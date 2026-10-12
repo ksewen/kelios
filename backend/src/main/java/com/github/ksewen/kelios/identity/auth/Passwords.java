@@ -9,14 +9,18 @@ public class Passwords {
     // Approved bounded baseline: 19 MiB, t=2, p=1, random 16-byte salt, 32-byte hash.
     private final Argon2PasswordEncoder encoder=new Argon2PasswordEncoder(16,32,1,19456,2);
     private final String dummy=encoder.encode("NonexistentAccount1!");
-    public String login(String value) {
-        if(value==null || !value.matches("[A-Za-z0-9._-]{3,64}"))throw new AuthFailure(400,"Invalid login identifier");
-        return value.toLowerCase(Locale.ROOT);
+    /** Practical ASCII mailbox contract; canonical comparison is case-insensitive, not provider aliasing. */
+    public String email(String value) {
+        if(value==null)throw new AuthFailure(400,"Invalid Email");
+        String email=value.strip().toLowerCase(Locale.ROOT);
+        if(email.length()>254 || !email.matches("[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+") || email.substring(0,email.indexOf('@')).length()>64)
+            throw new AuthFailure(400,"Invalid Email");
+        return email;
     }
     public void validate(String value) {
         if(value==null)throw new AuthFailure(400,"Invalid password policy");
         int length=value.codePointCount(0,value.length());
-        if(length<15 || length>128 || !value.codePoints().anyMatch(Character::isUpperCase)
+        if(length<12 || length>128 || !value.codePoints().anyMatch(Character::isUpperCase)
             || !value.codePoints().anyMatch(Character::isLowerCase) || !value.codePoints().anyMatch(Character::isDigit)
             || !value.codePoints().anyMatch(c->!Character.isLetterOrDigit(c)))throw new AuthFailure(400,"Invalid password policy");
     }

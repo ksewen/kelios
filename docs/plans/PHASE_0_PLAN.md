@@ -1,5 +1,8 @@
 # Phase 0 architecture plan
 
+**Historical accepted implementation record.** Preserve the decisions and evidence below as implementation-time history. Current normative Domain/identity/query requirements are in [DOMAIN.md](../../DOMAIN.md) and [ARCHITECTURE.md](../../ARCHITECTURE.md); separately approved future work follows [the consolidated implementation gates](COLLECTION_QUERY_IMPLEMENTATION_PLAN.md). Earlier login identifiers/password minima, paging defaults, deleted selectors, sort ties and phase-specific exclusions are not competing target requirements.
+
+
 Status: Approved by the user on 2026-10-10 with refinements in `docs/adr/0001-phase-0-foundation.md`; Phase 0 executable acceptance checks passed. No domain implementation authorized by this plan. The ADR supersedes proposal language below; actual evidence and verification limits are tracked in `docs/verification/PHASE_0.md`.
 
 ## Repository inspection
