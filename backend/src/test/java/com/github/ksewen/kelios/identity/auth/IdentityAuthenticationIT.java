@@ -315,8 +315,8 @@ class IdentityAuthenticationIT {
     @Test void administrationHttpMatrixAndAuthoritativeTargets()throws Exception{
         for(var actor:List.of(admin,fixture(Scope.GLOBAL,null,Role.USER,Status.ACTIVE),fixture(Scope.TENANT,tenant,Role.ADMIN,Status.ACTIVE),fixture(Scope.TENANT,tenant,Role.USER,Status.ACTIVE))){
             String bearer=tokens.login(actor).accessToken();
-            var list=mvc.perform(get("/api/v1/tenants").header("Authorization","Bearer "+bearer)).andReturn();assertEquals(actor.globalAdmin()?200:403,list.getResponse().getStatus());
-            assertEquals(actor.role()==Role.ADMIN?200:403,mvc.perform(get("/api/v1/tenants/"+tenant).header("Authorization","Bearer "+bearer)).andReturn().getResponse().getStatus());
+            var list=mvc.perform(get("/api/v1/tenants").header("Authorization","Bearer "+bearer)).andReturn();assertEquals(actor.scope()==Scope.GLOBAL?200:403,list.getResponse().getStatus());
+            assertEquals(actor.scope()==Scope.GLOBAL || actor.role()==Role.ADMIN?200:403,mvc.perform(get("/api/v1/tenants/"+tenant).header("Authorization","Bearer "+bearer)).andReturn().getResponse().getStatus());
             assertEquals(actor.globalAdmin()?200:403,mvc.perform(post("/api/v1/tenants").header("Authorization","Bearer "+bearer).contentType("application/json").content("{\"name\":\"Authorized creation\"}")).andReturn().getResponse().getStatus());
             assertEquals(actor.role()==Role.ADMIN?200:403,mvc.perform(get("/api/v1/tenants/"+tenant+"/oidc").header("Authorization","Bearer "+bearer)).andReturn().getResponse().getStatus());
         }

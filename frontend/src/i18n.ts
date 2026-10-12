@@ -40,9 +40,15 @@ export function valueLabel(field: string, value: unknown): string {
   if (dateFields.has(field) && typeof value === 'string' && !Number.isNaN(Date.parse(value))) return new Intl.DateTimeFormat(i18n.language, { dateStyle: 'medium', timeStyle: 'medium', timeZone: 'UTC' }).format(new Date(value)) + ' UTC';
   return typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value);
 }
+export type FeedbackError = string | { status?: number; code?: string };
 export function errorMessage(error: unknown): string {
-  const code = typeof error === 'string' ? error : error && typeof error === 'object' && 'code' in error ? String(error.code) : 'UNCERTAIN';
-  return String(i18n.t(`errors.${Object.hasOwn(en.errors, code) ? code : 'REQUEST_FAILED'}`));
+  const code = typeof error === 'string' ? error : error && typeof error === 'object' && 'code' in error && typeof error.code === 'string' ? error.code : undefined;
+  if (code && Object.hasOwn(en.errors, code)) return String(i18n.t(`errors.${code}`));
+  const status = error && typeof error === 'object' && 'status' in error && typeof error.status === 'number' ? error.status : undefined;
+  const fallback = status === 400 ? 'INVALID_INPUT' : status === 401 ? 'AUTHENTICATION_REQUIRED'
+    : status === 403 ? 'FORBIDDEN' : status === 404 ? 'NOT_FOUND' : status === 409 ? 'HTTP_CONFLICT'
+    : status === 429 ? 'THROTTLED' : status === 503 ? 'SERVICE_UNAVAILABLE' : 'REQUEST_FAILED';
+  return String(i18n.t(`errors.${fallback}`));
 }
 
 export function numberLabel(value: number): string { return new Intl.NumberFormat(i18n.language).format(value); }

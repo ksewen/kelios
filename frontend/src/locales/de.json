@@ -171,6 +171,8 @@
     "loanedAt": "Ausgeliehen am",
     "expectedReturnAt": "Erwartete Rückgabe",
     "loanNote": "Ausleihnotiz",
+    "createdBy": "Erstellt von",
+    "updatedBy": "Aktualisiert von",
     "createdAt": "Erstellt am",
     "updatedAt": "Aktualisiert am",
     "occurredAt": "Zeitpunkt",
@@ -277,6 +279,7 @@
     "OWNER": "Eigentümer"
   },
   "errors": {
+    "HTTP_CONFLICT": "Die Aktion steht im Konflikt mit dem aktuellen Zustand. Prüfen Sie ihn vor einer erneuten Übermittlung.",
     "INVALID_INPUT": "Prüfen Sie die Eingaben.",
     "AUTHENTICATION_REQUIRED": "Melden Sie sich an, um fortzufahren.",
     "FORBIDDEN": "Sie dürfen diese Aktion nicht ausführen.",
@@ -356,6 +359,7 @@
     "accountMenu": "Kontomenü",
     "loading": "Arbeitsbereich wird geladen",
     "pendingTitle": "Ihr Konto wartet auf Freigabe",
+    "email": "E-Mail",
     "username": "Benutzername",
     "emptyHelp": "Keine passenden Einträge. Passen Sie die Filter an oder erstellen Sie den ersten Eintrag.",
     "registrationHelp": "Asset in diesem Arbeitsbereich registrieren. KELIOS erzeugt das Asset Tag.",

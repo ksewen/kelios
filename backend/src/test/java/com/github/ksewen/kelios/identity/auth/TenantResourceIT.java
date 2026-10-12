@@ -82,7 +82,7 @@ class TenantResourceIT {
  @ParameterizedTest @CsvSource({"GLOBAL,ADMIN,ACTIVE","GLOBAL,USER,ACTIVE","TENANT,ADMIN,ACTIVE","TENANT,USER,ACTIVE","GLOBAL,ADMIN,PENDING","GLOBAL,USER,PENDING","TENANT,ADMIN,PENDING","TENANT,USER,PENDING","GLOBAL,ADMIN,DISABLED","GLOBAL,USER,DISABLED","TENANT,ADMIN,DISABLED","TENANT,USER,DISABLED"})
  void authoritativeServiceScopeAndStatus(Scope scope,Role role,Status state){
   var who=new Identity(UUID.randomUUID(),scope,scope==Scope.TENANT?tenant:null,role,state,"Actor");principal(who);
-  if(state!=Status.ACTIVE || role!=Role.ADMIN){assertEquals(403,assertThrows(AuthFailure.class,operations::list).status());assertEquals(403,assertThrows(AuthFailure.class,()->operations.detail(tenant)).status());assertEquals(403,assertThrows(AuthFailure.class,()->operations.create("Denied")).status());return;}
+  if(state!=Status.ACTIVE || (scope==Scope.TENANT && role!=Role.ADMIN)){assertEquals(403,assertThrows(AuthFailure.class,operations::list).status());assertEquals(403,assertThrows(AuthFailure.class,()->operations.detail(tenant)).status());assertEquals(403,assertThrows(AuthFailure.class,()->operations.create("Denied")).status());return;}
   assertEquals(tenant,operations.detail(tenant).id());
   if(scope==Scope.TENANT){assertEquals(403,assertThrows(AuthFailure.class,operations::list).status());assertEquals(404,assertThrows(AuthFailure.class,()->operations.detail(other)).status());}
   else assertTrue(operations.list().stream().anyMatch(t->t.id().equals(other)));
@@ -109,7 +109,30 @@ class TenantResourceIT {
  }
  @Test void undefinedMutationsAreNotExposed()throws Exception{for(var b:List.of(put("/api/v1/tenants/"+tenant),patch("/api/v1/tenants/"+tenant),delete("/api/v1/tenants/"+tenant)))assertEquals(405,status(request(admin,b,Map.of("name","No mutation"))));}
 
- @ParameterizedTest @CsvSource({"GLOBAL,ADMIN,ACTIVE,200,200,200","TENANT,ADMIN,ACTIVE,403,200,403","GLOBAL,USER,ACTIVE,403,403,403","TENANT,USER,ACTIVE,403,403,403","GLOBAL,ADMIN,PENDING,403,403,403","TENANT,ADMIN,PENDING,403,403,403","GLOBAL,USER,PENDING,403,403,403","TENANT,USER,PENDING,403,403,403"})
+ @Test void globalReaderGetsApprovedProjectionWithoutAuditOrAdministrativeAuthority()throws Exception{
+  var reader=principal(Scope.GLOBAL,Role.USER,Status.ACTIVE);
+  long audits=jdbc.queryForObject("SELECT count(*) FROM audit_log",Long.class);
+  var detail=request(reader,get("/api/v1/tenants/"+other),null);assertEquals(200,status(detail));var d=data(detail);
+  assertEquals(Set.of("id","name","metadata"),d.keySet());
+  assertEquals(Set.of("createdBy","createdAt","updatedBy","updatedAt","createdByDisplayName","updatedByDisplayName"),((Map<?,?>)d.get("metadata")).keySet());
+  assertEquals(data(request(admin,get("/api/v1/tenants/"+other),null)),d);
+  var collection=request(reader,get("/api/v1/tenants"),null);assertEquals(200,status(collection));assertTrue(json.readValue(collection.getResponse().getContentAsString(),List.class).contains(d));
+  assertEquals(audits,jdbc.queryForObject("SELECT count(*) FROM audit_log",Long.class));
+  for(String secret:List.of("email","password","issuer","clientSecret","allowedGroup","scope","role"))assertFalse(detail.getResponse().getContentAsString().contains(secret));
+  assertEquals(403,status(request(reader,post("/api/v1/tenants"),Map.of("name","Denied"))));
+  for(var mutation:List.of(put("/api/v1/tenants/"+other),patch("/api/v1/tenants/"+other),delete("/api/v1/tenants/"+other)))assertEquals(405,status(request(reader,mutation,Map.of("name","Denied"))));
+  for(String path:List.of("/api/v1/users","/api/v1/users/"+admin.id(),"/api/v1/tenants/"+other+"/oidc","/api/v1/audit-log","/api/v1/audit-log/"+UUID.randomUUID()))assertEquals(403,status(request(reader,get(path),null)),path);
+ }
+ @Test void inactiveGlobalAndAnonymousTenantReadsRemainDenied()throws Exception{
+  for(Role role:Role.values())for(Status state:List.of(Status.PENDING,Status.DISABLED)){
+   var who=principal(Scope.GLOBAL,role,state);principal(who);assertEquals(403,assertThrows(AuthFailure.class,operations::list).status());assertEquals(403,assertThrows(AuthFailure.class,()->operations.detail(tenant)).status());clear();
+   if(state==Status.DISABLED){assertThrows(AuthFailure.class,()->tokens.login(who));continue;}
+   assertEquals(403,status(request(who,get("/api/v1/tenants"),null)));assertEquals(403,status(request(who,get("/api/v1/tenants/"+tenant),null)));
+  }
+  assertEquals(401,status(request(null,get("/api/v1/tenants"),null)));assertEquals(401,status(request(null,get("/api/v1/tenants/"+tenant),null)));
+ }
+
+ @ParameterizedTest @CsvSource({"GLOBAL,ADMIN,ACTIVE,200,200,200","TENANT,ADMIN,ACTIVE,403,200,403","GLOBAL,USER,ACTIVE,200,200,403","TENANT,USER,ACTIVE,403,403,403","GLOBAL,ADMIN,PENDING,403,403,403","TENANT,ADMIN,PENDING,403,403,403","GLOBAL,USER,PENDING,403,403,403","TENANT,USER,PENDING,403,403,403"})
  void revisedHttpAdministrationMatrix(Scope scope,Role role,Status state,int listStatus,int detailStatus,int createStatus)throws Exception{
   var who=new Identity(UUID.randomUUID(),scope,scope==Scope.TENANT?tenant:null,role,state,"Principal");
   assertEquals(listStatus,status(request(who,get("/api/v1/tenants"),null)));

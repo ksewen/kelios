@@ -171,6 +171,8 @@
     "loanedAt": "Loaned at",
     "expectedReturnAt": "Expected return",
     "loanNote": "Loan note",
+    "createdBy": "Created by",
+    "updatedBy": "Updated by",
     "createdAt": "Created at",
     "updatedAt": "Updated at",
     "occurredAt": "Occurred at",
@@ -277,6 +279,7 @@
     "OWNER": "Owner"
   },
   "errors": {
+    "HTTP_CONFLICT": "The operation conflicts with the current state. Review before resubmitting.",
     "INVALID_INPUT": "Review the input values.",
     "AUTHENTICATION_REQUIRED": "Sign in to continue.",
     "FORBIDDEN": "You are not permitted to perform this operation.",
@@ -356,6 +359,7 @@
     "accountMenu": "Account menu",
     "loading": "Loading your workspace",
     "pendingTitle": "Your account is awaiting approval",
+    "email": "Email",
     "username": "Username",
     "emptyHelp": "No matching records. Adjust your filters or create your first entry.",
     "registrationHelp": "Register an Asset in this workspace. KELIOS generates its Asset Tag.",

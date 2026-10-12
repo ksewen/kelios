@@ -2,13 +2,14 @@ import { test, expect } from '@playwright/test';
 import {account} from './ui-helpers';
 import { readFileSync } from 'node:fs';
 
-const login = process.env.KELIOS_TEST_LOGIN ?? 'phase2-smoke-admin';
+const email = process.env.KELIOS_TEST_EMAIL;
 const password = () => readFileSync(process.env.KELIOS_TEST_PASSWORD_FILE!, 'utf8');
 
 async function signIn(page: import('@playwright/test').Page) {
+  if(!email)throw new Error('Operator GLOBAL Email must be supplied through KELIOS_TEST_EMAIL');
   await page.goto('/');
   await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeEnabled();
-  await page.getByLabel('Username',{exact:true}).fill(login);
+  await page.getByLabel('Email',{exact:true}).fill(email);
   await page.getByLabel('Password', { exact: true }).fill(password());
   const response = page.waitForResponse('**/api/v1/auth/local/login');
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
@@ -52,7 +53,7 @@ test('real disabled account loses refresh while issued Access expires naturally'
   const user = await created.json() as { id: string; scope: string; role: string; status: string };
   expect([user.scope, user.role, user.status]).toEqual(['GLOBAL', 'USER', 'ACTIVE']);
   await account(page,'Sign out');
-  await page.getByLabel('Username',{exact:true}).fill(username);
+  await page.getByLabel('Email',{exact:true}).fill(username);
   await page.getByLabel('Password', { exact: true }).fill(password());
   const loginResponse = page.waitForResponse('**/api/v1/auth/local/login');
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();

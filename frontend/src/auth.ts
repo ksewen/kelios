@@ -1,8 +1,6 @@
-export type Identity = {
-  id: string; scope: 'GLOBAL' | 'TENANT'; tenantId: string | null;
-  role: 'ADMIN' | 'USER'; status: 'PENDING' | 'ACTIVE' | 'DISABLED'; displayName: string;
-};
-type Session = { accessToken: string; expiresIn: number; user: Identity };
+import type { Identity, SessionResponse, LocalLoginRequest } from './api-contracts';
+export type { Identity } from './api-contracts';
+type Session = SessionResponse;
 
 /** Only this object holds access tokens. Refresh is an HttpOnly cookie managed by the backend. */
 export class AuthSession {
@@ -17,12 +15,14 @@ export class AuthSession {
   current(): Identity | null { return this.user; }
   /** Presentation boundary only: login/logout change generation; ordinary refresh does not. */
   contextVersion(): number { return this.generation; }
-  private install(data: Session): Identity {
+  private install(value: unknown): Identity {
+    if (!value || typeof value !== 'object') throw new ApiFailure(0, 'INVALID_AUTH_RESPONSE', 'Invalid authentication response');
+    const data = value as Partial<Session>;
     const u = data.user;
     if (typeof data.accessToken !== 'string' || !data.accessToken || typeof data.expiresIn !== 'number' || data.expiresIn <= 0
-      || !u || !['GLOBAL', 'TENANT'].includes(u.scope) || !['ADMIN', 'USER'].includes(u.role)
+      || !u || typeof u !== 'object' || typeof u.id !== 'string' || !u.id || !['GLOBAL', 'TENANT'].includes(u.scope) || !['ADMIN', 'USER'].includes(u.role)
       || !['PENDING', 'ACTIVE'].includes(u.status) || typeof u.displayName !== 'string'
-      || (u.scope === 'GLOBAL') !== (u.tenantId == null)) throw new ApiFailure(0, 'INVALID_AUTH_RESPONSE', 'Invalid authentication response');
+      || (u.scope === 'GLOBAL') !== (u.tenantId == null) || (u.scope === 'TENANT' && (typeof u.tenantId !== 'string' || !u.tenantId))) throw new ApiFailure(0, 'INVALID_AUTH_RESPONSE', 'Invalid authentication response');
     this.access = data.accessToken; this.user = u; this.expiresAt = Date.now() + data.expiresIn * 1000;this.changed();return u;
   }
   private async unsafe(path: string, method: string, body?: unknown): Promise<Response> {
@@ -35,10 +35,11 @@ export class AuthSession {
       headers: { 'X-CSRF-Token': csrf.token, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
   }
-  async login(login: string, password: string): Promise<Identity> {
+  async login(email: string, password: string): Promise<Identity> {
     if (this.pendingRefresh) await this.pendingRefresh;
     this.generation++;
-    const response = await this.unsafe('/api/v1/auth/local/login', 'POST', { login, password });
+    const command: LocalLoginRequest = { email, password };
+    const response = await this.unsafe('/api/v1/auth/local/login', 'POST', command);
     if (!response.ok) throw new ApiFailure(response.status, response.status === 403 ? 'ACCESS_DENIED' : response.status === 429 ? 'THROTTLED' : 'LOGIN_FAILED', 'Login failed');
     return this.install(await response.json() as Session);
   }
@@ -87,9 +88,12 @@ export class AuthSession {
     if (method === 'GET' && response.status === 401 && await this.refresh()) response = await send();
     if (generation !== this.generation) throw new ApiFailure(0, 'SESSION_CHANGED', 'Session changed');
     if (!response.ok) {
-      let problem: { code?: string; detail?: string } = {};
-      try { problem = await response.json() as typeof problem; } catch { /* Sanitized fallback. */ }
-      throw new ApiFailure(response.status, problem.code ?? 'REQUEST_FAILED', 'Request failed. Review before resubmitting.');
+      let code: string | undefined;
+      try {
+        const problem: unknown = await response.json();
+        if (problem && typeof problem === 'object' && 'code' in problem && typeof problem.code === 'string' && problem.code) code = problem.code;
+      } catch { /* Status remains authoritative; raw response content is never displayed. */ }
+      throw new ApiFailure(response.status, code, 'Request failed. Review before resubmitting.');
     }
     if (response.status === 204) return undefined as T;
     const text = await response.text(); return text ? JSON.parse(text) as T : undefined as T;
@@ -120,6 +124,6 @@ export class AuthSession {
 }
 
 export class ApiFailure extends Error {
-  constructor(readonly status: number, readonly code: string, detail: string) { super(`${code}: ${detail}`); }
+  constructor(readonly status: number, readonly code: string | undefined, detail: string) { super(`${code ?? `HTTP_${status}`}: ${detail}`); }
 }
 export const authSession = new AuthSession();

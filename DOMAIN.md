@@ -1,6 +1,6 @@
 # KELIOS — Domain Specification (v1)
 
-**Accepted backend status:** M1, Steps 2–9, I1 GLOBAL Email identity, Step 7/8 corrections, cross-module consistency audit and Catalog/Product/Merge lock-order correction are HUMAN ACCEPTED / CLOSED. Latest full verification: 74 unit + 699 PostgreSQL integration = 773 passed, zero failures/errors/skips. Public OIDC routing lookup alignment remains pending. Frontend integration and other later gates have not started; see [active implementation status](docs/plans/COLLECTION_QUERY_IMPLEMENTATION_PLAN.md).
+**Accepted backend status:** M1, Steps 2–9, I1 GLOBAL Email identity, Step 7/8 corrections, cross-module consistency audit and Catalog/Product/Merge lock-order correction are HUMAN ACCEPTED / CLOSED. Latest full verification (accepted U1 Tenant-read correction): 74 unit + 701 PostgreSQL integration = 775 passed, zero failures/errors/skips. Public OIDC routing lookup alignment remains pending. Frontend integration and other later gates have not started; see [active implementation status](docs/plans/COLLECTION_QUERY_IMPLEMENTATION_PLAN.md).
 
 **Status:** Approved domain baseline. **Language:** English only.  
 This document defines business invariants. `ARCHITECTURE.md` defines deployment and technical boundaries, including the mandatory **Apache Maven 3** backend build and Maven Wrapper. Build-tool selection is not a domain rule; do not duplicate its technical configuration here. If a business rule is missing, flag it rather than inventing it.
@@ -39,7 +39,7 @@ Application Service is authoritative for effective Tenant scope. For TENANT, it 
 
 ### Administration access
 
-Administration capabilities require ACTIVE ADMIN; USER/PENDING/DISABLED have no User/Tenant/configuration/Audit administration access. GLOBAL ADMIN retains approved User administration and Tenant list/detail/create. TENANT ADMIN manages only its signed Tenant's permitted ordinary USER population, has no Tenant list/general administration, and may directly read only its own Tenant detail. Tenant rename/edit/delete remain undefined. TENANT ADMIN navigation opens its own detail, not a list. TENANT ADMIN/USER never select another Tenant; /api/v1/tenants coupling for such a selector is obsolete and must be removed. No new switching/discovery capability is authorized. GLOBAL ADMIN legitimately uses the unpaged Tenant collection. Minimal self-authentication and approved business association projections are not administrative resource access.
+Administration capabilities require ACTIVE ADMIN; USER/PENDING/DISABLED have no User/Tenant/configuration/Audit administration access. GLOBAL ADMIN retains approved User administration and Tenant list/detail/create. TENANT ADMIN manages only its signed Tenant's permitted ordinary USER population, has no Tenant list/general administration, and may directly read only its own Tenant detail. Tenant rename/edit/delete remain undefined. TENANT ADMIN navigation opens its own detail, not a list. TENANT ADMIN/USER never select another Tenant; /api/v1/tenants coupling for such a selector is obsolete and must be removed. GLOBAL USER uses the unpaged Tenant collection for ordinary context discovery without administration authority; GLOBAL ADMIN retains administration. Minimal self-authentication and approved business association projections are not administrative resource access.
 
 ## 2. Authentication domain
 
@@ -365,7 +365,7 @@ Pagination notation 0/20/100 means default page/default size/max size. Soft-dele
 | User | REQUIRED 0/20/100 | displayName | scope/role/status enums; authorized GLOBAL tenantId | displayName, scope, role, status | createdAt DESC |
 | AuditLog | REQUIRED 0/20/100 | none | exact action/targetType; targetId/actorId UUID; optional inclusive from/until; authorized GLOBAL ADMIN tenantId/globalOnly narrowing, mutually exclusive | occurredAt ASC/DESC | occurredAt DESC |
 | AssetEvent/history | REQUIRED 0/20/100 | none | owning Asset path + authoritative scope; no added filters | none | fixed occurredAt DESC |
-| Tenant | INTENTIONALLY UNPAGED, GLOBAL ADMIN only | none on administration list | authoritative scope only; TA own detail, no list | none | createdAt DESC |
+| Tenant | INTENTIONALLY UNPAGED, ACTIVE GLOBAL ADMIN/USER | none on administration list | authoritative scope only; TA own detail, no list | none | createdAt DESC |
 | IServ/OIDC configuration | NOT A COLLECTION | none | authorized configuration path | none | n/a |
 | Public organization routing lookup | bounded incremental batches 20 | organization name | server-owned enabled/configured inclusion | none | readable name ASC |
 
@@ -440,7 +440,7 @@ All persisted business resources additionally carry §13 server-owned creation/u
 
 | Other resource fields | Search/filter | Selectable sort | Boundary |
 |---|---|---|---|
-| Tenant id/name | scope / display only | no | Intentionally complete GLOBAL ADMIN list for Schulträger; TA own detail only |
+| Tenant id/name | scope / display only | no | Intentionally complete ACTIVE GLOBAL ADMIN/USER list for Schulträger; TA own detail only |
 | Tenant createdAt | default ordering only | no | UTC audit metadata |
 | Provider tenantId | authorized path | no | One configuration; no collection |
 | issuer/clientId/enabled/groups/version/callback/secretConfigured | no collection query | no | Existing safe configuration projections |
@@ -483,7 +483,7 @@ This complements §§11–14 without changing collection capabilities. **Target 
 | Location | Required | Required paginated | Required UUID | Name + separately gated nullable note | Guarded soft delete | No Merge | Concrete Tenant/ADMIN writes; referenced Location remains editable with same ID; retained Asset ref blocks deletion; metadata edit is not Asset movement |
 | Owner | Required | Required paginated | Required UUID | Guarded name + separately gated nullable note | Guarded soft delete | No Merge | Concrete Tenant/ADMIN writes; retained Asset refs block all edit/delete including note; no note-only exception |
 | User | GA-created GLOBAL user; guarded deployment bootstrap; exact TENANT OIDC JIT | Required bounded administrative collection | Required administrative UUID detail | Explicit identity commands; GLOBAL Email editing under I1; generic profile update undefined | Generic deletion/anonymization deferred | PENDING approval, role change, disable; GLOBAL credential reset/own password; no automatic enable/revive | GA authorized management; TA only own-Tenant ordinary USER, no ADMIN grant/management; destructive GA self-protection; JIT USER/PENDING, exact issuer/subject; no TENANT local Email/password |
-| Tenant | GA creation | Intentionally unpaged GA-only list | Required UUID: GA authorized set, TA own signed Tenant only | Undefined: Tenant property editing needs human decision | Undefined: delete/removal lifecycle needs human decision | No hierarchy/membership transfer commands | ACTIVE ADMIN only: GA list/detail/create; TA own detail only, no list/switching; USER denied; ownership unchanged |
+| Tenant | GA creation | Intentionally unpaged ACTIVE GLOBAL ADMIN/USER list | Required UUID: ACTIVE GLOBAL ADMIN/USER, TA own signed Tenant only | Undefined: Tenant property editing needs human decision | Undefined: delete/removal lifecycle needs human decision | No hierarchy/membership transfer commands | ACTIVE GLOBAL ADMIN/USER list/detail; GA-only create; TA own detail only, no list/switching; TU denied; ownership unchanged |
 | IServ/OIDC configuration | Initial configure via existing Tenant PUT | Not a collection | Required authorized Tenant singleton read | Versioned configure/update incl allowed groups and enabled flag | Required physical DELETE; no retained configuration generation | Enabled=false/true remains distinct; reset/restore undefined | GA authorized concrete Tenant or TA own signed Tenant; USER denied; Tenant exists; first secret required; optimistic version; exact provider/group eligibility; responses omit secrets |
 
 **Status operations:** User approval is PENDING -> ACTIVE; disable is the existing authorized status operation. No generic status PATCH, DISABLED -> ACTIVE reactivation/enable or arbitrary status assignment is approved. A future enable/reactivation policy requires human decision, not inference from provider enabled or approval. GLOBAL validity/Email operations follow I1; no generic User displayName edit is invented here. Own minimal self read remains authentication behavior, not an unrestricted resource detail endpoint.
@@ -516,7 +516,7 @@ If configuration is recreated and its current configuration/credentials make an 
 | Tenant | GET `/api/v1/tenants/{id}` | Required target; absent from current controller |
 | IServ configuration | GET `/api/v1/tenants/{id}/oidc` | Singleton read: GA authorized Tenant or TA own signed Tenant; USER denied |
 
-A caller must not use q/UUID text search or scan a list to obtain detail. New User detail applies the same forced administrative set as Users collection, including TA ordinary USER-only scope; it does not grant a TA visibility of administrators through an ID. Tenant detail is ADMIN-only: GA authorized visibility or TA signed own Tenant. TA has no collection; USER denied. Scoped selection/projection occurs before response; absent/out-of-scope detail preserves the existing non-disclosure/problem contract, without an unscoped existence query or secret-bearing fallback. Missing configuration uses the existing missing-resource behavior, not an invented empty secret response.
+A caller must not use q/UUID text search or scan a list to obtain detail. New User detail applies the same forced administrative set as Users collection, including TA ordinary USER-only scope; it does not grant a TA visibility of administrators through an ID. Tenant detail allows ACTIVE GLOBAL ADMIN/USER or TA signed own Tenant. TA has no collection; TU denied. Scoped selection/projection occurs before response; absent/out-of-scope detail preserves the existing non-disclosure/problem contract, without an unscoped existence query or secret-bearing fallback. Missing configuration uses the existing missing-resource behavior, not an invented empty secret response.
 
 ### Established command transport families
 
@@ -534,7 +534,7 @@ These route families record established shapes; their Domain guards and authoriz
 | Place creation/list | /api/v1/tenants/{tenant}/{locations\|owners}; PUT/DELETE /api/v1/{locations\|owners}/{id} |
 | User creation/admin actions | POST /api/v1/users/global; POST /users/{id}/approve and /disable; PUT /users/{id}/role and /local-credential under /api/v1 |
 | Own GLOBAL password change | PUT /api/v1/auth/local/password; current-password verified, not an admin bypass |
-| Tenant creation/list | GA-only POST/GET /api/v1/tenants; ADMIN detail GET /api/v1/tenants/{id}, TA own only |
+| Tenant creation/list | GA-only POST /api/v1/tenants; ACTIVE GLOBAL ADMIN/USER GET collection/detail; TA own detail only |
 | Provider singleton (revised target) | GET/PUT/DELETE /api/v1/tenants/{id}/oidc; DELETE awaits implementation; PUT retains allowedGroupIds/enabled/version and write-only secret |
 
 GLOBAL credential/create/reset payloads evolve to Email under I1; this inventory does not preserve login-name compatibility. Exact new detail DTO/routes for currently missing User/Tenant reads require R1 approval; the target detail paths above do not constitute edited OpenAPI.
@@ -564,3 +564,7 @@ Requests carry genuine mutable values/reference IDs only. Product creation loads
 | Detail/list/history reads and advisory preview | No permanent AuditLog/AssetEvent by default |
 
 Immutable history uses stored actor/display/reference snapshots after rename/deletion, independently of normal detail/list behavior. Do not rewrite snapshots, hide retained-reference facts, duplicate Asset business events into administrative audit, or turn read endpoints into repair interfaces. Current transaction/locking/version and execution-revalidation boundaries are preserved. No operation or implementation phase is authorized solely by this matrix.
+
+### U1 Tenant read-authority correction — 2026-10-12
+
+U1 HUMAN RESOLVED / CLOSED: ACTIVE GLOBAL USER may GET the existing complete Tenant collection/detail representation, including id/name and metadata createdBy/createdAt/updatedBy/updatedAt/createdByDisplayName/updatedByDisplayName. Bounded actor UUID/timestamp disclosure is approved; no new endpoint or reduced DTO. Read does not grant administration. GA-only create; TA own detail/no list; TU/status/anonymous denial unchanged. OIDC/User/Audit reads unchanged. GLOBAL USER initially Global with future authoritative UUID/name dropdown, optionally lazy loaded; context selection changes neither identity nor authority. TENANT principals never switch. New backend correction HUMAN ACCEPTED / CLOSED, 2026-10-12; previous Step7 reports remain historical. [Evidence](docs/verification/TENANT_GLOBAL_USER_READ_CORRECTION.md). F1b/D05–D07 HUMAN ACCEPTED / CLOSED, 2026-10-12; no later gate authorized.

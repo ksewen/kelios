@@ -1,6 +1,7 @@
 import { i18n } from './i18n';
 export type Row = { id: string; [key: string]: unknown };
-export type Page = { items: Row[]; page: number; size: number; totalElements: number };
+/** Legacy view rows remain until resource integration; Page itself follows the actual API. */
+export type Page<T = Row> = import('./api-contracts').Page<T>;
 export const lifecycleTargets: Record<string, string[]> = { REGISTERED: ['IN_STOCK', 'DEPLOYED', 'DEREGISTERED'], IN_STOCK: ['REGISTERED', 'DEPLOYED', 'DEREGISTERED'], DEPLOYED: ['REGISTERED', 'IN_STOCK', 'DEREGISTERED'], DEREGISTERED: [] };
 export const conditionTargets: Record<string, string[]> = { UNKNOWN: ['WORKING', 'DEFECTIVE', 'UNUSABLE'], WORKING: ['DEFECTIVE', 'UNUSABLE'], DEFECTIVE: ['WORKING', 'UNUSABLE'], UNUSABLE: [] };
 export function catalogInput(values: Record<string, string>): Record<string, unknown> {

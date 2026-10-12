@@ -8,7 +8,8 @@ async function setup(page:Page,language:string,identity:{scope:'GLOBAL'|'TENANT'
  await page.route('**/api/v1/**',async r=>{const path=new URL(r.request().url()).pathname;calls.push(path);
   if(path.endsWith('/csrf'))return r.fulfill({json:{token:'presentation-fixture'}});
   if(path.endsWith('/session/refresh'))return r.fulfill({json:{accessToken:'presentation-only',expiresIn:900,user:{id:'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',...identity,status:'ACTIVE',displayName:'Presentation fixture'}}});
-  return r.fulfill({json:path==='/api/v1/tenants'?[{id:'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',name:'KBS'}]:path==='/api/v1/users'?[]:{items:[],totalElements:0,page:0,size:25}});
+  if(path==='/api/v1/tenants/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb')return r.fulfill({json:{id:'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',name:'KBS',metadata:{createdBy:'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',createdAt:'2026-10-12T10:00:00Z',updatedBy:'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',updatedAt:'2026-10-12T10:00:00Z',createdByDisplayName:null,updatedByDisplayName:null}}});
+  return r.fulfill({json:path==='/api/v1/tenants'?[{id:'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',name:'KBS'}]:path==='/api/v1/users'?{items:[],page:0,size:20,totalElements:0}:{items:[],totalElements:0,page:0,size:25}});
  });return calls;
 }
 for(const language of ['en','de'] as const)for(const width of [1440,1024])test(`${language} ${width}: class composition, alignment, collapse and locale identity`,async({page})=>{
@@ -48,7 +49,7 @@ const tenant='bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 for(const scope of ['GLOBAL','TENANT'] as const)for(const role of ['ADMIN','USER'] as const)test(`${scope} ${role}: final permission-filtered navigation`,async({page})=>{
  await page.setViewportSize({width:1440,height:1000});await setup(page,'en',{scope,role,tenantId:scope==='TENANT'?tenant:null});await page.goto(scope==='TENANT'?`/tenants/${tenant}/assets`:'/assets');
  const nav=page.locator('#desktop-navigation nav');await expect(nav.getByRole('link',{name:en.fields.assets,exact:true})).toBeVisible();
- const expected=[...(role==='ADMIN'?['/users']:[]),...(scope==='GLOBAL'?['/tenants']:[]),...(scope==='GLOBAL'&&role==='ADMIN'?['/oidc']:[]),...(role==='ADMIN'?['/audit']:[])];
+ const expected=[...(role==='ADMIN'?['/users']:[]),...(role==='ADMIN'?[scope==='GLOBAL'?'/tenants':`/tenants/${tenant}`]:[]),...(role==='ADMIN'?[scope==='GLOBAL'?'/oidc':`/tenants/${tenant}/oidc`]:[]),...(role==='ADMIN'?['/audit']:[])];
  const admin=nav.getByRole('group',{name:en.redesign.administration,exact:true});await expect(admin).toHaveCount(expected.length?1:0);
  if(expected.length)expect(await admin.locator('a').evaluateAll(nodes=>nodes.map(n=>n.getAttribute('href')))).toEqual(expected);
  await expect(nav.getByRole('link',{name:en.fields.locations,exact:true})).toHaveAttribute('href',scope==='TENANT'?`/tenants/${tenant}/locations`:'/locations');
@@ -66,7 +67,7 @@ for(const language of ['en','de'] as const)for(const scope of ['GLOBAL','TENANT'
  const header=page.locator('#application-topbar');
  if(scope==='GLOBAL'){
   const context=header.getByRole('button',{name:t.ui.tenantContext,exact:true});await expect(context).toHaveText('Global');await expect(page.getByRole('button',{name:t.actions.create,exact:true})).toHaveCount(0);await context.click();await expect(page.getByRole('menuitem',{name:'Global',exact:true})).toBeVisible();await page.getByRole('menuitem',{name:'KBS',exact:true}).click();await expect(context).toHaveText('KBS');await expect(page).toHaveURL(`/tenants/${tenant}/assets`);
- }else await expect(header.getByText('KBS',{exact:true})).toBeVisible();
+ }else await expect(header.getByText(role==='ADMIN'?'KBS':t.common.tenant.replace('{{tenant}}',tenant),{exact:true})).toBeVisible();
  await expect(page.getByRole('button',{name:t.actions.create,exact:true})).toHaveCount(role==='ADMIN'?1:0);
  await expect(header).not.toContainText(/\((?:Lesen|Read|read|Admin|Write|Schreiben)\)/);
 });

@@ -12,9 +12,9 @@ import org.springframework.transaction.annotation.Transactional;
 public class TenantOperations {
     private final TenantService tenants;private final TenantReads reads;
     public TenantOperations(TenantService tenants,TenantReads reads){this.tenants=tenants;this.reads=reads;}
-    private Identity reader(){var actor=CurrentIdentity.require();Authorization.administrator(actor);return actor;}
+    private Identity reader(){var actor=CurrentIdentity.require();Authorization.active(actor);if(actor.scope()==Scope.TENANT)Authorization.administrator(actor);return actor;}
     private UUID scope(Identity actor){return actor.scope()==Scope.TENANT?actor.tenantId():null;}
-    @Transactional(readOnly=true) public List<TenantModel> list(){var actor=CurrentIdentity.require();Authorization.globalAdmin(actor);return reads.list(null);}
+    @Transactional(readOnly=true) public List<TenantModel> list(){var actor=reader();if(actor.scope()!=Scope.GLOBAL)throw AuthFailure.denied();return reads.list(null);}
     @Transactional(readOnly=true) public TenantModel detail(UUID id){var actor=reader();return reads.detail(id,scope(actor));}
     @Transactional public UUID create(String name){var actor=CurrentIdentity.require();Authorization.globalAdmin(actor);return tenants.create(name,actor.actor());}
 }

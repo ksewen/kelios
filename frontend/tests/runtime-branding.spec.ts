@@ -3,7 +3,7 @@ import { test, expect } from '@playwright/test';
 test('mounted logo and palette render, and API proxy connects', async ({ page }) => {
   const green = process.env.KELIOS_EXPECTED_BRAND === 'green';
   await page.goto('/');
-  await expect(page.getByLabel('Username',{exact:true})).toBeVisible();
+  await expect(page.getByLabel('Email',{exact:true})).toBeVisible();
   const logo = page.getByRole('img', { name: 'KELIOS logo' });
   await expect(logo).toBeVisible();
   expect(await logo.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0)).toBe(true);
