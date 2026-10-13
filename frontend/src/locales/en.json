@@ -105,6 +105,11 @@
     "auditHelp": "Organizational attribution follows the audited target. Actor identity is independent.",
     "owner": "Owner",
     "previewMerge": "Preview",
+    "productSearch": "Search",
+    "productSearchHint": "Name or manufacturer number",
+    "placeFilterContext": "Select a Tenant to filter by Location or Owner.",
+    "pageSize": "Rows per page",
+    "loadMore": "Load more",
     "previousPage": "Previous page",
     "product": "Product",
     "providerEnabled": "Provider enabled",
@@ -137,7 +142,7 @@
     "userRole": "User role",
     "users": "Users",
     "draftHelp": "Your draft is retained. Review current state before resubmitting; this command was not automatically retried.",
-    "passwordHelp": "15–128 Unicode code points, uppercase, lowercase, digit and a non-alphanumeric character. Password changes do not independently revoke issued JWTs.",
+    "passwordHelp": "12–128 Unicode code points, uppercase, lowercase, digit and a non-alphanumeric character. Password changes do not independently revoke issued JWTs.",
     "none": "None",
     "select": "Select",
     "submitting": "Submitting…",
@@ -265,6 +270,8 @@
     "OWNER_EDITED": "Owner edited",
     "OWNER_DELETED": "Owner deleted",
     "TENANT_CREATED": "Tenant created",
+    "GLOBAL_EMAIL_CHANGED": "GLOBAL Email changed",
+    "OIDC_CONFIG_DELETED": "OIDC configuration deleted",
     "OIDC_CONFIG_CHANGED": "OIDC configuration changed",
     "USER_CREATED": "User created",
     "USER_APPROVED": "User approved",
@@ -408,5 +415,36 @@
     "moreFilters": "More filters",
     "create": "Create",
     "merge": "Merge"
-  }
+  },
+  "f4": {
+  "backToList": "Back to list",
+  "detail": "{{kind}} detail",
+  "metadata": "Record metadata",
+  "sameSession": "Your current input remains in this open form. No draft has been saved; no request was automatically retried.",
+  "uncertain": "The request outcome is unknown. Check the authoritative state before submitting again.",
+  "passwordPolicy": "Password must satisfy all displayed requirements.",
+  "password": {
+    "minimum": "At least 12 characters",
+    "maximum": "At most 128 characters",
+    "uppercase": "Uppercase letter",
+    "lowercase": "Lowercase letter",
+    "digit": "Digit",
+    "special": "Special character"
+  },
+  "emailVerifiedAt": "Email verified at",
+  "editEmail": "Edit Email",
+  "callbackUri": "Callback URL",
+  "secretConfigured": "Secret configured",
+  "deleteOidc": "Delete IServ configuration",
+  "deleteOidcConfirmation": "Permanently delete the current IServ configuration, its secret and allowed groups? Existing Tenant, Users and JWTs remain unchanged."
+},
+  "f5": {
+  "actorId": "Actor UUID",
+  "from": "From (local, inclusive)",
+  "until": "Until (local, inclusive)",
+  "calendarDay": "Whole local day: {{bound}}",
+  "expectedReturnLocal": "Expected return (local time, optional)",
+  "localTimeHelp": "Times use this browser’s timezone and are sent as UTC. Whole-day bounds include the full local day. Repeated clock times use the earlier occurrence; nonexistent times are rejected.",
+  "invalidTime": "Enter a valid local time range. The From bound must not be after Until."
+}
 }

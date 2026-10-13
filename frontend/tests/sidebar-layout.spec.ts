@@ -9,7 +9,7 @@ async function setup(page:Page,language:string,identity:{scope:'GLOBAL'|'TENANT'
   if(path.endsWith('/csrf'))return r.fulfill({json:{token:'presentation-fixture'}});
   if(path.endsWith('/session/refresh'))return r.fulfill({json:{accessToken:'presentation-only',expiresIn:900,user:{id:'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',...identity,status:'ACTIVE',displayName:'Presentation fixture'}}});
   if(path==='/api/v1/tenants/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb')return r.fulfill({json:{id:'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',name:'KBS',metadata:{createdBy:'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',createdAt:'2026-10-12T10:00:00Z',updatedBy:'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',updatedAt:'2026-10-12T10:00:00Z',createdByDisplayName:null,updatedByDisplayName:null}}});
-  return r.fulfill({json:path==='/api/v1/tenants'?[{id:'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',name:'KBS'}]:path==='/api/v1/users'?{items:[],page:0,size:20,totalElements:0}:{items:[],totalElements:0,page:0,size:25}});
+  return r.fulfill({json:path==='/api/v1/tenants'?[{id:'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',name:'KBS'}]:path==='/api/v1/users'?{items:[],page:0,size:20,totalElements:0}:{items:[],totalElements:0,page:0,size:20}});
  });return calls;
 }
 for(const language of ['en','de'] as const)for(const width of [1440,1024])test(`${language} ${width}: class composition, alignment, collapse and locale identity`,async({page})=>{

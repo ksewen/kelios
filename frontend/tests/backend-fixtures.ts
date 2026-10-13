@@ -1,0 +1,9 @@
+import type {AssetDetail,AssetState,AssetItem,CatalogLabelItem,Metadata,TenantItem} from '../src/api-contracts';
+export const fixtureActor='eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
+export const fixtureMetadata:Metadata={createdBy:fixtureActor,updatedBy:fixtureActor,createdAt:'2026-10-12T12:00:00Z',updatedAt:'2026-10-12T12:00:00Z',createdByDisplayName:null,updatedByDisplayName:null};
+export function tenantFixture(id:string,name:string):TenantItem{return{id,name,metadata:fixtureMetadata};}
+export function labelFixture(id:string,name:string,tenantId:string|null):CatalogLabelItem{return{id,name,visibility:tenantId?'TENANT':'GLOBAL',tenantId,tenant:tenantId?{id:tenantId,name:'Fixture Tenant'}:null,metadata:fixtureMetadata};}
+export function assetDetailFixture(values:Partial<AssetDetail>={}):AssetDetail{return{id:'dddddddd-dddd-dddd-dddd-dddddddddddd',tenantId:'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',assetTag:'Fixture',categoryId:fixtureActor,manufacturerId:fixtureActor,productId:null,locationId:fixtureActor,ownerId:null,tenant:{id:'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',name:'Fixture Tenant'},category:{id:fixtureActor,name:'Fixture Category'},manufacturer:{id:fixtureActor,name:'Fixture Manufacturer'},product:null,location:{id:fixtureActor,name:'Fixture Location'},owner:null,lifecycle:'REGISTERED',condition:'UNKNOWN',loanable:false,serialNumber:null,externalInventoryNumber:null,note:null,localIdentifier:null,version:0,deletedAt:null,loanedTo:null,loanedAt:null,expectedReturnAt:null,loanNote:null,...fixtureMetadata,...values};}
+export function assetItemFixture(values:Partial<AssetItem>={}):AssetItem{const {note,deletedAt,loanNote,...item}=assetDetailFixture(values);return item;}
+
+export function assetStateFixture(values:Partial<AssetState>={}):AssetState{const {tenant,category,manufacturer,product,location,owner,...state}=assetDetailFixture(values);return state;}

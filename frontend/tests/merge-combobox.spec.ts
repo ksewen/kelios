@@ -1,8 +1,9 @@
+import {labelFixture,tenantFixture} from './backend-fixtures';
 import {test,expect,type Page,type Route} from '@playwright/test';
 import en from '../src/locales/en.json' with {type:'json'};
 import de from '../src/locales/de.json' with {type:'json'};
 const a='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',b='bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb2',c='cccccccc-cccc-cccc-cccc-ccccccccccc3';
-const rows=[{id:a,name:'Same name',tenantId:null},{id:b,name:'Same name',tenantId:'tenant-b'}];
+const rows=[labelFixture(a,'Same name',null),{...labelFixture(b,'Same name','eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'),tenant:{id:'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee',name:'Readable Tenant B'}}];
 async function setup(page:Page,kind:string,language='en',role='ADMIN',scope='GLOBAL'){
  const held:{url:URL;route:Route}[]=[],posts:{path:string;body:any}[]=[];
  await page.addInitScript(lang=>localStorage.setItem('kelios.ui.language',lang),language);
@@ -10,14 +11,17 @@ async function setup(page:Page,kind:string,language='en',role='ADMIN',scope='GLO
   const url=new URL(route.request().url());
   if(url.pathname.endsWith('/csrf'))return route.fulfill({json:{token:'fixture'}});
   if(url.pathname.endsWith('/session/refresh'))return route.fulfill({json:{accessToken:'fixture',expiresIn:900,user:{id:c,scope,role,status:'ACTIVE',tenantId:scope==='TENANT'?a:null,displayName:'Fixture'}}});
+  if(url.pathname==='/api/v1/tenants'&&scope==='TENANT')return route.fulfill({status:403,json:{status:403}});
   if(url.pathname==='/api/v1/tenants')return route.fulfill({json:[]});
   if(route.request().method()==='POST'){posts.push({path:url.pathname,body:route.request().postDataJSON()});return route.fulfill({json:{productCount:0,assetCount:0,affectedTenants:[],blockers:[]}});}
   if(url.pathname.endsWith(`/catalog/${kind}`)){held.push({url,route});return;}
-  return route.fulfill({json:[]});
+  if(url.pathname===`/api/v1/tenants/${a}`)return role==='ADMIN'?route.fulfill({json:tenantFixture(a,'Signed Tenant')}):route.fulfill({status:403,json:{status:403}});
+  if(new RegExp(`/catalog/${kind}/[^/]+$`).test(url.pathname))return route.fulfill({json:{...labelFixture(url.pathname.split('/').at(-1)!,'Referenced label',null),deleted:false,deletedAt:null,deletedBy:null}});
+  return route.fulfill({status:404,json:{status:404}});
  });
  const reply=async(q:string,n=0,items=rows,total=30,status=200)=>{
   await expect.poll(()=>held.some(r=>(r.url.searchParams.get('q')??'')===q&&Number(r.url.searchParams.get('page'))===n)).toBe(true);
-  for(const r of held.filter(r=>(r.url.searchParams.get('q')??'')===q&&Number(r.url.searchParams.get('page'))===n)){held.splice(held.indexOf(r),1);await r.route.fulfill({status,json:status===200?{items,totalElements:total,size:25,page:n}:{code:'SERVICE_UNAVAILABLE'}});}
+  for(const r of held.filter(r=>(r.url.searchParams.get('q')??'')===q&&Number(r.url.searchParams.get('page'))===n)){held.splice(held.indexOf(r),1);await r.route.fulfill({status,json:status===200?{items,totalElements:total,size:20,page:n}:{code:'SERVICE_UNAVAILABLE'}});}
  };
  await page.goto(scope==='TENANT'?`/tenants/${a}/${kind}`:`/${kind}`);await reply('');return {reply,held,posts};
 }
@@ -25,9 +29,9 @@ for(const kind of ['categories','manufacturers'])for(const language of ['en','de
  const t=language==='en'?en:de,f=await setup(page,kind,language);await page.getByRole('button',{name:t.actions.merge,exact:true}).click();await f.reply('');
  const dialog=page.getByRole('dialog'),source=dialog.getByRole('combobox',{name:t.ui.mergeSource,exact:true}),target=dialog.getByRole('combobox',{name:t.ui.mergeTarget,exact:true});
  await expect(dialog.locator('select')).toHaveCount(0);await source.focus();await source.evaluate(el=>(window as any).input=el);await dialog.evaluate(el=>(window as any).dialog=el);
- await expect(page.getByRole('option')).toHaveCount(2);await expect(dialog.getByRole('status')).toHaveCount(0);const popupNext=await dialog.getByRole('button',{name:t.ui.nextPage,exact:true}).boundingBox(),dialogBox=await dialog.boundingBox();expect(popupNext!.y+popupNext!.height).toBeLessThanOrEqual(dialogBox!.y+dialogBox!.height);await page.screenshot({path:`../docs/verification/phase-b4/${language}-${kind}-fixture.png`});await expect(page.getByRole('option').first()).toContainText('aaaaaaa1');await expect(page.getByRole('option').last()).toContainText('tenant-b');
+ await expect(page.getByRole('option')).toHaveCount(2);await expect(dialog.getByRole('status')).toHaveCount(0);const popupNext=await dialog.getByRole('button',{name:t.ui.loadMore,exact:true}).boundingBox(),dialogBox=await dialog.boundingBox();expect(popupNext!.y+popupNext!.height).toBeLessThanOrEqual(dialogBox!.y+dialogBox!.height);await page.screenshot({path:`../.cache/frontend-f2/${language}-${kind}-fixture.png`});await expect(page.getByRole('option').first()).toContainText('aaaaaaa1');await expect(page.getByRole('option').last()).toContainText('Readable Tenant B');
  await source.press('ArrowDown');await source.press('ArrowDown');await source.press('ArrowUp');await source.press('Enter');await expect(source).toHaveValue('Same name');
- await source.click();await page.getByRole('dialog').getByRole('button',{name:t.ui.nextPage,exact:true}).click();await f.reply('',1,[{id:c,name:'Later page',tenantId:null}]);await expect(source).toHaveValue('Same name');
+ await source.click();await page.getByRole('dialog').getByRole('button',{name:t.ui.loadMore,exact:true}).click();await f.reply('',1,[{id:c,name:'Later page',tenantId:null}]);await expect(source).toHaveValue('Same name');
  await page.keyboard.press('Escape');await expect(source).toBeFocused();await expect(dialog).toBeVisible();await expect(source).toHaveAttribute('aria-expanded','false');
  await target.focus();await page.getByRole('option').filter({hasText:'bbbbbbb2'}).click();
  const preview=page.getByRole('button',{name:t.ui.previewMerge,exact:true});expect(await source.evaluate(el=>el===(window as any).input)).toBe(true);expect(await dialog.evaluate(el=>el===(window as any).dialog)).toBe(true);await preview.click();
@@ -75,7 +79,7 @@ test('locale changes preserve combobox input and selected UUID',async({page})=>{
 });
 for(const kind of ['categories','manufacturers'])test(`${kind}: select a later-page candidate and reset paging when editing it`,async({page})=>{
  const f=await setup(page,kind);await page.getByRole('button',{name:en.actions.merge,exact:true}).click();await f.reply('');
- const source=page.getByRole('combobox',{name:en.ui.mergeSource,exact:true});await source.focus();await page.getByRole('dialog').getByRole('button',{name:en.ui.nextPage,exact:true}).click();await f.reply('',1,[{id:c,name:'Later page',tenantId:null}]);
+ const source=page.getByRole('combobox',{name:en.ui.mergeSource,exact:true});await source.focus();await page.getByRole('dialog').getByRole('button',{name:en.ui.loadMore,exact:true}).click();await f.reply('',1,[{id:c,name:'Later page',tenantId:null}]);
  await page.getByRole('option',{name:/Later page/}).click();await expect(source).toHaveValue('Later page');await page.getByText(en.redesign.advancedIdentifiers,{exact:true}).click();await expect(page.getByLabel(en.ui.mergeSourceIDExplicit,{exact:true})).toHaveValue(c);
  await source.fill('changed');await f.reply('changed',0,[{id:a,name:'Replacement',tenantId:null}]);await expect(page.getByLabel(en.ui.mergeSourceIDExplicit,{exact:true})).toHaveValue('');await expect(page.getByRole('option')).toContainText('Replacement');await expect(source).toBeFocused();
 });

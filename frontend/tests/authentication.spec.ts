@@ -47,13 +47,13 @@ test('real cookie refresh rejects missing CSRF and wrong Origin', async ({ page 
 
 test('real disabled account loses refresh while issued Access expires naturally', async ({ page }) => {
   const admin = await signIn(page);
-  const username = `browser-${Date.now()}`;
-  const created = await page.request.post('/api/v1/users/global', { headers: { Authorization: `Bearer ${admin.accessToken}` }, data: { login: username, displayName: 'Disabled browser fixture', password: password() } });
+  const fixtureEmail = `browser-${Date.now()}@example.test`;
+  const created = await page.request.post('/api/v1/users/global', { headers: { Authorization: `Bearer ${admin.accessToken}` }, data: { email: fixtureEmail, displayName: 'Disabled browser fixture', password: password() } });
   expect(created.status()).toBe(200);
   const user = await created.json() as { id: string; scope: string; role: string; status: string };
   expect([user.scope, user.role, user.status]).toEqual(['GLOBAL', 'USER', 'ACTIVE']);
   await account(page,'Sign out');
-  await page.getByLabel('Email',{exact:true}).fill(username);
+  await page.getByLabel('Email',{exact:true}).fill(fixtureEmail);
   await page.getByLabel('Password', { exact: true }).fill(password());
   const loginResponse = page.waitForResponse('**/api/v1/auth/local/login');
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();

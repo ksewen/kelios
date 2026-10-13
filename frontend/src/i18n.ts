@@ -1,3 +1,4 @@
+import {localTimestamp} from './local-time';
 import i18next from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import en from './locales/en.json';
@@ -32,12 +33,12 @@ export function label(key: string): string {
   return key;
 }
 const machineFields = new Set(['lifecycle', 'condition', 'role', 'scope', 'status', 'visibility', 'action', 'type', 'targetType']);
-const dateFields = new Set(['createdAt', 'updatedAt', 'occurredAt', 'loanedAt', 'expectedReturnAt']);
+const dateFields = new Set(['createdAt', 'updatedAt', 'occurredAt', 'loanedAt', 'expectedReturnAt', 'emailVerifiedAt']);
 export function valueLabel(field: string, value: unknown): string {
   if (value == null) return '—';
   if (machineFields.has(field)) return Object.hasOwn(en.enums, String(value)) ? label(String(value)) : String(i18n.t('ui.unavailable'));
   if (field === 'loanable') return label(String(value));
-  if (dateFields.has(field) && typeof value === 'string' && !Number.isNaN(Date.parse(value))) return new Intl.DateTimeFormat(i18n.language, { dateStyle: 'medium', timeStyle: 'medium', timeZone: 'UTC' }).format(new Date(value)) + ' UTC';
+  if (dateFields.has(field) && typeof value === 'string' && !Number.isNaN(Date.parse(value))) return localTimestamp(value,i18n.language);
   return typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value);
 }
 export type FeedbackError = string | { status?: number; code?: string };

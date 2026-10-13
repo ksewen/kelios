@@ -11,12 +11,16 @@ async function setup(page:Page,scope='GLOBAL',role='USER',status='ACTIVE',langua
   if(url.pathname.endsWith('/csrf'))return route.fulfill({json:{token:'fixture'}});
   if(url.pathname.endsWith('/session/refresh')&&current.status==='DISABLED')return route.fulfill({status:401,json:{status:401,detail:'No usable session'}});
   if(url.pathname.endsWith('/session/refresh'))return route.fulfill({json:{accessToken:'fixture',expiresIn:900,user:current}});
+  if((url.pathname==='/api/v1/users'||url.pathname==='/api/v1/audit-log'||url.pathname.endsWith('/oidc'))&&(current.status!=='ACTIVE'||current.role!=='ADMIN'))return route.fulfill({status:403,json:{status:403}});
+  if(url.pathname==='/api/v1/tenants'&&(current.status!=='ACTIVE'||current.scope!=='GLOBAL'||req.method()!=='GET'&&current.role!=='ADMIN'))return route.fulfill({status:403,json:{status:403}});
   if(url.pathname==='/api/v1/tenants'&&req.method()==='POST')return route.fulfill({json:foreign});
   if(url.pathname==='/api/v1/tenants')return route.fulfill({json:[{id:own,name:'Own school',metadata},{id:foreign,name:'Other school',metadata}]});
+  if(url.pathname.endsWith('/oidc')&&current.scope==='TENANT'&&!url.pathname.includes(`/${current.tenantId}/`))return route.fulfill({status:404,json:{status:404}});
   if(url.pathname.endsWith('/oidc')){
    if(req.method()==='PUT')return route.fulfill({json:{tenantId:own,issuer:'https://provider.example',clientId:'client',enabled:true,secretConfigured:true,version:1,allowedGroupIds:[uid],callbackUri:'https://fixture/callback',metadata,tenant:{id:own,name:'Own school'}}});
    return route.fulfill({json:{tenantId:own,issuer:'https://provider.example',clientId:'client',enabled:true,secretConfigured:true,version:0,allowedGroupIds:[uid],callbackUri:'https://fixture/callback',metadata,tenant:{id:own,name:'Own school'}}});
   }
+  if(/^\/api\/v1\/tenants\/[^/]+$/.test(url.pathname)&&(current.status!=='ACTIVE'||current.scope==='TENANT'&&current.role!=='ADMIN'))return route.fulfill({status:403,json:{status:403}});
   if(/^\/api\/v1\/tenants\/[^/]+$/.test(url.pathname))return scope==='TENANT'&&url.pathname.endsWith(foreign)?route.fulfill({status:404,json:{status:404,detail:'Tenant not found in authorized scope'}}):route.fulfill({json:{id:url.pathname.split('/').at(-1),name:url.pathname.endsWith(foreign)?'Other school':'Own school',metadata}});
   if(url.pathname==='/api/v1/users')return route.fulfill({json:{items:[],page:0,size:20,totalElements:0}});
   return route.fulfill({json:{items:[],page:0,size:20,totalElements:0}});

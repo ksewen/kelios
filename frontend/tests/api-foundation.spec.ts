@@ -11,6 +11,7 @@ async function setup(page:Page,language:string,status:number,code?:string){
   if(url.pathname.endsWith('/csrf'))return route.fulfill({json:{token:'fixture'}});
   if(url.pathname.endsWith('/session/refresh'))return route.fulfill({json:{accessToken:'fixture',expiresIn:900,user:{id,scope:'GLOBAL',tenantId:null,role:'ADMIN',status:'ACTIVE',displayName:'Fixture'}}});
   if(url.pathname==='/api/v1/tenants')return route.fulfill({json:[{id:tenant,name:'School',metadata}]});
+  if(url.pathname===`/api/v1/catalog/categories/${id}`&&method==='GET')return route.fulfill({json:{id,name:'Retained Category',visibility:'GLOBAL',tenantId:null,tenant:null,deleted:false,deletedAt:null,deletedBy:null,metadata}});
   if(method==='PUT'){writes++;return route.fulfill({status,json:{type:'about:blank',status,detail:'PRIVATE provider-secret',...(code?{code}:{})}});}
   return route.fulfill({json:{items:[],page:0,size:20,totalElements:0}});
  });
@@ -20,8 +21,8 @@ for(const language of ['en','de'])for(const [status,key] of [[400,'INVALID_INPUT
  test(`code-less ${status} preserves current form and uses safe ${language} status feedback`,async({page})=>{
   const count=await setup(page,language,status),r=language==='de'?de:en;
   await page.goto('/account/password');const form=page.getByRole('form',{name:r.ui.changeOwnPassword,exact:true});const input=form.getByLabel(r.ui.newPassword,{exact:true});
-  await form.getByLabel(r.ui.currentPassword,{exact:true}).fill('Active session current');await input.fill('Retained active input');await input.evaluate(el=>(window as any).f0Input=el);await form.evaluate(el=>(window as any).f0Form=el);
-  await form.getByRole('button',{name:r.ui.changeOwnPassword,exact:true}).click();await expect(form.getByRole('alert')).toContainText(r.errors[key]);await expect(input).toHaveValue('Retained active input');expect(await input.evaluate(el=>el===(window as any).f0Input)).toBe(true);expect(await form.evaluate(el=>el===(window as any).f0Form)).toBe(true);expect(count()).toBe(1);await expect(page.getByText(/PRIVATE|provider-secret/)).toHaveCount(0);
+  await form.getByLabel(r.ui.currentPassword,{exact:true}).fill('Active session current');await input.fill('RetainedInput12!');await input.evaluate(el=>(window as any).f0Input=el);await form.evaluate(el=>(window as any).f0Form=el);
+  await form.getByRole('button',{name:r.ui.changeOwnPassword,exact:true}).click();await expect(form.getByRole('alert')).toContainText(r.errors[key]);await expect(input).toHaveValue('RetainedInput12!');expect(await input.evaluate(el=>el===(window as any).f0Input)).toBe(true);expect(await form.evaluate(el=>el===(window as any).f0Form)).toBe(true);expect(count()).toBe(1);await expect(page.getByText(/PRIVATE|provider-secret/)).toHaveCount(0);
  });
 }
 for(const language of ['en','de'])test(`business code remains authoritative over HTTP fallback (${language})`,async({page})=>{

@@ -4,9 +4,9 @@ import {Button} from './button';
 
 export type Candidate = {id:string;label:string;detail:string};
 /** Inline, non-modal listbox: the dialog keeps ownership of focus. */
-export function SearchableCombobox({name,text,selected,options,pending,initialLoading,error,page,total,onQuery,onSelect,onPage,excluded,reset=0,clear,required=false}: {
- name:string;text:string;selected:string;options:Candidate[];pending:boolean;initialLoading:boolean;error:string;page:number;total:number;
- onQuery:(text:string)=>void;onSelect:(candidate:Candidate)=>void;onPage:(page:number)=>void;excluded:string;reset?:number;clear?:()=>void;required?:boolean;
+export function SearchableCombobox({name,text,selected,options,pending,loadingMore=false,initialLoading,error,hasMore,onMore,onQuery,onSelect,excluded,reset=0,clear,required=false}: {
+ name:string;text:string;selected:string;options:Candidate[];pending:boolean;loadingMore?:boolean;initialLoading:boolean;error:string;hasMore:boolean;onMore:()=>void;
+ onQuery:(text:string)=>void;onSelect:(candidate:Candidate)=>void;excluded:string;reset?:number;clear?:()=>void;required?:boolean;
 }) {
  const {t}=useTranslation(),id=useId(),[open,setOpen]=useState(false),[active,setActive]=useState(''),root=useRef<HTMLDivElement>(null);
  useEffect(()=>{setOpen(false);setActive('');},[reset]);
@@ -21,6 +21,7 @@ export function SearchableCombobox({name,text,selected,options,pending,initialLo
  function key(event:KeyboardEvent<HTMLInputElement>){
   if(event.key==='ArrowDown'||event.key==='ArrowUp'){
    event.preventDefault();setOpen(true);const index=available.findIndex(option=>option.id===active);
+   if(event.key==='ArrowDown'&&index===available.length-1&&available.length&&hasMore){onMore();return;}
    setActive(available.length?available[(index+(event.key==='ArrowDown'?1:index<0?0:-1)+available.length)%available.length].id:'');
   }else if(event.key==='Enter'&&open){event.preventDefault();if(activeOption)choose(activeOption);}
   else if(event.key==='Escape'&&open){event.preventDefault();event.stopPropagation();setOpen(false);setActive('');}
@@ -28,14 +29,14 @@ export function SearchableCombobox({name,text,selected,options,pending,initialLo
  }
  return <div ref={root} className="relative space-y-1" onBlur={event=>{if(!event.currentTarget.contains(event.relatedTarget)){setOpen(false);setActive('');}}}>
   <label className="text-sm font-medium" htmlFor={id}>{name}</label>
-  <input id={id} className="input" role="combobox" aria-autocomplete="list" aria-expanded={open} aria-controls={`${id}-list`} aria-activedescendant={open&&activeOption?`${id}-${activeOption.id}`:undefined} autoComplete="off" value={text}
+  <input id={id} className="input" role="combobox" aria-autocomplete="list" aria-expanded={open} aria-controls={`${id}-list`} aria-activedescendant={open&&activeOption?`${id}-${activeOption.id}`:undefined} autoComplete="off" maxLength={128} value={text}
    onFocus={event=>{setOpen(true);if(selected)event.currentTarget.select();}} onClick={()=>setOpen(true)} onKeyDown={key}
    onChange={event=>{onQuery(event.target.value);setActive('');setOpen(true);}}/>
   {clear&&(text||selected)&&<Button data-clear-selection type="button" variant="ghost" size="sm" onClick={clear}>{t('mergeCombobox.clearSelection')}</Button>}
   {open&&<div className="relative z-10 mt-1 w-full rounded-md border bg-popover p-1 text-popover-foreground shadow-md">
    {initialLoading&&<p role="status" className="px-2 py-1 text-xs text-muted-foreground">{t('mergeCombobox.searching')}</p>}
    {error?<p role="alert" className="px-2 text-sm text-destructive">{error}</p>:null}
-   <ul id={`${id}-list`} role="listbox" aria-label={name} aria-busy={pending} className="max-h-48 overflow-y-auto">
+   <ul id={`${id}-list`} role="listbox" aria-label={name} aria-busy={pending||loadingMore} className="max-h-48 overflow-y-auto" onScroll={event=>{const list=event.currentTarget;if(!pending&&!loadingMore&&!error&&hasMore&&list.scrollTop+list.clientHeight>=list.scrollHeight-16)onMore();}}>
     {options.map(option=><li id={`${id}-${option.id}`} key={option.id} role="option" aria-selected={selected===option.id} aria-disabled={pending||!!error||excluded===option.id}
      className={`rounded px-2 py-2 text-sm ${activeOption?.id===option.id?'bg-accent':''} ${pending||error||excluded===option.id?'opacity-50':'cursor-pointer hover:bg-accent'}`}
      onMouseDown={event=>event.preventDefault()} onMouseMove={()=>{if(!pending&&!error&&excluded!==option.id)setActive(option.id);}} onClick={()=>choose(option)}>
@@ -43,10 +44,7 @@ export function SearchableCombobox({name,text,selected,options,pending,initialLo
     </li>)}
    </ul>
    {!initialLoading&&!error&&!options.length&&<p className="px-2 py-2 text-sm">{t('ui.noRecords')}</p>}
-   {(total>25||page>0)&&<div className="flex justify-between border-t pt-1">
-    <Button type="button" size="sm" variant="ghost" disabled={pending||!!error||page===0} onClick={()=>{root.current?.querySelector('input')?.focus();setActive('');onPage(page-1);}}>{t('ui.previousPage')}</Button>
-    <Button type="button" size="sm" variant="ghost" disabled={pending||!!error||(page+1)*25>=total} onClick={()=>{root.current?.querySelector('input')?.focus();setActive('');onPage(page+1);}}>{t('ui.nextPage')}</Button>
-   </div>}
+   {hasMore&&<Button type="button" size="sm" variant="ghost" disabled={pending||loadingMore||!!error} onMouseDown={event=>event.preventDefault()} onClick={onMore}>{t('ui.loadMore')}</Button>}
   </div>}
  </div>;
 }

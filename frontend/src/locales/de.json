@@ -105,6 +105,11 @@
     "auditHelp": "Die organisatorische Zuordnung folgt dem protokollierten Ziel. Die Identität des Akteurs ist unabhängig.",
     "owner": "Eigentümer",
     "previewMerge": "Vorschau",
+    "productSearch": "Suche",
+    "productSearchHint": "Name oder Herstellernummer",
+    "placeFilterContext": "Mandanten auswählen, um nach Standort oder Eigentümer zu filtern.",
+    "pageSize": "Zeilen pro Seite",
+    "loadMore": "Weitere laden",
     "previousPage": "Vorherige Seite",
     "product": "Produkt",
     "providerEnabled": "Anbieter aktiviert",
@@ -137,7 +142,7 @@
     "userRole": "Benutzerrolle",
     "users": "Benutzer",
     "draftHelp": "Ihr Entwurf bleibt erhalten. Prüfen Sie den aktuellen Stand vor erneuter Übermittlung; der Befehl wurde nicht automatisch wiederholt.",
-    "passwordHelp": "15–128 Unicode-Codepunkte, Groß- und Kleinbuchstaben, Ziffer und Sonderzeichen. Passwortänderungen widerrufen bestehende JWTs nicht automatisch.",
+    "passwordHelp": "12–128 Unicode-Codepoints, Großbuchstabe, Kleinbuchstabe, Ziffer und ein nicht alphanumerisches Zeichen. Passwortänderungen widerrufen ausgestellte JWTs nicht unabhängig.",
     "none": "Keine",
     "select": "Auswählen",
     "submitting": "Wird übermittelt…",
@@ -265,6 +270,8 @@
     "OWNER_EDITED": "Eigentümer bearbeitet",
     "OWNER_DELETED": "Eigentümer gelöscht",
     "TENANT_CREATED": "Mandant erstellt",
+    "GLOBAL_EMAIL_CHANGED": "GLOBAL Email-Adresse geändert",
+    "OIDC_CONFIG_DELETED": "OIDC-Konfiguration gelöscht",
     "OIDC_CONFIG_CHANGED": "OIDC-Konfiguration geändert",
     "USER_CREATED": "Benutzer erstellt",
     "USER_APPROVED": "Benutzer freigegeben",
@@ -408,5 +415,36 @@
     "moreFilters": "Weitere Filter",
     "create": "Erstellen",
     "merge": "Merge"
-  }
+  },
+  "f4": {
+  "backToList": "Zur Liste",
+  "detail": "{{kind}} Details",
+  "metadata": "Datensatz-Metadaten",
+  "sameSession": "Ihre Eingaben bleiben in diesem offenen Formular. Es wurde kein Entwurf gespeichert und keine Anfrage automatisch wiederholt.",
+  "uncertain": "Das Ergebnis der Anfrage ist unbekannt. Prüfen Sie den aktuellen Zustand vor einer erneuten Übermittlung.",
+  "passwordPolicy": "Das Passwort muss alle angezeigten Anforderungen erfüllen.",
+  "password": {
+    "minimum": "Mindestens 12 Zeichen",
+    "maximum": "Höchstens 128 Zeichen",
+    "uppercase": "Großbuchstabe",
+    "lowercase": "Kleinbuchstabe",
+    "digit": "Ziffer",
+    "special": "Sonderzeichen"
+  },
+  "emailVerifiedAt": "E-Mail bestätigt am",
+  "editEmail": "E-Mail ändern",
+  "callbackUri": "Callback URL",
+  "secretConfigured": "Geheimnis konfiguriert",
+  "deleteOidc": "IServ-Konfiguration löschen",
+  "deleteOidcConfirmation": "Aktuelle IServ-Konfiguration, Geheimnis und erlaubte Gruppen endgültig löschen? Mandant, Benutzer und JWTs bleiben unverändert."
+},
+  "f5": {
+  "actorId": "Akteur-UUID",
+  "from": "Von (lokal, einschließlich)",
+  "until": "Bis (lokal, einschließlich)",
+  "calendarDay": "Ganzer lokaler Tag: {{bound}}",
+  "expectedReturnLocal": "Erwartete Rückgabe (lokale Zeit, optional)",
+  "localTimeHelp": "Zeitangaben verwenden die Zeitzone dieses Browsers und werden als UTC gesendet. Tagesgrenzen umfassen den ganzen lokalen Tag. Doppelte Uhrzeiten verwenden das frühere Vorkommen; nicht existierende Uhrzeiten werden abgelehnt.",
+  "invalidTime": "Gültigen lokalen Zeitraum eingeben. Von darf nicht nach Bis liegen."
+}
 }

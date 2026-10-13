@@ -1,11 +1,12 @@
+import {assetDetailFixture,assetItemFixture,labelFixture,tenantFixture} from './backend-fixtures';
 import {test,expect,type Page,type Route} from '@playwright/test';
 import en from '../src/locales/en.json' with {type:'json'};
 import de from '../src/locales/de.json' with {type:'json'};
 const tenant='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',other='bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 const user={id:'cccccccc-cccc-cccc-cccc-cccccccccccc',scope:'GLOBAL',tenantId:null,role:'ADMIN',status:'ACTIVE',displayName:'UI fixture'};
-const asset={id:'dddddddd-dddd-dddd-dddd-dddddddddddd',assetTag:'20261011-001',localIdentifier:'Stable fixture',lifecycle:'REGISTERED',condition:'UNKNOWN'};
-const row={id:asset.id,name:'Stable fixture',visibility:'TENANT',tenantId:tenant};
-const collection=(items:unknown[])=>({items,totalElements:items.length,page:0,size:25});
+const asset=assetItemFixture({assetTag:'20261011-001',localIdentifier:'Stable fixture'});
+const row=labelFixture(asset.id,'Stable fixture',tenant);
+const collection=(items:unknown[])=>({items,totalElements:items.length,page:0,size:20});
 async function setup(page:Page, locale='en'){
  const held:{url:URL;route:Route}[]=[];let currentUser={...user};
  await page.addInitScript(language=>localStorage.setItem('kelios.ui.language',language),locale);
@@ -14,7 +15,7 @@ async function setup(page:Page, locale='en'){
   if(url.pathname.endsWith('/session')&&route.request().method()==='DELETE')return route.fulfill({status:204});
   if(url.pathname.endsWith('/csrf'))return route.fulfill({json:{token:'UI-fixture'}});
   if(url.pathname.endsWith('/session/refresh')||url.pathname.endsWith('/local/login'))return route.fulfill({json:{accessToken:'UI-only-fixture',expiresIn:900,user:currentUser}});
-  if(url.pathname==='/api/v1/tenants')return route.fulfill({json:[{id:tenant,name:'Workspace A'},{id:other,name:'Workspace B'}]});
+  if(url.pathname==='/api/v1/tenants')return currentUser.scope==='GLOBAL'?route.fulfill({json:[tenantFixture(tenant,'Workspace A'),tenantFixture(other,'Workspace B')]}):route.fulfill({status:403,json:{status:403}});
   held.push({url,route});
  });
  async function request(path:string,q=''){
@@ -47,7 +48,7 @@ for(const kind of ['categories','manufacturers','products','locations','owners']
  const f=await setup(page),path=`/api/v1/tenants/${tenant}/${['locations','owners'].includes(kind)?'':'catalog/'}${kind}`;
  await page.goto(`/tenants/${tenant}/${kind}`);await f.reply(path,'',[row]);
  const table=page.locator('main table');await expect(table).toBeVisible();await table.evaluate(el=>(window as any).originalTable=el);
- await page.getByRole('toolbar').getByLabel(en.ui.name).fill('changed');await page.getByRole('toolbar').getByLabel(en.ui.name).press('Enter');await f.request(path,'changed');
+ await page.getByRole('toolbar').getByLabel(kind==='products'?en.ui.productSearch:en.ui.name).fill('changed');await page.getByRole('toolbar').getByLabel(kind==='products'?en.ui.productSearch:en.ui.name).press('Enter');await f.request(path,'changed');
  await expect(page.locator('main .animate-pulse')).toHaveCount(0);expect(await table.evaluate(el=>el===(window as any).originalTable)).toBe(true);
  await f.reply(path,'changed',[row]);await expect(page.getByText(en.redesign.updatingResults)).toHaveCount(0);
 });
@@ -122,7 +123,7 @@ test('Audit filter refresh keeps its table and paging mounted',async({page})=>{
 
 test('language and sidebar layout changes preserve navigation and dashboard metric identity',async({page})=>{
  const f=await setup(page);await page.goto(`/tenants/${tenant}/dashboard`);await expect.poll(()=>f.held.length).toBe(7);
- for(const r of f.held)await r.route.fulfill({json:r.url.pathname==='/api/v1/users'?[]:collection(r.url.pathname.endsWith('/assets')?[asset]:[])});
+ for(const r of f.held)await r.route.fulfill({json:r.url.pathname==='/api/v1/users'?collection([]):collection(r.url.pathname.endsWith('/assets')?[asset]:[])});
  await expect(page.locator('main .animate-pulse')).toHaveCount(0);
  const metrics=page.locator('main section > .grid').first().locator('a');await expect(metrics).toHaveCount(4);
  const navigation=page.locator('aside').first().getByRole('link',{name:en.fields.assets,exact:true});
@@ -138,7 +139,7 @@ test('language and sidebar layout changes preserve navigation and dashboard metr
 
 test('equivalent responses preserve row identity, table scroll, selection and page scroll',async({page})=>{
  await page.setViewportSize({width:390,height:500});const f=await setup(page),path=`/api/v1/tenants/${tenant}/assets`;
- const rows=Array.from({length:25},(_,i)=>({...asset,id:`dddddddd-dddd-dddd-dddd-${String(i).padStart(12,'0')}`,assetTag:`20261011-${i}`,localIdentifier:'Long operational label '.repeat(8)}));
+ const rows=Array.from({length:20},(_,i)=>({...asset,id:`dddddddd-dddd-dddd-dddd-${String(i).padStart(12,'0')}`,assetTag:`20261011-${i}`,localIdentifier:'Long operational label '.repeat(8)}));
  await page.goto(`/tenants/${tenant}/assets`);await f.reply(path,'',rows);const table=page.locator('main table');await expect(table).toBeVisible();
  await page.getByLabel(en.ui.assetIdentifiers).fill('unchanged');await page.getByRole('toolbar').getByLabel(en.ui.assetIdentifiers).press('Enter');await f.request(path,'unchanged');
  const before=await table.evaluate(el=>{
@@ -160,7 +161,7 @@ test('unchanged token renewal does not reload the visible read context',async({p
 
 test('history field identity survives localization while the history tab stays selected',async({page})=>{
  const f=await setup(page),path=`/api/v1/assets/${asset.id}`;
- await page.goto(`/inventory/assets/${asset.id}`);await f.request(path);await f.held.find(r=>r.url.pathname===path)!.route.fulfill({json:{...asset,tenantId:tenant,categoryId:row.id,manufacturerId:row.id,locationId:row.id,loanable:false,version:0}});
+ await page.goto(`/inventory/assets/${asset.id}`);await f.request(path);await f.held.find(r=>r.url.pathname===path)!.route.fulfill({json:assetDetailFixture({...asset,tenantId:tenant,categoryId:row.id,category:{id:row.id,name:row.name},manufacturerId:row.id,manufacturer:{id:row.id,name:row.name},locationId:row.id,location:{id:row.id,name:'Fixture Location'},loanable:false,version:0})});
  await f.reply(path+'/events','',[{id:row.id,type:'UPDATED',actorDisplayName:'Fixture',occurredAt:'2026-10-11T00:00:00Z',data:{before:{localIdentifier:'Before'},after:{localIdentifier:'After'}}}]);
  await page.getByRole('tab',{name:en.redesign.history,exact:true}).click();const field=page.locator('tbody tr').filter({hasText:en.fields.localIdentifier});await expect(field).toBeVisible();await field.evaluate(el=>(window as any).historyField=el);
  await page.getByRole('button',{name:en.common.language,exact:true}).click();await page.getByRole('menuitem',{name:/Deutsch/}).click();
