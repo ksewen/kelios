@@ -203,4 +203,50 @@ class ProductIT {
   assertEquals(409,status(request(admin,post(contextual(tenant)),body)));assertEquals(409,status(request(admin,put(ROOT+"/"+own),body)));
  }
 
+ @ParameterizedTest @CsvSource({"CATEGORY,edit","MANUFACTURER,edit","CATEGORY,publish","MANUFACTURER,publish","CATEGORY,register","MANUFACTURER,register"})
+ void productReferenceRaceHasResourceCorrectHttpConflict(String resource,String operation)throws Exception {
+  var kind=CatalogService.MergeKind.valueOf(resource);boolean categoryRace=kind==CatalogService.MergeKind.CATEGORY;
+  UUID source=categoryRace?category:manufacturer,target=categoryRace?catalog.createCategory(null,"Race target",actor):catalog.createManufacturer(null,"Race target",actor);
+  UUID subject=create(operation.equals("publish")?tenant:null,"Race Product","Original number");
+  long assetCount=jdbc.queryForObject("SELECT count(*) FROM asset",Long.class),eventCount=jdbc.queryForObject("SELECT count(*) FROM asset_event",Long.class);
+  var held=new CountDownLatch(1);var release=new CountDownLatch(1);var mergePid=new CompletableFuture<Integer>();
+  clock.now=clock.now.plusSeconds(10);
+  try(var pool=Executors.newFixedThreadPool(2)) {
+   var merge=pool.submit(()->new TransactionTemplate(tm).execute(transaction->{
+    jdbc.execute("SET LOCAL statement_timeout='15s'");mergePid.complete(jdbc.queryForObject("SELECT pg_backend_pid()",Integer.class));
+    catalog.lockMerge(kind,source,target);held.countDown();
+    try{assertTrue(release.await(10,TimeUnit.SECONDS));}catch(InterruptedException ex){Thread.currentThread().interrupt();throw new RuntimeException(ex);}
+    merges.merge(kind,source,target,actor);return jdbc.queryForMap("SELECT * FROM product WHERE id=?",subject);
+   }));
+   try {
+    assertTrue(held.await(10,TimeUnit.SECONDS));int pid=mergePid.get(10,TimeUnit.SECONDS);
+    var command=pool.submit(()->switch(operation){
+     case "edit"->request(admin,put(ROOT+"/"+subject),command("Must not commit",category,manufacturer,"Must not commit"));
+     case "publish"->request(admin,post(ROOT+"/"+subject+"/publish"),Map.of());
+     default->request(admin,post("/api/v1/tenants/"+tenant+"/assets"),Map.of("productId",subject,"locationId",location,"loanable",true));
+    });
+    long deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(10);List<String> blocked=List.of();
+    while(System.nanoTime()<deadline){blocked=jdbc.queryForList("SELECT query FROM pg_stat_activity WHERE ? = ANY(pg_blocking_pids(pid))",String.class,pid);if(!blocked.isEmpty())break;Thread.sleep(10);}
+    assertFalse(blocked.isEmpty(),"HTTP command must actually wait behind Merge's label lock");assertTrue(blocked.stream().anyMatch(query->query.contains("FOR SHARE")));
+    release.countDown();var committed=merge.get(20,TimeUnit.SECONDS);var response=command.get(20,TimeUnit.SECONDS);
+    assertEquals(409,status(response),response.getResponse().getContentAsString());assertEquals("CONCURRENT_OPERATION",data(response).get("code"));
+    assertEquals(operation.equals("register")?"Product dependencies changed during reference validation; review before resubmitting":"Concurrent operation; review current state before resubmitting",data(response).get("detail"));
+    assertFalse(response.getResponse().getContentAsString().contains("STALE_ASSET_VERSION"));assertFalse(response.getResponse().getContentAsString().contains("Asset changed"));
+    assertTrue(response.getResponse().getContentType().startsWith("application/problem+json"));assertEquals("no-store",response.getResponse().getHeader("Cache-Control"));
+    assertEquals(committed,jdbc.queryForMap("SELECT * FROM product WHERE id=?",subject),"Failed command leaves exactly the committed Merge state/metadata");
+    assertEquals(target,committed.get(categoryRace?"category_id":"manufacturer_id"));assertEquals("Race Product",committed.get("name"));assertEquals(operation.equals("publish")?"TENANT":"GLOBAL",committed.get("visibility"));
+    assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE target_id=? AND action IN ('PRODUCT_EDITED','PRODUCT_PUBLISHED')",Integer.class,subject));
+    assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE target_id=? AND action=?",Integer.class,source,resource+"_MERGED"));
+    assertEquals(assetCount,jdbc.queryForObject("SELECT count(*) FROM asset",Long.class));assertEquals(eventCount,jdbc.queryForObject("SELECT count(*) FROM asset_event",Long.class));
+   }finally{release.countDown();}
+  }
+ }
+ @Test void assetVersionConflictRemainsAssetSpecific()throws Exception {
+  var a=asset();assertEquals(200,status(request(admin,put("/api/v1/assets/"+a.id()+"/metadata"),Map.of("expectedVersion",0,"note","Committed"))));
+  var before=jdbc.queryForMap("SELECT * FROM asset WHERE id=?",a.id());long history=events(a.id());
+  var stale=request(admin,put("/api/v1/assets/"+a.id()+"/metadata"),Map.of("expectedVersion",0,"note","Must not commit"));
+  assertEquals(409,status(stale));assertEquals("STALE_ASSET_VERSION",data(stale).get("code"));assertEquals("Asset changed; review its current version before resubmitting",data(stale).get("detail"));
+  assertEquals(before,jdbc.queryForMap("SELECT * FROM asset WHERE id=?",a.id()));assertEquals(history,events(a.id()));
+ }
+
 }

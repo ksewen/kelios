@@ -68,7 +68,7 @@ describe('Phase 3 safe Bearer command transport', () => {
 describe('anonymous organization routing',()=>{
  afterEach(()=>vi.unstubAllGlobals());
  it('uses bounded public discovery without Bearer credentials or identity guesses',async()=>{
-  const directory={items:[{routingId:'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',name:'KBS'}],totalElements:1};const fetcher=vi.fn().mockResolvedValue(response(directory));vi.stubGlobal('fetch',fetcher);expect(await new AuthSession().organizations(0,'KBS')).toEqual(directory);expect(fetcher.mock.calls[0][0]).toBe('/api/v1/auth/oidc/organizations?page=0&size=25&q=KBS');expect(fetcher.mock.calls[0][1].headers).toBeUndefined();
+  const directory={items:[{routingId:'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',name:'KBS'}],page:0,size:20,totalElements:1};const fetcher=vi.fn().mockResolvedValue(response(directory));vi.stubGlobal('fetch',fetcher);expect(await new AuthSession().organizations(0,'KBS')).toEqual(directory);expect(fetcher.mock.calls[0][0]).toBe('/api/v1/auth/oidc/organizations?page=0&size=20&q=KBS');expect(fetcher.mock.calls[0][1].headers).toBeUndefined();
  });
  it('rejects malformed routing data instead of navigating using it',async()=>{vi.stubGlobal('fetch',vi.fn().mockResolvedValue(response({items:[{routingId:'../other',name:'KBS'}],totalElements:1})));await expect(new AuthSession().organizations()).rejects.toThrow('PROVIDER_FAILED');});
 });
@@ -107,3 +107,26 @@ it.each([null, {}, {accessToken:'access',expiresIn:900,user:null}, {accessToken:
 
 it.each(['Mixed.Case@Example.org','a'.repeat(64)+'@'+'b'.repeat(63)+'.'+'c'.repeat(63)+'.'+'d'.repeat(61)])('F1a sends exact Email input without changing password (%s)',async email=>{const fetcher=vi.fn().mockResolvedValueOnce(response({token:'proof'})).mockResolvedValueOnce(response({accessToken:'access',expiresIn:900,user}));vi.stubGlobal('fetch',fetcher);try{const session=new AuthSession();await session.login(email,'  unchanged Password!1  ');const request=fetcher.mock.calls[1];expect(request[0]).toBe('/api/v1/auth/local/login');expect(JSON.parse(request[1].body)).toEqual({email,password:'  unchanged Password!1  '});expect(request[1].headers['X-CSRF-Token']).toBe('proof');}finally{vi.unstubAllGlobals();}});
 it.each([[401,'LOGIN_FAILED'],[403,'ACCESS_DENIED'],[429,'THROTTLED']] as const)('F1a retains sanitized HTTP %i login feedback',async(status,code)=>{const fetcher=vi.fn().mockResolvedValueOnce(response({token:'proof'})).mockResolvedValueOnce(response({detail:'PRIVATE'},status));vi.stubGlobal('fetch',fetcher);try{const session=new AuthSession();await expect(session.login('fixture@example.org','fixture')).rejects.toMatchObject({status,code});expect(session.current()).toBeNull();expect(fetcher).toHaveBeenCalledTimes(2);}finally{vi.unstubAllGlobals();}});
+
+describe('accepted B1 anonymous routing Page consumer',()=>{
+ afterEach(()=>vi.unstubAllGlobals());
+ const id='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+ const page={items:[{routingId:id,name:'Same name'}],page:0,size:20,totalElements:21};
+ it.each([['  Name  ','Name'],[' \t\n ',''],['%_\\','%_\\'],['x'.repeat(128),'x'.repeat(128)],['🙂'.repeat(64),'🙂'.repeat(64)]])('normalizes/bounds q without interpreting literal characters (%s)',async(input,expected)=>{
+  const fetcher=vi.fn().mockResolvedValue(response(page));vi.stubGlobal('fetch',fetcher);expect(await new AuthSession().organizations(0,input)).toEqual(page);
+  const url=new URL(fetcher.mock.calls[0][0],'https://fixture.test');expect(url.searchParams.get('q')).toBe(expected);expect(url.searchParams.get('size')).toBe('20');expect(fetcher.mock.calls[0][1].headers).toBeUndefined();
+ });
+ it.each(['x'.repeat(129),'🙂'.repeat(65)])('rejects overlong normalized query before dispatch',async q=>{const fetcher=vi.fn();vi.stubGlobal('fetch',fetcher);await expect(new AuthSession().organizations(0,q)).rejects.toThrow('INVALID_INPUT');expect(fetcher).not.toHaveBeenCalled();});
+ it('accepts final partial Page metadata and distinct routing IDs sharing a name',async()=>{
+  const data={...page,page:1,totalElements:22,items:[{routingId:id,name:'Same name'},{routingId:'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',name:'Same name'}]};
+  const fetcher=vi.fn().mockResolvedValue(response(data));vi.stubGlobal('fetch',fetcher);expect(await new AuthSession().organizations(1)).toEqual(data);expect(new URL(fetcher.mock.calls[0][0],'https://fixture.test').searchParams.get('page')).toBe('1');
+ });
+ it.each([{page:-1},{page:1},{size:0},{size:25},{totalElements:-1},{totalElements:1.5},{items:Array.from({length:21},()=>page.items[0])}])('rejects malformed Page metadata %j',async change=>{vi.stubGlobal('fetch',vi.fn().mockResolvedValue(response({...page,...change})));await expect(new AuthSession().organizations()).rejects.toThrow('PROVIDER_FAILED');});
+ it('rejects a null Page as a provider response failure',async()=>{vi.stubGlobal('fetch',vi.fn().mockResolvedValue(response(null)));await expect(new AuthSession().organizations()).rejects.toThrow('PROVIDER_FAILED');});
+ it.each([-1,100001,0.5])('rejects invalid requested page %s',async page=>{const fetcher=vi.fn();vi.stubGlobal('fetch',fetcher);await expect(new AuthSession().organizations(page)).rejects.toThrow('INVALID_INPUT');expect(fetcher).not.toHaveBeenCalled();});
+ it('rejects an in-flight anonymous Page after a session generation change',async()=>{
+  let resolve!:(value:Response)=>void;
+  const fetcher=vi.fn().mockImplementationOnce(()=>new Promise<Response>(r=>{resolve=r;})).mockResolvedValueOnce(response({token:'fixture'})).mockResolvedValueOnce(new Response(null,{status:204}));vi.stubGlobal('fetch',fetcher);
+  const session=new AuthSession(),read=session.organizations();await session.logout();resolve(response(page));await expect(read).rejects.toThrow('SESSION_CHANGED');expect(session.current()).toBeNull();
+ });
+});

@@ -21,7 +21,9 @@ public class OidcConfigurationService {
     public record Organization(UUID routingId,String name) {}
     public record Organizations(List<Organization> items,long totalElements,int page,int size) {}
     @Transactional(readOnly=true) public Organizations organizations(int page,int size,String q){
-        if(page<0 || page>100000 || size<1 || size>100 || q==null || q.codePointCount(0,q.length())>128)throw new AuthFailure(400,"Invalid organization query");
+        if(q==null)throw new AuthFailure(400,"Invalid organization query");
+        q=q.strip();
+        if(page<0 || page>100000 || size<1 || size>100 || q.length()>128)throw new AuthFailure(400,"Invalid organization query");
         String pattern="%"+q.replace("\\","\\\\").replace("%","\\%").replace("_","\\_")+"%";
         String from=" FROM tenant t JOIN tenant_oidc_config p ON p.tenant_id=t.id WHERE p.enabled AND t.name ILIKE ? ESCAPE E'\\\\'";
         long total=jdbc.queryForObject("SELECT count(*)"+from,Long.class,pattern);

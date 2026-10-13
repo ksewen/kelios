@@ -11,7 +11,7 @@ async function fixture(page:Page,language='en',failure=0){
   if(url.pathname.endsWith('/session')&&route.request().method()==='DELETE'){signed=false;return route.fulfill({status:200,body:''});}
   if(url.pathname.endsWith('/session/refresh'))return signed?route.fulfill({json:{accessToken:'fixture-access',expiresIn:900,user:{id,scope:oidc?'TENANT':'GLOBAL',tenantId:oidc?tenant:null,role:oidc?'USER':'ADMIN',status:oidc?'PENDING':'ACTIVE',displayName:'Fixture'}}}):route.fulfill({status:401,json:{status:401,detail:'No session'}});
   if(url.pathname.endsWith('/local/login')){attempts.push(route.request().postDataJSON());if(failure)return route.fulfill({status:failure,json:{status:failure,detail:'PRIVATE'}});signed=true;return route.fulfill({json:{accessToken:'fixture-access',expiresIn:900,user:{id,scope:'GLOBAL',tenantId:null,role:'ADMIN',status:'ACTIVE',displayName:'Fixture'}}});}
-  if(url.pathname.endsWith('/oidc/organizations'))return route.fulfill({json:{items:[{routingId:tenant,name:'Explicit provider organization'}],page:0,size:25,totalElements:1}});
+  if(url.pathname.endsWith('/oidc/organizations'))return route.fulfill({json:{items:[{routingId:tenant,name:'Explicit provider organization'}],page:0,size:20,totalElements:1}});
   if(url.pathname.endsWith('/start')){signed=true;oidc=true;return route.fulfill({json:{authorizationUrl:'https://provider.fixture/authorize'}});}
   business.push(url.pathname);
   if(url.pathname==='/api/v1/tenants')return route.fulfill({json:[]});

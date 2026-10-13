@@ -69,11 +69,11 @@ test('organization picker retains disabled results during its exact 150ms deboun
  await page.route('**/api/v1/auth/csrf',route=>route.fulfill({json:{token:'UI-fixture'}}));
  const held:{q:string;route:Route}[]=[];await page.route('**/api/v1/auth/oidc/organizations?**',route=>{held.push({q:new URL(route.request().url()).searchParams.get('q')??'',route});});
  await page.goto('/login');await expect(page.getByRole('button',{name:en.ui.signInWithIServ,exact:true})).toBeVisible();await page.clock.install();await page.clock.pauseAt(new Date());await page.getByRole('button',{name:en.ui.signInWithIServ,exact:true}).click();await expect(page.getByRole('dialog').locator('.animate-pulse').first()).toBeVisible();
- await page.clock.runFor(150);await expect.poll(()=>held.length).toBe(1);await held[0].route.fulfill({json:{items:[{routingId:tenant,name:'Organization A'}],totalElements:1}});
+ await page.clock.runFor(150);await expect.poll(()=>held.length).toBe(1);await held[0].route.fulfill({json:{items:[{routingId:tenant,name:'Organization A'}],page:0,size:20,totalElements:1}});
  const option=page.getByRole('button',{name:'Organization A',exact:true});await expect(option).toBeEnabled();await page.getByLabel(en.redesign.searchOrganizations).fill('new');
  await expect(option).toBeDisabled();await expect(page.getByRole('dialog').locator('.animate-pulse')).toHaveCount(0);
  await page.clock.runFor(149);expect(held.length).toBe(1);await page.clock.runFor(1);await expect.poll(()=>held.length).toBe(2);
- await held[1].route.fulfill({json:{items:[{routingId:other,name:'Organization B'}],totalElements:1}});await expect(page.getByRole('button',{name:'Organization B',exact:true})).toBeEnabled();
+ await held[1].route.fulfill({json:{items:[{routingId:other,name:'Organization B'}],page:0,size:20,totalElements:1}});await expect(page.getByRole('button',{name:'Organization B',exact:true})).toBeEnabled();
 });
 
 test('read hook discards resource/workspace/session changes while its consumer stays mounted',async({page})=>{

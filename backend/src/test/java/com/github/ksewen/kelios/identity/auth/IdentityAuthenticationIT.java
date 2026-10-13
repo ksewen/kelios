@@ -393,6 +393,7 @@ class IdentityAuthenticationIT {
         var result=mvc.perform(get("/api/v1/auth/oidc/organizations").secure(true)).andReturn();
         assertEquals(200,result.getResponse().getStatus());
         var directory=body(result);assertEquals(1,((Number)directory.get("totalElements")).intValue());
+        assertEquals(0,((Number)directory.get("page")).intValue());assertEquals(20,((Number)directory.get("size")).intValue());
         var item=(Map<?,?>)((List<?>)directory.get("items")).getFirst();
         assertEquals(Set.of("routingId","name"),item.keySet());assertEquals(tenant.toString(),item.get("routingId"));assertEquals("Tenant",item.get("name"));
         assertEquals(0,((Number)body(mvc.perform(get("/api/v1/auth/oidc/organizations").param("q","%").secure(true)).andReturn()).get("totalElements")).intValue());
@@ -413,6 +414,73 @@ class IdentityAuthenticationIT {
         var p=configurations.get(admin,tenant);configurations.put(admin,tenant,p.issuer(),p.clientId(),null,false,p.version(),p.allowedGroupIds());
         assertEquals(0,((Number)body(mvc.perform(get("/api/v1/auth/oidc/organizations").secure(true)).andReturn()).get("totalElements")).intValue());
         assertNotEquals(200,unsafe(post("/api/v1/auth/oidc/"+tenant+"/start"),null).getResponse().getStatus());
+    }
+
+    @ParameterizedTest @ValueSource(strings={"", " \t\n ", "\u2003\u2003"})
+    void organizationDiscoveryBlankIsUnfiltered(String query)throws Exception {
+        var result=mvc.perform(get("/api/v1/auth/oidc/organizations").param("q",query).secure(true)).andReturn();
+        assertEquals(200,result.getResponse().getStatus());var page=body(result);
+        assertEquals(1,((Number)page.get("totalElements")).intValue());assertEquals(20,((Number)page.get("size")).intValue());
+        assertEquals(tenant.toString(),((Map<?,?>)((List<?>)page.get("items")).getFirst()).get("routingId"));
+        assertEquals(1,configurations.organizations(0,20,query).totalElements());
+    }
+    @Test void organizationDiscoveryTrimmedCaseInsensitiveSearchAndLengthBound()throws Exception {
+        var result=mvc.perform(get("/api/v1/auth/oidc/organizations").param("q"," \tTeNaNt\u2003 ").secure(true)).andReturn();
+        assertEquals(200,result.getResponse().getStatus());assertEquals(1,((Number)body(result).get("totalElements")).intValue());
+        assertEquals(tenant,configurations.organizations(0,20,"  TENANT  ").items().getFirst().routingId());
+        for(String query:List.of("x".repeat(128),"  "+"x".repeat(128)+"  ")){
+            var boundary=mvc.perform(get("/api/v1/auth/oidc/organizations").param("q",query).secure(true)).andReturn();
+            assertEquals(200,boundary.getResponse().getStatus());assertEquals(0,((Number)body(boundary).get("totalElements")).intValue());
+        }
+        var over=mvc.perform(get("/api/v1/auth/oidc/organizations").param("q","x".repeat(129)).secure(true)).andReturn();
+        assertEquals(400,over.getResponse().getStatus());assertEquals(400,((Number)body(over).get("status")).intValue());
+        assertEquals(400,assertThrows(AuthFailure.class,()->configurations.organizations(0,20,"x".repeat(129))).status());
+        assertEquals(400,assertThrows(AuthFailure.class,()->configurations.organizations(0,20,null)).status());
+    }
+    @ParameterizedTest @ValueSource(strings={"%", "_", "\\"})
+    void organizationDiscoveryWildcardsAreLiteral(String literal)throws Exception {
+        String name="Routing marker"+literal+"literal";
+        UUID matching=tenants.create(name,admin.actor());configure(matching,null,Set.of(PROVIDER.group));
+        UUID decoy=tenants.create("Routing markerXliteral",admin.actor());configure(decoy,null,Set.of(PROVIDER.group));
+        var response=mvc.perform(get("/api/v1/auth/oidc/organizations").param("q"," "+literal+" ").secure(true)).andReturn();
+        assertEquals(200,response.getResponse().getStatus());var page=body(response);
+        assertEquals(1,((Number)page.get("totalElements")).intValue());var item=(Map<?,?>)((List<?>)page.get("items")).getFirst();
+        assertEquals(Set.of("routingId","name"),item.keySet());assertEquals(matching.toString(),item.get("routingId"));assertEquals(name,item.get("name"));
+    }
+    @ParameterizedTest @CsvSource({"-1,20","100001,20","0,0","0,101"})
+    void organizationDiscoveryRejectsInvalidPageBounds(int page,int size)throws Exception {
+        var result=mvc.perform(get("/api/v1/auth/oidc/organizations").param("page",String.valueOf(page)).param("size",String.valueOf(size)).secure(true)).andReturn();
+        assertEquals(400,result.getResponse().getStatus());assertEquals(400,((Number)body(result).get("status")).intValue());
+        assertEquals(400,assertThrows(AuthFailure.class,()->configurations.organizations(page,size,"")).status());
+    }
+    @ParameterizedTest @ValueSource(ints={1,10,20,30,40,50,100})
+    void organizationDiscoveryExplicitSizeAndMaximumPage(int size)throws Exception {
+        var result=mvc.perform(get("/api/v1/auth/oidc/organizations").param("page","100000").param("size",String.valueOf(size)).secure(true)).andReturn();
+        assertEquals(200,result.getResponse().getStatus());var page=body(result);
+        assertEquals(100000,((Number)page.get("page")).intValue());assertEquals(size,((Number)page.get("size")).intValue());
+        assertEquals(1,((Number)page.get("totalElements")).intValue());assertTrue(((List<?>)page.get("items")).isEmpty());
+    }
+    @Test void organizationDiscoveryDefaultAndLaterPageHaveScopedFullCountAndMinimalProjection()throws Exception {
+        for(int i=0;i<25;i++)configure(tenants.create("Routing fixture "+String.format(Locale.ROOT,"%02d",i),admin.actor()),null,Set.of(PROVIDER.group));
+        var disabled=configure(tenants.create("Routing fixture disabled",admin.actor()),null,Set.of(PROVIDER.group));
+        configurations.put(admin,disabled.tenantId(),disabled.issuer(),disabled.clientId(),null,false,disabled.version(),disabled.allowedGroupIds());
+        tenants.create("Routing fixture unconfigured",admin.actor());
+        long usersBefore=jdbc.queryForObject("SELECT count(*) FROM app_user",Long.class),identitiesBefore=jdbc.queryForObject("SELECT count(*) FROM external_identity",Long.class),auditBefore=jdbc.queryForObject("SELECT count(*) FROM audit_log",Long.class);
+        var seen=new HashSet<String>();
+        for(int index=0;index<3;index++){
+            var request=get("/api/v1/auth/oidc/organizations").param("q"," Routing fixture ").secure(true);
+            if(index!=0)request.param("page",String.valueOf(index));
+            var response=mvc.perform(request).andReturn();assertEquals(200,response.getResponse().getStatus());var page=body(response);
+            assertEquals(Set.of("items","totalElements","page","size"),page.keySet());assertEquals(25,((Number)page.get("totalElements")).intValue());
+            assertEquals(index,((Number)page.get("page")).intValue());assertEquals(20,((Number)page.get("size")).intValue());
+            var items=(List<?>)page.get("items");assertEquals(index==0?20:index==1?5:0,items.size());
+            for(int n=0;n<items.size();n++){
+                var item=(Map<?,?>)items.get(n);assertEquals(Set.of("routingId","name"),item.keySet());
+                assertEquals("Routing fixture "+String.format(Locale.ROOT,"%02d",index*20+n),item.get("name"));assertTrue(seen.add((String)item.get("routingId")));
+            }
+        }
+        assertEquals(25,seen.size());assertEquals(usersBefore,jdbc.queryForObject("SELECT count(*) FROM app_user",Long.class));
+        assertEquals(identitiesBefore,jdbc.queryForObject("SELECT count(*) FROM external_identity",Long.class));assertEquals(auditBefore,jdbc.queryForObject("SELECT count(*) FROM audit_log",Long.class));
     }
 
     @Test void emailCanonicalUniquenessAndEditPreservesIdentityPasswordAndCreationMetadata(){

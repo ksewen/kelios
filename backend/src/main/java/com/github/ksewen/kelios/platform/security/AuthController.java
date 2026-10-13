@@ -25,7 +25,7 @@ public class AuthController {
     @GetMapping("/me") public Identity me(){return CurrentIdentity.require();}
     @PutMapping("/local/password") public void password(@RequestBody PasswordChange command){auth.ownPassword(CurrentIdentity.require(),command.currentPassword(),command.newPassword());}
     @GetMapping("/oidc/organizations") public OidcConfigurationService.Organizations organizations(
-        @RequestParam(defaultValue="0") int page,@RequestParam(defaultValue="25") int size,@RequestParam(defaultValue="") String q){return providers.organizations(page,size,q);}
+        @RequestParam(defaultValue="0") int page,@RequestParam(defaultValue="20") int size,@RequestParam(defaultValue="") String q){return providers.organizations(page,size,q);}
     @PostMapping("/oidc/{tenant}/start") public Map<String,String> start(@PathVariable UUID tenant,HttpServletResponse response){var start=oidc.start(tenant);browser.flow(response,start.flowCookie());return Map.of("authorizationUrl",start.authorizationUrl());}
     @GetMapping("/oidc/{tenant}/callback") public void callback(@PathVariable UUID tenant,@RequestParam(required=false) String state,@RequestParam(required=false) String code,
         @RequestParam(required=false,name="iss")String issuer,@RequestParam(required=false)String error,HttpServletRequest request,HttpServletResponse response)throws IOException{

@@ -2,7 +2,7 @@
 
 **Planning status: HUMAN ACCEPTED as the authoritative execution plan, 2026-10-12. F0/D24 are HUMAN ACCEPTED / CLOSED as of 2026-10-12. F1a/D01 are HUMAN ACCEPTED / CLOSED as of 2026-10-12; F1b D05–D07 HUMAN ACCEPTED / CLOSED, 2026-10-12; F2 business scope HUMAN ACCEPTED / CLOSED, 2026-10-12; F3/D04/D12–D15 HUMAN ACCEPTED / CLOSED, acceptance date 2026-10-12; F4 unblocked scope HUMAN ACCEPTED / CLOSED, 2026-10-13; F5 HUMAN ACCEPTED / CLOSED, 2026-10-13; F6/D27 combined integration and F6-A01 HUMAN ACCEPTED / CLOSED, 2026-10-13; documented U3/runtime/manual limitations explicitly accepted.**
 
-**Current boundary: U1/U2 and Tenant read correction HUMAN ACCEPTED/RESOLVED / CLOSED, 2026-10-12. F0/F1a/F1b and F2 business scope are HUMAN ACCEPTED / CLOSED. F3/D04/D12–D15 HUMAN ACCEPTED / CLOSED, acceptance date 2026-10-12. B1/D29 anonymous routing subset BLOCKED / NOT AUTHORIZED; B2 NOT AUTHORIZED; F6/D27 combined integration and F6-A01 HUMAN ACCEPTED / CLOSED, 2026-10-13; documented U3/runtime/manual limitations explicitly accepted; F5/D16/D17 HUMAN ACCEPTED / CLOSED, acceptance date 2026-10-13; F4 unblocked scope HUMAN ACCEPTED / CLOSED, acceptance date 2026-10-13; exact Product conflict subset remains BLOCKED under B2/D28.**
+**Current boundary: U1/U2 and Tenant read correction HUMAN ACCEPTED/RESOLVED / CLOSED, 2026-10-12. F0/F1a/F1b and F2 business scope are HUMAN ACCEPTED / CLOSED. F3/D04/D12–D15 HUMAN ACCEPTED / CLOSED, acceptance date 2026-10-12. B1/D29 HUMAN ACCEPTED / CLOSED, 2026-10-13; anonymous F2/D20/D22 frontend subset HUMAN ACCEPTED / CLOSED, 2026-10-13; B2/D28 HUMAN ACCEPTED / CLOSED, 2026-10-13; F6/D27 combined integration and F6-A01 HUMAN ACCEPTED / CLOSED, 2026-10-13; documented U3/runtime/manual limitations explicitly accepted; F5/D16/D17 HUMAN ACCEPTED / CLOSED, acceptance date 2026-10-13; F4 unblocked scope HUMAN ACCEPTED / CLOSED, acceptance date 2026-10-13; exact F4/D25 Product-feedback subset HUMAN ACCEPTED / CLOSED, 2026-10-13.**
 
 ## 1. Purpose and authority
 
@@ -130,7 +130,7 @@ All candidate paths below are repository-relative. References to `pages.tsx` mea
 
 ### F2 — response-aware paging and bounded lookup
 
-**Status: HUMAN ACCEPTED / CLOSED, acceptance date 2026-10-12 — implemented business scope only. B1-dependent anonymous routing subset remains BLOCKED/NOT AUTHORIZED. [F2 evidence](../verification/FRONTEND_INTEGRATION_F2.md).**
+**Status: HUMAN ACCEPTED / CLOSED, acceptance date 2026-10-12 — implemented business scope only. B1 accepted; anonymous routing subset HUMAN ACCEPTED / CLOSED, 2026-10-13. [Anonymous rollout evidence](../verification/FRONTEND_INTEGRATION_F2_ANONYMOUS_ROUTING.md). [F2 evidence](../verification/FRONTEND_INTEGRATION_F2.md).**
 
 - **Objective / owners:** D03,D10,D11,D20,D22. Decode User Page, correct all page boundaries/defaults and build the approved bounded lookup continuation.
 - **Dependencies:** F0 accepted; F1b before administration/context-dependent consumers. Basic resource paging can be independently authorized after F0. B1 only for routing lookup target closure.
@@ -160,7 +160,7 @@ All candidate paths below are repository-relative. References to `pages.tsx` mea
 
 ### F4 — independent resource detail and mutation integration
 
-**Status: HUMAN ACCEPTED / CLOSED for explicitly authorized unblocked scope, acceptance date 2026-10-13. Exact Product optimistic-conflict subset remains BLOCKED under B2/D28 (NOT AUTHORIZED). [F4 evidence](../verification/FRONTEND_INTEGRATION_F4.md).**
+**Status: HUMAN ACCEPTED / CLOSED for explicitly authorized unblocked scope, acceptance date 2026-10-13. Exact Product-feedback subset HUMAN ACCEPTED / CLOSED, 2026-10-13; B2/D28 HUMAN ACCEPTED / CLOSED. [Product-feedback evidence](../verification/FRONTEND_INTEGRATION_F4_PRODUCT_FEEDBACK.md). [F4 evidence](../verification/FRONTEND_INTEGRATION_F4.md).**
 
 - **Objective / owners:** D02,D08,D09,D18,D19,D21,D23,D25,D26. Complete detail/association/account/note/command integration with correct feedback and write lifecycle.
 - **Dependencies:** F0/F1b/F2 accepted for affected resource; approved U2 routes/composition for non-Asset detail routing; B2 before exact Product optimistic-error closure. Earlier gates provide types/authorization/paging, not duplicate ownership of these findings.
@@ -210,15 +210,15 @@ This register is the sole completion ownership map. Earlier gates supply prerequ
 |---|---|---|---|---|---|---|
 | D01 | CONTRACT-BLOCKER | F1a | F0 | Email-only login payload/UI and session compatibility verified | Frontend-only | HUMAN ACCEPTED / CLOSED, 2026-10-12; live limitation preserved |
 | D02 | CONTRACT-BLOCKER | F4 | F0,F1b; safe User detail | Email create/reset exact bodies, authorized successful/reset/error semantics | Cross-gate frontend | HUMAN ACCEPTED / CLOSED, 2026-10-13 |
-| D03 | CONTRACT-BLOCKER | F2 | F0; F1b administrative scope | User Page.items and returned pagination decode/render without array assumptions | Cross-gate frontend | HUMAN ACCEPTED / CLOSED, 2026-10-12; business scope only, anonymous routing unchanged |
+| D03 | CONTRACT-BLOCKER | F2 | F0; F1b administrative scope | User Page.items and returned pagination decode/render without array assumptions | Cross-gate frontend | HUMAN ACCEPTED / CLOSED business scope, 2026-10-12; anonymous routing subset HUMAN ACCEPTED / CLOSED, 2026-10-13 |
 | D04 | CONTRACT-BLOCKER | F3 | F0,F1b,F2 | Scoped PENDING server total, not count of loaded User items | Cross-gate frontend | HUMAN ACCEPTED / CLOSED, acceptance date 2026-10-12 |
 | D05 | CONTRACT-BLOCKER | F1b | F0,F1a; U1 reader subset | Approved GA/GU Tenant reads consumed after separate backend correction; TA/TU collection coupling removed; administration UI independently guarded | Frontend-only + decision | HUMAN ACCEPTED / CLOSED, 2026-10-12; F1b evidence |
 | D06 | FRONTEND-INTEGRATION | F1b | F0,F1a; U2 Tenant route | GA list/create/detail and TA direct own detail navigation; USER administration destinations denied, GLOBAL USER safe Tenant detail permitted | Frontend-only + decision | HUMAN ACCEPTED / CLOSED, 2026-10-12; F1b evidence |
 | D07 | FRONTEND-INTEGRATION | F1b | F0,F1a | Signed-own TA singleton management reachable; no switching/discovery privilege | Frontend-only | HUMAN ACCEPTED / CLOSED, 2026-10-12; F1b evidence |
 | D08 | FRONTEND-INTEGRATION | F4 | F0,F1b | Current-version physical DELETE/no-op Cancel/reset/missing/recreate UI verified | Cross-gate frontend | HUMAN ACCEPTED / CLOSED, 2026-10-13 |
 | D09 | FRONTEND-INTEGRATION | F4 | F0 endpoint projection types | Asset/detail/list/Dashboard nested association names rendered safely; IDs retained | Cross-gate frontend | HUMAN ACCEPTED / CLOSED, 2026-10-13 |
-| D10 | FRONTEND-INTEGRATION | F2 | F0 Page contract | All existing pagers use response metadata; total21/default20 boundary correct | Frontend-only | HUMAN ACCEPTED / CLOSED, 2026-10-12; business scope only, anonymous routing unchanged |
-| D11 | FRONTEND-INTEGRATION | F2 | F0 | Ordinary list default20/six sizes alter server request and reset page0 | Frontend-only | HUMAN ACCEPTED / CLOSED, 2026-10-12; business scope only, anonymous routing unchanged |
+| D10 | FRONTEND-INTEGRATION | F2 | F0 Page contract | All existing pagers use response metadata; total21/default20 boundary correct | Frontend-only | HUMAN ACCEPTED / CLOSED business scope, 2026-10-12; anonymous routing subset HUMAN ACCEPTED / CLOSED, 2026-10-13 |
+| D11 | FRONTEND-INTEGRATION | F2 | F0 | Ordinary list default20/six sizes alter server request and reset page0 | Frontend-only | HUMAN ACCEPTED / CLOSED business scope, 2026-10-12; anonymous routing subset HUMAN ACCEPTED / CLOSED, 2026-10-13 |
 | D12 | FRONTEND-INTEGRATION | F3 | F0,F2 | Category/Manufacturer combined name/visibility/supported sorts exposed | Frontend-only | HUMAN ACCEPTED / CLOSED, acceptance date 2026-10-12 |
 | D13 | FRONTEND-INTEGRATION | F3 | F0,F2 | Product approved query criteria/order including authoritative ref IDs | Frontend-only | HUMAN ACCEPTED / CLOSED, acceptance date 2026-10-12 |
 | D14 | FRONTEND-INTEGRATION | F3 | F0,F2 | Place Name server sorting only; no note query | Frontend-only | HUMAN ACCEPTED / CLOSED, acceptance date 2026-10-12 |
@@ -227,16 +227,16 @@ This register is the sole completion ownership map. Earlier gates supply prerequ
 | D17 | FRONTEND-INTEGRATION | F5 | F0; local-time helpers | Client-local display/input and inclusive local-day→UTC behavior verified | Frontend-only | HUMAN ACCEPTED / CLOSED, 2026-10-13 |
 | D18 | FRONTEND-INTEGRATION | F4 | F0,F1b,F2,U2 | Non-Asset ID details reconstruct from endpoint, not retained list row | Frontend-only + decision | HUMAN ACCEPTED / CLOSED, 2026-10-13 |
 | D19 | FRONTEND-INTEGRATION | F4 | F0; independent Place detail | Notes preserve on rename, explicit clear, reference guards and ephemeral session | Frontend-only | HUMAN ACCEPTED / CLOSED, 2026-10-13 |
-| D20 | FRONTEND-INTEGRATION | F2 | F0; B1 only anonymous lookup target | Bounded20 append with stale/context/UUID safety, no lookup Filter/size selector | Cross-gate frontend/backend subset | HUMAN ACCEPTED / CLOSED business lookup; BLOCKED B1 anonymous subset |
+| D20 | FRONTEND-INTEGRATION | F2 | F0; B1 only anonymous lookup target | Bounded20 append with stale/context/UUID safety, no lookup Filter/size selector | Cross-gate frontend/backend subset | HUMAN ACCEPTED / CLOSED business lookup; anonymous routing subset HUMAN ACCEPTED / CLOSED, 2026-10-13 |
 | D21 | FRONTEND-INTEGRATION | F4 | F0,F2; detail projections | Readable authoritative selected label outside current page; ID independent | Cross-gate frontend | HUMAN ACCEPTED / CLOSED, 2026-10-13 |
-| D22 | FRONTEND-INTEGRATION | F2 | F0 | Practical128 query bound/trim/literal behavior without local filtering | Frontend-only | HUMAN ACCEPTED / CLOSED, 2026-10-12; business scope only, anonymous routing unchanged |
+| D22 | FRONTEND-INTEGRATION | F2 | F0 | Practical128 query bound/trim/literal behavior without local filtering | Frontend-only | HUMAN ACCEPTED / CLOSED business scope, 2026-10-12; anonymous routing subset HUMAN ACCEPTED / CLOSED, 2026-10-13 |
 | D23 | FRONTEND-INTEGRATION | F4 | F0; F1a accepted identity terminology | Password creation/change/reset policy12–128 and composition visibly/independently validated | Cross-gate frontend | HUMAN ACCEPTED / CLOSED, 2026-10-13 |
 | D24 | FRONTEND-INTEGRATION | F0 | Accepted audit/current API | HTTPstatus and optionalcode retained through shared errors with safe fallback | Frontend-only | HUMAN ACCEPTED / CLOSED, 2026-10-12; F0 evidence |
-| D25 | FRONTEND-INTEGRATION | F4 | F0; B2 exact Product feedback subset | Domain guards/stale/uncertain feedback distinguished; independent reload preserves active input | Cross-gate frontend/backend subset | Unblocked scope HUMAN ACCEPTED / CLOSED, 2026-10-13; exact Product feedback BLOCKED B2/D28 |
+| D25 | FRONTEND-INTEGRATION | F4 | F0; B2 exact Product feedback subset | Domain guards/stale/uncertain feedback distinguished; independent reload preserves active input | Cross-gate frontend/backend subset | Unblocked scope HUMAN ACCEPTED / CLOSED, 2026-10-13; exact Product-feedback subset HUMAN ACCEPTED / CLOSED, 2026-10-13 |
 | D26 | FRONTEND-INTEGRATION | F4 | F0 types; signed detail authorization | Safe readonly metadata/account/detail projections available, no secrets/overposting | Cross-gate frontend | HUMAN ACCEPTED / CLOSED, 2026-10-13 |
 | D27 | FRONTEND-INTEGRATION | F6 | Current fixture revisions within each earlier slice | Combined fixture/error/status/authorization/query regression coverage audited against real API | Cross-gate frontend verification | HUMAN ACCEPTED / CLOSED, 2026-10-13; F6-A01 accepted; documented U3/runtime/manual limitations explicitly accepted, excluded real-write debt remains separate |
-| D28 | BACKEND-GAP | B2 | Separate human backend authorization | Resource-correct Product optimistic HTTP conflict mapping and focused regression | Backend-only | BLOCKED / NOT AUTHORIZED |
-| D29 | BACKEND-GAP | B1 | Separate human backend authorization | Public routing default20/normalized literal q and focused regression | Backend-only | BLOCKED / NOT AUTHORIZED; anonymous subset remains open |
+| D28 | BACKEND-GAP | B2 | Separate human backend authorization | Resource-correct Product optimistic HTTP conflict mapping and focused regression | Backend-only | HUMAN ACCEPTED / CLOSED, 2026-10-13; frontend subset separately verified, HUMAN ACCEPTED / CLOSED, 2026-10-13 |
+| D29 | BACKEND-GAP | B1 | Separate human backend authorization | Public routing default20/normalized literal q and focused regression | Backend-only | HUMAN ACCEPTED / CLOSED, 2026-10-13; anonymous frontend rollout separately authorized |
 | D30 | DOCUMENTATION-ONLY | This plan consolidation | Accepted audit/closed backend | Older repair plan points here, backend completion accurate, remaining gates preserved | Documentation-only | HUMAN ACCEPTED / CLOSED with planning acceptance |
 
 Ownership refinement: audit suggestions about shared types/projection/error foundations are prerequisites, not a mandate for F0 to migrate resource screens. D09/D26 adoption closes in F4; D24 foundation closes in F0. D23 creation/change feedback closes in F4, not F1a login. D27 revisions accompany each slice but overall fixture coverage closes in F6. These are execution responsibility assignments; no audit finding or approved contract is changed.
@@ -255,23 +255,23 @@ U2 is resolved; U1 HUMAN RESOLVED / CLOSED; backend correction HUMAN ACCEPTED / 
 
 ### B1 — public OIDC routing lookup alignment (D29)
 
-**Status: PLANNED, NOT AUTHORIZED.** Existing accepted backend program stays CLOSED; this is its explicitly remaining lookup target.
+**Status: HUMAN ACCEPTED / CLOSED, 2026-10-13, backend-only.** Existing accepted backend program stays CLOSED; anonymous F2/D20/D22 frontend rollout HUMAN ACCEPTED / CLOSED, 2026-10-13.
 
-- **Exact gap:** AuthController organizations defaults25; OidcConfigurationService.organizations does not trim q. Approved lookup target is batch20/trim/all-whitespace→no text search, literal safely escaped case-insensitive lookup. It remains minimal enabled organization routing, not a provider/admin collection or identity grant.
+- **Original gap (corrected and HUMAN ACCEPTED / CLOSED):** AuthController organizations defaulted25; OidcConfigurationService.organizations did not trim q. Approved lookup target is batch20/trim/all-whitespace→no text search, literal safely escaped case-insensitive lookup. It remains minimal enabled organization routing, not a provider/admin collection or identity grant.
 - **Smallest expected backend scope:** narrow HTTP default and service normalization/validation reconciliation; DTO/OpenAPI/focused tests only as actually needed. No schema assumed, generic query infrastructure, Tenant authorization, credentials or provisioning change.
 - **Focused regression:** omitted-size response20; zero-based/max bounds; normalized blank/literal wildcard and128 bound; enabled-only minimal projection; later page/full count; no secret/membership leak; explicit routing behavior unchanged. Appropriate isolated PostgreSQL/backend verification after separate authorization.
-- **Frontend dependency/interim rule:** anonymous OrganizationPicker continuation target cannot close before backend alignment. F2 can integrate business size20 lookups and pagers independently. Until B1 is separately accepted, retain honest current wire behavior; do not silently claim backend normalization/default migrated, normalize server data locally, or interpret routing as authority. If separately authorized to request size20 explicitly before B1, record it as partial client alignment with server omission/normalization still pending.
-- **Evidence/status:** independent backend verification document chosen on authorization; update B1/D29 and link it here. Stop for human acceptance, no automatic F2 rollout.
+- **Frontend dependency/interim rule:** B1 is accepted; the separately authorized anonymous OrganizationPicker batch20/Page continuation and normalized query subset is now implemented pending its own acceptance. General F2 business scope stays closed. Routing remains authentication-only; no Tenant/member/identity authority or automatic next rollout.
+- **Evidence/status:** [B1 evidence](../verification/BACKEND_INTEGRATION_B1_D29.md), HUMAN ACCEPTED / CLOSED, 2026-10-13; historical results unchanged. [Dependent anonymous frontend evidence](../verification/FRONTEND_INTEGRATION_F2_ANONYMOUS_ROUTING.md), HUMAN ACCEPTED / CLOSED, 2026-10-13.
 
 ### B2 — Product optimistic conflict error mapping (D28)
 
-**Status: BLOCKED / NOT AUTHORIZED.** Accepted Product/Merge lock algorithm and domain guards remain CLOSED.
+**Status: HUMAN ACCEPTED / CLOSED, 2026-10-13, backend-only.** Accepted Product/Merge lock algorithm and domain guards remain CLOSED.
 
-- **Exact inconsistency:** CatalogService.lockProduct throws ObjectOptimisticLockingFailureException(Product.class) when prelocked reference snapshot changed. BusinessProblems.stale maps that to STALE_ASSET_VERSION with Asset-specific detail. This is a confirmed semantic error contract mismatch, not new deadlock/security evidence.
+- **Original inconsistency (corrected and HUMAN ACCEPTED / CLOSED):** CatalogService.lockProduct throws ObjectOptimisticLockingFailureException(Product.class) when prelocked reference snapshot changed. BusinessProblems.stale previously mapped that to STALE_ASSET_VERSION with Asset-specific detail; its new Product-only branch reuses409/CONCURRENT_OPERATION with existing neutral review-current-state detail. This is a confirmed semantic error contract mismatch, not new deadlock/security evidence.
 - **Smallest expected backend scope:** resource-correct or neutral optimistic-conflict mapping and focused HTTP regression, preserving HTTP409, transaction rollback and Asset version behavior. Reuse existing neutral conflict vocabulary where consistent with reviewed API; no new mapper/framework, retry or lock redesign.
 - **Focused regression:** Product edit/publish reference race returns appropriate machinecode/detail; Asset version remains STALE_ASSET_VERSION; ProductSelection dependency-validation behavior remains appropriate; no successful mutation audit from aborted Product command. Isolated PostgreSQL HTTP tests plus affected/backend verification under separate approval.
-- **Frontend dependency/interim rule:** F4 other forms remain implementable; exact Product conflict feedback cannot close while unresolved. Preserve409/actualcode, contextualize by failing resource and never say an Asset changed solely from a Product operation. An explicitly approved temporary resource-aware message may avoid wrong text, but must not fabricate a servercode or mark B2 closed. No auto-retry.
-- **Evidence/status:** separate backend report after authorization; update B2/D28 and dependent F4 subset. Stop for human acceptance.
+- **Frontend dependency/current status:** B2 is accepted. The separately authorized exact F4/D25 Product-feedback subset required no production change: existing structured handling preserves409/CONCURRENT_OPERATION and presents safe neutral feedback inside the independent Product workflow. Focused tests prove input/node retention, independent reload, no replay and unchanged Asset feedback. This subset is HUMAN ACCEPTED / CLOSED, 2026-10-13; see [evidence](../verification/FRONTEND_INTEGRATION_F4_PRODUCT_FEEDBACK.md).
+- **Evidence/status:** [B2 evidence](../verification/BACKEND_INTEGRATION_B2_D28.md), HUMAN ACCEPTED / CLOSED, 2026-10-13; historical verification unchanged. The exact dependent frontend subset is HUMAN ACCEPTED / CLOSED, 2026-10-13, under its separate evidence.
 
 Neither B1 nor B2 is an implicit implementation step of an F gate. A new contradiction requiring another backend capability is reported to the human instead of added silently to these scopes.
 
@@ -313,15 +313,15 @@ Human may explicitly authorize independently reviewable resource subsets of F3/F
 | F0 | HUMAN ACCEPTED / CLOSED, 2026-10-12 | F0 contract only; Email login excluded | [F0 verification](../verification/FRONTEND_INTEGRATION_F0.md) |
 | F1a | HUMAN ACCEPTED / CLOSED, 2026-10-12 | F1a/D01 only | [F1a verification](../verification/FRONTEND_INTEGRATION_F1A.md); live pending |
 | F1b | HUMAN ACCEPTED / CLOSED, 2026-10-12 | D05–D07 only; acceptance does not authorize later gates | [F1b evidence](../verification/FRONTEND_INTEGRATION_F1B.md); live not performed |
-| F2 | HUMAN ACCEPTED / CLOSED business scope, 2026-10-12; B1 anonymous subset BLOCKED | D03/D10/D11/D20/D22 business only | [F2 evidence](../verification/FRONTEND_INTEGRATION_F2.md); live not performed |
+| F2 | HUMAN ACCEPTED / CLOSED business scope, 2026-10-12; anonymous subset HUMAN ACCEPTED / CLOSED, 2026-10-13 | D03/D10/D11/D20/D22 business only | [F2 evidence](../verification/FRONTEND_INTEGRATION_F2.md); live not performed |
 | F3 | HUMAN ACCEPTED / CLOSED, acceptance date 2026-10-12 | D04/D12–D15 only | [F3 evidence](../verification/FRONTEND_INTEGRATION_F3.md); live not performed |
-| F4 | HUMAN ACCEPTED / CLOSED, 2026-10-13, unblocked scope only | D02/D08/D09/D18/D19/D21/D23/D25/D26; exact Product feedback BLOCKED B2/D28 | [F4 evidence](../verification/FRONTEND_INTEGRATION_F4.md); live API-only/data limits |
+| F4 | HUMAN ACCEPTED / CLOSED, 2026-10-13, unblocked scope only | D02/D08/D09/D18/D19/D21/D23/D25/D26; exact Product-feedback subset HUMAN ACCEPTED / CLOSED, 2026-10-13 | [F4 evidence](../verification/FRONTEND_INTEGRATION_F4.md); live API-only/data limits |
 | F5 | HUMAN ACCEPTED / CLOSED, 2026-10-13, 2026-10-13 | D16/D17 only | [F5 evidence](../verification/FRONTEND_INTEGRATION_F5.md); live GLOBAL ADMIN Audit reads, intercepted loans |
 | F6 | HUMAN ACCEPTED / CLOSED, 2026-10-13; F6-A01 accepted, documented limitations accepted | D27 and combined F0–F5 unblocked acceptance; B1/B2 excluded | [F6 evidence](../verification/FRONTEND_INTEGRATION_F6.md); U3/runtime/excluded-suite limits |
-| B1 / D29 | BLOCKED / NOT AUTHORIZED, separately gated backend | None | Existing accepted audit gap only |
-| B2 / D28 | BLOCKED / NOT AUTHORIZED, separately gated backend | None | Existing accepted audit inconsistency only |
+| B1 / D29 | HUMAN ACCEPTED / CLOSED, 2026-10-13, backend-only | Public routing lookup defaults/normalization/bounds and regressions only | [B1 evidence](../verification/BACKEND_INTEGRATION_B1_D29.md); frontend rollout separately authorized |
+| B2 / D28 | HUMAN ACCEPTED / CLOSED, 2026-10-13, backend-only | Product optimistic conflict HTTP code/detail only; locking/semantics unchanged | [B2 evidence](../verification/BACKEND_INTEGRATION_B2_D28.md); exact frontend Product-feedback subset HUMAN ACCEPTED / CLOSED, 2026-10-13 |
 
-**F0/D24 are HUMAN ACCEPTED / CLOSED on 2026-10-12. F1a/D01 are HUMAN ACCEPTED / CLOSED on 2026-10-12, with live limitation preserved.** Its scope remains shared endpoint DTO/types, Page, association projections, status+optionalcode preservation, representative current fixtures and unchanged empty-success/non-replay/session behavior. **F1a Email login behavior was excluded from F0 and was subsequently separately implemented and accepted. F1b and F2 business scope accepted; F3 and F4 unblocked scope, F5, F6/D27 and F6-A01 HUMAN ACCEPTED / CLOSED. B1/B2 and residual gates remain NOT AUTHORIZED.**
+**F0/D24 are HUMAN ACCEPTED / CLOSED on 2026-10-12. F1a/D01 are HUMAN ACCEPTED / CLOSED on 2026-10-12, with live limitation preserved.** Its scope remains shared endpoint DTO/types, Page, association projections, status+optionalcode preservation, representative current fixtures and unchanged empty-success/non-replay/session behavior. **F1a Email login behavior was excluded from F0 and was subsequently separately implemented and accepted. F1b and F2 business scope accepted; F3 and F4 unblocked scope, F5, F6/D27 and F6-A01 HUMAN ACCEPTED / CLOSED. B1/B2 backend corrections and anonymous frontend subset subsequently HUMAN ACCEPTED / CLOSED; exact Product-feedback subset HUMAN ACCEPTED / CLOSED, 2026-10-13; residual gates remain NOT AUTHORIZED.**
 
 Historical planning delivery (subsequently HUMAN ACCEPTED): D01–D30 have one owner each; U1–U3 remain unresolved as recorded; backend dependencies remain independent; only this plan and the older repair-plan execution cross-reference are changed. The audit stays unchanged. Documentation/link/ownership/dependency/whitespace checks are recorded in the task response. STOP for human review of the finalized plan.
 
@@ -435,3 +435,49 @@ Actual files: frontend/src/locales/en.json, frontend/src/locales/de.json, fronte
 ### F6/D27 and F6-A01 acceptance — 2026-10-13
 
 Human accepts F6-A01 and combined F6/D27 integration as HUMAN ACCEPTED / CLOSED. The recorded U3/runtime/manual limitations are explicitly accepted limitations, not additional or fabricated coverage. Historical verification/results and excluded-suite limits remain unchanged. Original execution records above describe the status at the time of those runs; this acceptance is the current authoritative status. B1/D29 and B2/D28 remain BLOCKED / NOT AUTHORIZED.390px Product wrapping, Phase C/D, export/delivery, excluded real-write-suite modernization and all other residual gates remain outside scope. Separate authorization permits committing only the accepted F2–F6-A01 integration chain; it does not authorize another implementation gate.
+
+### B1/D29 backend-only implementation — 2026-10-13
+
+**IMPLEMENTED / PENDING HUMAN ACCEPTANCE.** Separate authorization after accepted frontend integration commit e09a9e5a6b20055c0b301b4fa6555388523e8abe. Public routing GET omitted size20, service strip/blank/literal normalized128-unit query bound, unchanged enabled-only routingId/name projection and zero-based bounded SQL paging. No frontend/schema/identity/provisioning/authorization change. [Exact delta and B1 evidence](../verification/BACKEND_INTEGRATION_B1_D29.md):21 focused PostgreSQL cases; full74 unit +720 integration =794 passed, zero failures/errors/skips; Maven BUILD SUCCESS; OpenAPI219 references and diff/preservation checks PASS. Scope is two production backend files, focused IdentityAuthenticationIT coverage, this plan, backend status cross-reference, OpenAPI and evidence.
+
+D29 alone is implemented pending acceptance. Anonymous F2/D20/D22 frontend subset remains open, BLOCKED pending B1 acceptance and separate frontend authorization; no automatic rollout or closure. Older B1 NOT AUTHORIZED statements in execution-history records describe their prior dates. B2/D28 remains BLOCKED / NOT AUTHORIZED; Product wrapping, C/D, export/delivery, deployment and residual gates untouched. STOP for human review.
+
+### B1 acceptance and dependent anonymous F2 authorization — 2026-10-13
+
+B1/D29 HUMAN ACCEPTED / CLOSED by explicit human decision; existing backend verification/results and limitations remain historical. Anonymous F2/D20/D22 routing lookup frontend subset is separately AUTHORIZED: batch20, normalized/bounded q, Page-driven incremental continuation, routingId identity, stale query/session/routing protection and focused regressions only. General F2 business scope remains accepted/unchanged. No backend production change, B2 or residual gate authorized.
+
+### Anonymous F2/D20/D22 rollout implementation — 2026-10-13
+
+**IMPLEMENTED / PENDING HUMAN ACCEPTANCE, anonymous subset only.** B1/D29 HUMAN ACCEPTED / CLOSED; accepted business F2 and F0–F6-A01 remain unchanged/closed. Public auth consumer requests20, trims/bounds literal q, validates/retains Page metadata, appends incremental routing-ID batches with stable nodes and duplicate-name disambiguation, rejects old query/session/path/continuation results, resets search/close/context cursors and preserves explicit/known Provider routing. No backend production or general business lookup change.
+
+Actual10-file manifest and exact results in [rollout evidence](../verification/FRONTEND_INTEGRATION_F2_ANONYMOUS_ROUTING.md):63 focused auth units;216 full units/10 files;20 focused routing Chromium;191 final combined intercepted cases (focused included, no double counting); production build PASS; zero failures/skips on final runs. Initial new cursor failure and hot-server session-harness failures retained accurately in evidence. DE/EN1440/1024/768/390 keyboard/node/focus/scroll/ID/boundary cases pass; fixture screenshot inspection only. Read-only live lookup attempt returned curl7/connection refused; no successful current-backend or real Provider evidence, no environment/data changes to obtain it.
+
+Only D20/D22 anonymous subset changes status to implemented pending human review. Original F2 evidence and B1 verification body are preserved; B1 acceptance appended. Backend code/OpenAPI/tests/migrations, accepted business/frontend evidence and all unrelated dirty work are byte-identical to pre-rollout. B2/D28 remains BLOCKED / NOT AUTHORIZED;390px Product/C/D/export/delivery/deployment/excluded real-write modernization/residual work untouched. STOP for human acceptance; no automatic commit or next gate.
+
+### Anonymous lookup acceptance and B2 authorization — 2026-10-13
+
+Anonymous F2/D20/D22 routing lookup subset HUMAN ACCEPTED / CLOSED by explicit human decision; original verification and unavailable live-lookup limitation preserved. B1/D29 remains HUMAN ACCEPTED / CLOSED. B2/D28 now separately AUTHORIZED, backend-only: resource-correct Product optimistic/reference-race HTTP409 code/detail, focused PostgreSQL/HTTP/Asset preservation tests and full backend verification only. No locking, Product semantics, frontend correction, schema, authorization, retry or residual gate authorized.
+
+### B2/D28 backend-only correction — 2026-10-13
+
+**IMPLEMENTED / PENDING HUMAN ACCEPTANCE.** One Product.class-specific branch in BusinessProblems.stale reuses existing409/CONCURRENT_OPERATION and neutral detail. Asset STALE_ASSET_VERSION and ProductSelection dependency detail unchanged; Catalog/Product/Merge/Asset production and lock order byte-preserved. [B2 evidence](../verification/BACKEND_INTEGRATION_B2_D28.md) records exact8-file task manifest: mapping, two test files, edit/publish-only OpenAPI descriptions, both active plans, append-only anonymous frontend acceptance and B2 report. Focused7 unit +7 isolated PostgreSQL/HTTP pass; complete75 unit +727 integration =802 passed, zero failures/errors/skips; OpenAPI219 refs and diff/preservation checks PASS.
+
+Anonymous F2/D20/D22 and B1/D29 HUMAN ACCEPTED / CLOSED,2026-10-13; earlier results and unavailable live-lookup limitation preserved. No frontend production/tests changed. Exact Product-feedback subset remains pending a post-B2-acceptance bounded review/separate authorization; do not infer its closure or rollout from backend correction. Product wrapping/C/D/export/delivery/deployment/excluded real-write modernization/residual work untouched. STOP for human B2 acceptance; no next gate.
+
+### B2 acceptance and exact F4/D25 Product-feedback authorization — 2026-10-13
+
+B2/D28 HUMAN ACCEPTED / CLOSED. Its original PostgreSQL/HTTP results and limitations remain unchanged. Only the previously blocked exact F4/D25 Product-feedback frontend subset is now AUTHORIZED: inspect current structured handling, make no production change if it already satisfies the accepted409/CONCURRENT_OPERATION contract, add minimum focused regression/evidence, and stop pending human acceptance. Preserve Asset STALE_ASSET_VERSION, ProductSelection semantics, raw-detail sanitization, input/node/reload/no-replay behavior and all other accepted gates. No general F0/F4 reopening or residual gate authorization.
+
+
+### Exact F4/D25 Product-feedback verification — 2026-10-13
+
+**IMPLEMENTED / PENDING HUMAN ACCEPTANCE, exact Product-feedback subset only.** Inspection found existing F0/F4 handling already satisfies accepted Product409/CONCURRENT_OPERATION. No production correction or localization/shared-error change was necessary. New DE/EN units and intercepted Product edit/publish/error lifecycle cases prove actual status/code, safe contextual feedback, input/form node preservation, independent authoritative reload and no mutation replay; Asset STALE_ASSET_VERSION, ProductSelection and other guard/unknown/uncertain behavior preserved.
+
+[Focused evidence](../verification/FRONTEND_INTEGRATION_F4_PRODUCT_FEEDBACK.md) records the exact six-file task manifest: two new tests, this plan, backend status plan, append-only B2 acceptance and separate evidence. Final focused113 units/4 files (six new cases included), focused12 Chromium and combined78 Chromium (focused included), zero final failures/skips; TypeScript check PASS. Full units/build not rerun because no production/shared TypeScript infrastructure changed. Initial test expectation/hidden-role selector failures and their test-only corrections are recorded. Relative links, whitespace, original evidence prefix, six-file SHA256 preservation and empty-index checks PASS.
+
+B2/D28 HUMAN ACCEPTED / CLOSED,2026-10-13, historical802 backend results unchanged. This exact frontend subset is not self-accepted. No live Product race/operator writes, deployment, schema/backend/frontend production changes, stage/commit/push/PR or residual implementation. U3/runtime/manual and excluded-suite limitations remain explicit. STOP for human review.
+
+
+### Exact F4/D25 Product-feedback human acceptance — 2026-10-13
+
+HUMAN ACCEPTED / CLOSED by explicit human decision. The separate regression/evidence closure required no production frontend correction. Original results, initial test-development failures and intercepted-only/runtime limitations remain unchanged. B1/D29, dependent anonymous F2/D20/D22 and B2/D28 are also HUMAN ACCEPTED / CLOSED. Historical execution entries above retain their status at execution time; this acceptance is current. No residual/future gate is authorized.

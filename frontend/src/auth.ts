@@ -1,4 +1,4 @@
-import type { Identity, SessionResponse, LocalLoginRequest } from './api-contracts';
+import type { Identity, SessionResponse, LocalLoginRequest, RoutingOrganizations } from './api-contracts';
 export type { Identity } from './api-contracts';
 type Session = SessionResponse;
 
@@ -98,12 +98,17 @@ export class AuthSession {
     if (response.status === 204) return undefined as T;
     const text = await response.text(); return text ? JSON.parse(text) as T : undefined as T;
   }
-  async organizations(page = 0, q = ''): Promise<{items: {routingId: string; name: string}[]; totalElements: number}> {
-    const response = await fetch(`/api/v1/auth/oidc/organizations?${new URLSearchParams({page:String(page),size:'25',q})}`, {credentials:'same-origin',cache:'no-store',signal:AbortSignal.timeout(10000)});
+  async organizations(page = 0, q = ''): Promise<RoutingOrganizations> {
+    const generation=this.generation,query=q.trim();
+    if(!Number.isInteger(page)||page<0||page>100000||query.length>128)throw new ApiFailure(400,'INVALID_INPUT','Invalid organization query');
+    const response = await fetch(`/api/v1/auth/oidc/organizations?${new URLSearchParams({page:String(page),size:'20',q:query})}`, {credentials:'same-origin',cache:'no-store',signal:AbortSignal.timeout(10000)});
+    if(generation!==this.generation)throw new ApiFailure(0,'SESSION_CHANGED','Session changed');
     if (!response.ok) throw new ApiFailure(response.status,'PROVIDER_FAILED','Organizations unavailable');
-    const data=await response.json() as {items?:{routingId:string;name:string}[];totalElements?:number};
-    if(!Array.isArray(data.items)||data.items.length>25||typeof data.totalElements!=='number'||data.totalElements<0||!data.items.every(item=>item&&typeof item.name==='string'&&typeof item.routingId==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(item.routingId)))throw new ApiFailure(0,'PROVIDER_FAILED','Invalid organization response');
-    return {items:data.items,totalElements:data.totalElements};
+    const data=await response.json() as Partial<RoutingOrganizations>;
+    if(generation!==this.generation)throw new ApiFailure(0,'SESSION_CHANGED','Session changed');
+    if(!data||typeof data!=='object'||!Number.isSafeInteger(data.totalElements)||data.totalElements! < 0||data.page!==page||!Number.isInteger(data.size)||data.size! < 1||data.size! > 20
+      ||!Array.isArray(data.items)||data.items.length>data.size!||!data.items.every(item=>item&&typeof item.name==='string'&&typeof item.routingId==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(item.routingId)))throw new ApiFailure(0,'PROVIDER_FAILED','Invalid organization response');
+    return {items:data.items,totalElements:data.totalElements!,page:data.page,size:data.size!};
   }
   async startTenant(tenantId: string): Promise<string> {
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId)) throw new ApiFailure(0, 'INVALID_TENANT', 'Invalid organization route');
