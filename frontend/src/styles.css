@@ -19,6 +19,7 @@ body{margin:0;background:var(--background);color:var(--foreground);font-size:14p
  .data-table{@apply w-full text-left text-sm;}
  .data-table th{@apply whitespace-nowrap bg-muted/50 px-4 py-3 text-xs font-medium text-muted-foreground;}
  .data-table td{@apply max-w-64 border-t px-4 py-3 align-middle;overflow-wrap:anywhere;}
+ .product-management > .table-frame > .data-table > tbody > tr > td:first-child{min-width:14rem;}
  .data-table tbody tr{@apply transition-colors hover:bg-muted/40;}
  .nav-item{@apply flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring;}
  .nav-active{@apply bg-accent text-accent-foreground;}
