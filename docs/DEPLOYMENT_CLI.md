@@ -1,5 +1,7 @@
 # Guided local KELIOS deployment
 
+**Current O1 boundary — 2026-10-13:** The [accepted O1 execution plan](plans/DEPLOYMENT_CLI_O1_EMAIL_RECOVERY_PLAN.md) governs only the Email bootstrap/recovery handoff. The shared CLI helper now passes explicit Email through `kelios.recovery.email`; O1.1–O1.7 and overall O1 are HUMAN ACCEPTED / CLOSED. Current operator instructions below reflect that implementation. Verification comprises isolated PTY/fake-Docker controls and separate PostgreSQL service tests; no fresh live Docker recovery or real Email delivery is claimed. Historical CLI v1 design/evidence retains its original behavior, results and limitations.
+
 `./kelios` is a repository-local shell tool. Prerequisites: Docker with Compose v2/BuildKit, a running daemon and OpenSSL. Initial builds need registry/dependency network access. Host Java/Node/Python are not installer dependencies. Python is only used by repository verification scripts.
 
 ## First install
@@ -8,7 +10,9 @@ Run `./kelios install` in an interactive terminal. Defaults are managed PostgreS
 
 Choose managed PostgreSQL for a fresh local installation. For external PostgreSQL, supply a dedicated database reachable from the backend container, username and non-echoed password. Container localhost is not the host machine; Docker Desktop commonly provides host.docker.internal. Flyway migrates the chosen database normally. An existing encrypted KELIOS database needs its original authentication encryption keys; supply its key directory, never infer or regenerate those keys. The supplied-key input requires `main.private.pem`, matching `main.public.pem` and `main.aes` (base64 32 bytes); additional versioned `.aes`/`.private.pem`/`.public.pem` files with valid key IDs are retained. Do not include unrelated files or recovery passwords in that directory.
 
-The tool builds the existing independent images, waits for health and asks for GLOBAL ADMIN login, display name and password/confirmation. Existing backend password policy applies: 15–128 Unicode code points, with uppercase, lowercase, digit and special/non-alphanumeric characters; password content is not trimmed and no newline is appended. Input uses a temporary mounted file, removed on completion/refusal/interruption. Successful install reports the actual HTTPS URL. A failed command does not prove credentials or a usable installation.
+The tool builds the existing independent images, waits for health and asks for explicit GLOBAL ADMIN Email (no account default), display name and password/confirmation. Existing backend password policy applies: 12–128 Unicode code points, with uppercase, lowercase, digit and special/non-alphanumeric characters; password content is not trimmed and no newline is appended. Input uses a temporary mounted file, removed on completion/refusal/interruption. Successful install reports the actual HTTPS URL. A failed command does not prove credentials or a usable installation.
+
+Both `install` and `recover-admin` use the same protected Email recovery helper. The CLI rejects empty/all-POSIX-whitespace Email and passes nonblank input as one quoted `kelios.recovery.email` argument; the backend owns Email normalization, syntax/length, case-insensitive uniqueness and recovery eligibility. Email is not persisted in installation configuration. Bootstrap uses the accepted pre-delivery manual-verification contract; no verification Email is sent. See [authentication operations](AUTHENTICATION.md) for the authoritative account and zero-usable-admin rules.
 
 ## Seven commands
 
@@ -20,7 +24,7 @@ The tool builds the existing independent images, waits for health and asks for G
 | `./kelios status` | Minimal service state/health, actual HTTPS URL and database mode. Health does not prove OIDC interoperability or login. |
 | `./kelios config` | Staged port/bind, theme/six existing color tokens and local logo menu. Save or cancel. Run start to apply; reload browser for branding. No image rebuild. |
 | `./kelios uninstall` | Remove runtime only by default. Managed permanent deletion is an optional separate typed confirmation; external database is never removed. |
-| `./kelios recover-admin` | Ensure runtime is available, then invoke existing protected recovery. Refuses when any usable GLOBAL ADMIN exists. No force option. |
+| `./kelios recover-admin` | Ensure the saved runtime is available, prompt for explicit GLOBAL ADMIN Email (no default), display name and password/confirmation, then invoke the shared protected recovery. Refuses when any usable GLOBAL ADMIN exists. No force, Login fallback or automatic retry. |
 
 Changing HTTPS port changes the exact public origin/callback. Update your IServ client's registered redirect URI accordingly; old browser tabs must use the new URL. The JWT issuer stays installation-stable. Changing bind does not change browser hostname or certificate. Wider network binds are explicit operator decisions; this remains a local/test deployment tool, not production ingress configuration. Config does not change TLS material, database mode/connections, users, OIDC, authorization or business settings.
 

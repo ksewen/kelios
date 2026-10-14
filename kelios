@@ -195,8 +195,8 @@ start_runtime() {
   compose up -d --wait --wait-timeout 180 --no-build --pull never >/dev/null 2>&1 || fail 'Runtime failed to become healthy. Check Docker, ports, database access and migrations. Configuration and data were preserved.'
 }
 recovery() {
-  prompt 'GLOBAL ADMIN login' 'manual-admin'; LOGIN=$ANSWER
-  identifier "$LOGIN"; [ "${#LOGIN}" -ge 3 ] || fail 'Login must contain at least three characters.'
+  prompt 'GLOBAL ADMIN Email' ''; RECOVERY_EMAIL=$ANSWER
+  case "$RECOVERY_EMAIL" in *[![:space:]]*) ;; *) fail 'GLOBAL ADMIN Email is required.';; esac
   prompt 'Display name' 'KELIOS Administrator'; DISPLAY=$ANSWER
   [ "${#DISPLAY}" -le 256 ] || fail 'Display name too long.'
   password 'Administrator password'; FIRST=$PASSWORD
@@ -205,7 +205,7 @@ recovery() {
   printf '%s' "$FIRST" > "$TEMP/password"; unset FIRST PASSWORD
   chmod 444 "$TEMP/password"
   # Docker mounts this one file, not the private temporary directory or output.
-  if compose run --rm --no-deps -v "$TEMP/password:/run/secrets/kelios-recovery/password:ro" backend --spring.main.web-application-type=none --kelios.recovery.enabled=true "--kelios.recovery.login=$LOGIN" "--kelios.recovery.display-name=$DISPLAY" --kelios.recovery.password-file=/run/secrets/kelios-recovery/password > "$TEMP/output" 2>&1; then
+  if compose run --rm --no-deps -v "$TEMP/password:/run/secrets/kelios-recovery/password:ro" backend --spring.main.web-application-type=none --kelios.recovery.enabled=true "--kelios.recovery.email=$RECOVERY_EMAIL" "--kelios.recovery.display-name=$DISPLAY" --kelios.recovery.password-file=/run/secrets/kelios-recovery/password > "$TEMP/output" 2>&1; then
     printf 'GLOBAL ADMIN created through the protected backend recovery command.\n'
   else
     fail 'Administrator creation refused or failed. A usable GLOBAL ADMIN may already exist; verify input policy/database. No force bypass is available.'

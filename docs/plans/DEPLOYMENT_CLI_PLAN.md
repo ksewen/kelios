@@ -1,5 +1,7 @@
 # Deployment CLI v1 — approved product requirements and repository-fit design
 
+**Current O1 execution boundary — 2026-10-13:** [O1 Email bootstrap/recovery plan](DEPLOYMENT_CLI_O1_EMAIL_RECOVERY_PLAN.md) is HUMAN REVIEWED / ACCEPTED for this narrow handoff only. O1.1–O1.7 and overall O1 are HUMAN ACCEPTED / CLOSED, including the shared Email input/property correction, isolated verification and documentation/evidence closeout. The original CLI v1 design and [verification](../verification/DEPLOYMENT_CLI.md) below remain historical; no original results are rewritten and no fresh live Docker recovery or Email-delivery claim is added.
+
 ## 1. Status, authority and gate
 
 Approved design; implementation explicitly authorized on 2026-10-11. Phases 0–4 are accepted by the user. Later UI redesign is committed at `2795bccbc8bc944a31f562f0d584870d76ea3e36`; the working tree also contains subsequent UI rendering-stability changes. Those changes are preserved and are not CLI work. Historical pending-review sentences in phase documents are not new acceptance gates. There is no Phase 5. Real IServ interoperability remains **MANUAL VERIFICATION PENDING**.

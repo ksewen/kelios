@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """TTY/control-flow tests. Python is test tooling, never an installer dependency."""
-import os, pathlib, pty, re, select, shutil, signal, subprocess, termios, time, unittest
+import hashlib, json, os, pathlib, pty, re, select, shutil, signal, subprocess, termios, time, unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 BASE = ROOT / '.cache/deployment-cli/control'
@@ -72,6 +72,7 @@ class CliControlTests(unittest.TestCase):
         docker = self.root / 'bin/docker'
         docker.write_text('''#!/bin/sh
 if [ -n "${PASSWORD+x}${FIRST+x}${DB_PASSWORD+x}${encoded+x}" ]; then exit 42; fi
+python3 "$(dirname "$0")/capture.py" "$@" || exit $?
 case "$*" in
   *"volume inspect"*) if [ -f "$(dirname "$0")/missing-volume" ]; then exit 1; fi;;
 esac
@@ -86,6 +87,20 @@ case "$*" in
 esac
 ''')
         docker.chmod(0o755)
+        # Observe argv without joining/evaluating it or changing fake Docker outcomes.
+        (self.root / 'bin/capture.py').write_text("""import hashlib, json, pathlib, sys
+root = pathlib.Path(__file__).resolve().parents[1]
+argv = sys.argv[1:]
+state = root / '.kelios/installation.conf'
+phase = dict(line.split('=', 1) for line in state.read_text().splitlines()).get('PHASE') if state.exists() else None
+record = {'argv': argv, 'phase': phase}
+if any(arg.startswith('--kelios.recovery.password-file=') for arg in argv):
+    mount = argv[argv.index('-v') + 1]
+    source = pathlib.Path(mount.rsplit(':', 2)[0])
+    record.update(password_sha256=hashlib.sha256(source.read_bytes()).hexdigest(), password_mode=source.stat().st_mode & 0o777)
+with (root / 'docker-argv.jsonl').open('a') as out:
+    out.write(json.dumps(record) + chr(10))
+""")
         self.env = os.environ.copy()
         self.env['PATH'] = str(self.root / 'bin') + ':' + self.env['PATH']
 
@@ -141,19 +156,205 @@ esac
         secret='UnprintedVerification9!Only'
         rc,out=self.run_cli('install',self.tls_prompts()+[('Database password',secret),('Runtime theme','invalid')])
         self.assertNotEqual(rc,0); self.assertNotIn(secret,out)
-    def test_supplied_versioned_keys_are_preserved(self):
-        self.env.update(PASSWORD='inherited-placeholder',FIRST='inherited-placeholder',DB_PASSWORD='inherited-placeholder',encoded='inherited-placeholder')
+    def managed_install_answers(self, email, password='ControlFixture9!NotReal'):
         prompts=self.tls_prompts()[:6]
         keys=self.root/'keys'; keys.mkdir()
         subprocess.run(['openssl','genpkey','-algorithm','RSA','-pkeyopt','rsa_keygen_bits:3072','-out',str(keys/'main.private.pem')],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,check=True)
         subprocess.run(['openssl','pkey','-in',str(keys/'main.private.pem'),'-pubout','-out',str(keys/'main.public.pem')],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,check=True)
         aes=subprocess.check_output(['openssl','rand','-base64','32']); (keys/'main.aes').write_bytes(aes); (keys/'previous.aes').write_bytes(aes)
-        prompts += [('Database mode','managed'),('Runtime theme','green'),('Logo path',str(ROOT/'deploy/branding/green/logo.svg')),('Existing authentication key directory',str(keys)),('GLOBAL ADMIN login','control-admin'),('Display name','Control fixture'),('Administrator password','ControlFixture9!NotReal'),('Confirm password','ControlFixture9!NotReal')]
+        prompts += [('Database mode','managed'),('Runtime theme','green'),('Logo path',str(ROOT/'deploy/branding/green/logo.svg')),('Existing authentication key directory',str(keys)),('GLOBAL ADMIN Email',email),('Display name','Control fixture'),('Administrator password',password),('Confirm password',password)]
+        return prompts,aes
+
+    def docker_calls(self):
+        return [json.loads(line) for line in (self.root/'docker-argv.jsonl').read_text().splitlines()]
+
+    def assert_install_recovery(self, email, password, success):
+        calls=self.docker_calls()
+        recovery=[call for call in calls if '--kelios.recovery.enabled=true' in call['argv']]
+        self.assertEqual(len(recovery),1)
+        call=recovery[0]; args=call['argv']; prefix=args[:args.index('run')]
+        state=dict(line.split('=',1) for line in (self.root/'.kelios/installation.conf').read_text().splitlines())
+        self.assertEqual(prefix,['compose','--env-file',prefix[2],'-p',state['PROJECT'],'-f',str(self.root/'deploy/compose.yaml'),'-f',str(self.root/'deploy/compose.postgres.yaml'),'-f',str(self.root/'deploy/compose.auth.yaml')])
+        self.assertTrue(pathlib.Path(prefix[2]).is_relative_to(self.root/'.kelios/temporary'))
+        mount=args[args.index('-v')+1]; host=pathlib.Path(mount.rsplit(':',2)[0])
+        self.assertEqual(host.name,'password'); self.assertTrue(host.parent.name.startswith('recovery.'))
+        self.assertEqual(host.parent.parent,self.root/'.kelios/temporary')
+        self.assertEqual(args[len(prefix):],['run','--rm','--no-deps','-v',str(host)+':/run/secrets/kelios-recovery/password:ro','backend','--spring.main.web-application-type=none','--kelios.recovery.enabled=true','--kelios.recovery.email='+email,'--kelios.recovery.display-name=Control fixture','--kelios.recovery.password-file=/run/secrets/kelios-recovery/password'])
+        self.assertEqual(call['password_sha256'],hashlib.sha256(password.encode()).hexdigest())
+        self.assertEqual(call['password_mode'],0o444)
+        self.assertFalse(host.exists()); self.assertFalse(host.parent.exists())
+        self.assertEqual(call['phase'],'prepared')
+        phases=[item['phase'] for item in calls if 'up' in item['argv']]
+        self.assertEqual(phases,['prepared','initialized'] if success else ['prepared'])
+        events=[item['argv'][len(prefix)] for item in calls if item['argv'][:1]==['compose'] and any(arg in item['argv'] for arg in ['build','up','run'])]
+        self.assertEqual(events,['build','up','run','up'] if success else ['build','up','run'])
+        self.assertEqual(state['PHASE'],'initialized' if success else 'prepared')
+        self.assertNotIn(email,(self.root/'.kelios/installation.conf').read_text())
+        self.assertNotIn('EMAIL',state); self.assertNotIn('LOGIN',state)
+        for persisted in (self.root/'.kelios').rglob('*'):
+            if persisted.is_file():
+                for spelling in {email,email.strip(),email.strip().lower()}:
+                    self.assertNotIn(spelling.encode(),persisted.read_bytes())
+        self.assertTrue(all(password not in arg for item in calls for arg in item['argv']))
+        self.assertFalse(list((self.root/'.kelios/temporary').iterdir()))
+        self.assertFalse((self.root/'.kelios.lock').exists())
+
+    def test_supplied_versioned_keys_are_preserved(self):
+        self.env.update(PASSWORD='inherited-placeholder',FIRST='inherited-placeholder',DB_PASSWORD='inherited-placeholder',encoded='inherited-placeholder')
+        prompts,aes=self.managed_install_answers('control-admin@example.org')
         rc,out=self.run_cli('install',prompts)
         self.assertEqual(rc,0); self.assertTrue('ControlFixture9!NotReal' not in out)
         self.assertEqual((self.root/'.kelios/secrets/auth/previous.aes').read_bytes(),aes)
         self.assertEqual((self.root/'.kelios').stat().st_mode & 0o777,0o700)
         self.assertFalse(list((self.root/'.kelios/temporary').glob('recovery.*')))
+        self.assert_install_recovery('control-admin@example.org','ControlFixture9!NotReal',True)
+        self.assertIn('KELIOS installation ready:',out)
+
+    def test_install_email_preserves_case_spaces_and_password_bytes(self):
+        email='  Mixed.Case+tag@Example.org  '; password='  ControlFixture9!NotReal  '
+        prompts,_=self.managed_install_answers(email,password)
+        rc,out=self.run_cli('install',prompts)
+        self.assertEqual(rc,0); self.assertNotIn(password,out)
+        self.assertIn('GLOBAL ADMIN Email []:',out); self.assertNotIn('GLOBAL ADMIN login',out); self.assertNotIn('manual-admin',out)
+        self.assert_install_recovery(email,password,True)
+        self.assertIn('KELIOS installation ready:',out)
+        self.assertLess(out.index('GLOBAL ADMIN created'),out.index('KELIOS installation ready:'))
+
+    def test_install_email_punctuation_is_one_literal_argument(self):
+        email="`touch${IFS}O1_EMAIL_EXECUTED`+tag$cash/o'brien@example.org"
+        prompts,_=self.managed_install_answers(email)
+        rc,out=self.run_cli('install',prompts)
+        self.assertEqual(rc,0); self.assertNotIn('ControlFixture9!NotReal',out)
+        self.assert_install_recovery(email,'ControlFixture9!NotReal',True)
+        self.assertFalse((self.root/'O1_EMAIL_EXECUTED').exists())
+
+    def assert_install_required_email(self,email):
+        prompts,_=self.managed_install_answers(email)
+        rc,out=self.run_cli('install',prompts[:-3])
+        self.assertNotEqual(rc,0); self.assertIn('GLOBAL ADMIN Email []:',out)
+        self.assertIn('GLOBAL ADMIN Email is required.',out)
+        self.assertNotIn('Display name',out); self.assertNotIn('KELIOS installation ready:',out)
+        calls=self.docker_calls(); self.assertFalse(any('run' in call['argv'] for call in calls))
+        self.assertEqual([call['phase'] for call in calls if 'up' in call['argv']],['prepared'])
+        self.assertIn('PHASE=prepared',(self.root/'.kelios/installation.conf').read_text())
+        self.assertFalse(list((self.root/'.kelios/temporary').iterdir()))
+        self.assertFalse((self.root/'.kelios.lock').exists())
+
+    def test_install_email_empty_has_no_default(self):
+        self.assert_install_required_email('')
+
+    def test_install_email_posix_whitespace_rejected_before_dispatch(self):
+        self.assert_install_required_email(' \t\v\f ')
+
+    def test_install_refused_recovery_never_reports_ready(self):
+        (self.root/'bin/refuse').touch()
+        prompts,_=self.managed_install_answers('refused-admin@example.org')
+        rc,out=self.run_cli('install',prompts)
+        self.assertNotEqual(rc,0); self.assertIn('Administrator creation refused or failed.',out)
+        self.assertNotIn('KELIOS installation ready:',out); self.assertNotIn('GLOBAL ADMIN created',out)
+        self.assertNotIn('ControlFixture9!NotReal',out)
+        self.assert_install_recovery('refused-admin@example.org','ControlFixture9!NotReal',False)
+
+    def test_install_password_mismatch_never_dispatches_recovery(self):
+        prompts,_=self.managed_install_answers('control-admin@example.org')
+        prompts[-1]=('Confirm password','DifferentFixture9!NotReal')
+        rc,out=self.run_cli('install',prompts)
+        self.assertNotEqual(rc,0); self.assertIn('Passwords do not match.',out)
+        self.assertNotIn('ControlFixture9!NotReal',out); self.assertNotIn('DifferentFixture9!NotReal',out)
+        self.assertFalse(any('run' in call['argv'] for call in self.docker_calls()))
+        self.assertIn('PHASE=prepared',(self.root/'.kelios/installation.conf').read_text())
+        self.assertFalse(list((self.root/'.kelios/temporary').iterdir()))
+
+    def initialized_recover_admin_fixture(self):
+        # Reuse accepted fake install to obtain valid private keys/initialized state.
+        self.test_supplied_versioned_keys_are_preserved()
+        state=self.root/'.kelios'
+        before={str(path.relative_to(state)):path.read_bytes() for path in state.rglob('*') if path.is_file()}
+        return len(self.docker_calls()),before
+
+    def assert_recover_admin_state(self, start, before, email, password=None):
+        state=self.root/'.kelios'
+        self.assertEqual({str(path.relative_to(state)):path.read_bytes() for path in state.rglob('*') if path.is_file()},before)
+        self.assertIn('PHASE=initialized',(state/'installation.conf').read_text())
+        self.assertFalse(list((state/'temporary').iterdir()))
+        self.assertFalse((self.root/'.kelios.lock').exists())
+        calls=self.docker_calls()[start:]
+        self.assertEqual([call['phase'] for call in calls if 'up' in call['argv']],['initialized'])
+        recoveries=[call for call in calls if '--kelios.recovery.enabled=true' in call['argv']]
+        self.assertEqual(len(recoveries),int(password is not None))
+        if password is not None:
+            call=recoveries[0];args=call['argv'];prefix=args[:args.index('run')]
+            configuration=dict(line.split('=',1) for line in (state/'installation.conf').read_text().splitlines())
+            self.assertEqual(prefix,['compose','--env-file',prefix[2],'-p',configuration['PROJECT'],'-f',str(self.root/'deploy/compose.yaml'),'-f',str(self.root/'deploy/compose.postgres.yaml'),'-f',str(self.root/'deploy/compose.auth.yaml')])
+            self.assertTrue(pathlib.Path(prefix[2]).is_relative_to(state/'temporary'))
+            mount=args[args.index('-v')+1];source=pathlib.Path(mount.rsplit(':',2)[0])
+            self.assertEqual(source.name,'password');self.assertTrue(source.parent.name.startswith('recovery.'))
+            self.assertEqual(source.parent.parent,state/'temporary')
+            self.assertEqual(args[len(prefix):],['run','--rm','--no-deps','-v',str(source)+':/run/secrets/kelios-recovery/password:ro','backend','--spring.main.web-application-type=none','--kelios.recovery.enabled=true','--kelios.recovery.email='+email,'--kelios.recovery.display-name=Recovery fixture','--kelios.recovery.password-file=/run/secrets/kelios-recovery/password'])
+            self.assertEqual(call['phase'],'initialized')
+            self.assertEqual(call['password_sha256'],hashlib.sha256(password.encode()).hexdigest())
+            self.assertEqual(call['password_mode'],0o444)
+            self.assertFalse(source.exists());self.assertFalse(source.parent.exists())
+            self.assertTrue(all(password not in arg for item in calls for arg in item['argv']))
+        self.assertFalse(any('build' in call['argv'] for call in calls))
+        for path in state.rglob('*'):
+            if path.is_file():
+                for spelling in {email,email.strip(),email.strip().lower()}- {''}:
+                    self.assertNotIn(spelling.encode(),path.read_bytes())
+
+    def test_recover_admin_email_argv_and_initialized_privacy(self):
+        start,before=self.initialized_recover_admin_fixture()
+        email="  Recovery.Case+tag$cash/o'brien@Example.org  ";password='  RecoveryFixture9!NotReal  '
+        answers=[('GLOBAL ADMIN Email',email),('Display name','Recovery fixture'),('Administrator password',password),('Confirm password',password)]
+        rc,out=self.run_cli('recover-admin',answers)
+        self.assertEqual(rc,0);self.assertIn('GLOBAL ADMIN Email []:',out)
+        self.assertIn('GLOBAL ADMIN created through the protected backend recovery command.',out)
+        self.assertNotIn('GLOBAL ADMIN login',out);self.assertNotIn('manual-admin',out);self.assertNotIn(password,out)
+        self.assert_recover_admin_state(start,before,email,password)
+
+    def test_recover_admin_refusal_is_sanitized_and_never_replayed(self):
+        start,before=self.initialized_recover_admin_fixture()
+        (self.root/'bin/refuse').touch()
+        docker=self.root/'bin/docker'
+        original='  *" run "*) [ ! -f "$(dirname "$0")/refuse" ]; exit $?;;'
+        replacement='  *" run "*) printf "UNSAFE_BACKEND_DETAIL fixture-only\\n"; printf "UNSAFE_BACKEND_TRACE fixture-only\\n" >&2; [ ! -f "$(dirname "$0")/refuse" ]; exit $?;;'
+        self.assertIn(original,docker.read_text());docker.write_text(docker.read_text().replace(original,replacement))
+        email='refused-recovery@example.org';password='RecoveryFixture9!NotReal'
+        answers=[('GLOBAL ADMIN Email',email),('Display name','Recovery fixture'),('Administrator password',password),('Confirm password',password)]
+        rc,out=self.run_cli('recover-admin',answers)
+        self.assertNotEqual(rc,0);self.assertIn('Administrator creation refused or failed.',out)
+        self.assertNotIn('GLOBAL ADMIN created',out);self.assertNotIn('UNSAFE_BACKEND_DETAIL',out);self.assertNotIn('UNSAFE_BACKEND_TRACE',out);self.assertNotIn(password,out)
+        self.assert_recover_admin_state(start,before,email,password)
+
+    def assert_recover_admin_required_email(self,email):
+        start,before=self.initialized_recover_admin_fixture()
+        rc,out=self.run_cli('recover-admin',[('GLOBAL ADMIN Email',email)])
+        self.assertNotEqual(rc,0);self.assertIn('GLOBAL ADMIN Email []:',out)
+        self.assertIn('GLOBAL ADMIN Email is required.',out);self.assertNotIn('Display name',out);self.assertNotIn('GLOBAL ADMIN created',out)
+        self.assert_recover_admin_state(start,before,email)
+
+    def test_recover_admin_empty_email_has_no_default(self):
+        self.assert_recover_admin_required_email('')
+
+    def test_recover_admin_whitespace_email_never_dispatches(self):
+        self.assert_recover_admin_required_email(' \t\v\f ')
+
+    def test_recover_admin_password_mismatch_preserves_initialized_state(self):
+        start,before=self.initialized_recover_admin_fixture()
+        email='recovery@example.org';password='RecoveryFixture9!NotReal';different='DifferentFixture9!NotReal'
+        answers=[('GLOBAL ADMIN Email',email),('Display name','Recovery fixture'),('Administrator password',password),('Confirm password',different)]
+        rc,out=self.run_cli('recover-admin',answers)
+        self.assertNotEqual(rc,0);self.assertIn('Passwords do not match.',out)
+        self.assertNotIn(password,out);self.assertNotIn(different,out);self.assertNotIn('GLOBAL ADMIN created',out)
+        self.assert_recover_admin_state(start,before,email)
+
+    def test_recover_admin_password_interrupt_restores_echo_and_state(self):
+        start,before=self.initialized_recover_admin_fixture()
+        email='recovery@example.org'
+        rc,out=self.run_cli('recover-admin',[('GLOBAL ADMIN Email',email),('Display name','Recovery fixture'),('Administrator password',None)])
+        self.assertEqual(rc,130);self.assertNotIn('GLOBAL ADMIN created',out)
+        self.assert_recover_admin_state(start,before,email)
+
     def test_initialized_missing_volume_refuses_empty_replacement(self):
         self.test_supplied_versioned_keys_are_preserved()
         (self.root/'bin/missing-volume').touch()
