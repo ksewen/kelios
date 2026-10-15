@@ -2,9 +2,11 @@
 
 Status: Product design approved; implementation authorized, 2026-10-11. Verification and user acceptance are recorded separately.
 
+**Current outcome:** CLI v1, O1 Email handoff and DCLI-B1 supported-install correction are HUMAN ACCEPTED / CLOSED; see the [deployment closeout](../history/deployment-cli.md) and [current operator guide](../operations/local-deployment.md). The original implementation-time status above is historical.
+
 ## Context
 
-Phases 0–4 and subsequent UI redesign remain the application baseline. The approved [CLI plan](../plans/DEPLOYMENT_CLI_PLAN.md) adds operator orchestration, not Domain behavior. The final transport decision permits only the existing local same-origin HTTPS overlay with operator-supplied certificate/private key. Production TLS automation remains excluded.
+At this ADR's date, Phases 0–4 and the subsequent UI redesign were the application baseline. The [accepted CLI closeout](../history/deployment-cli.md) records operator orchestration, not Domain behavior. The final transport decision permits only the existing local same-origin HTTPS overlay with operator-supplied certificate/private key. Production TLS automation remains excluded.
 
 ## Decisions
 
@@ -18,4 +20,4 @@ Phases 0–4 and subsequent UI redesign remain the application baseline. The app
 
 ## Consequences
 
-Local installation becomes guided while application architecture remains unchanged. The host private parent protects runtime-readable secret children required by non-root containers. Original AES keys must accompany an existing database containing encrypted OIDC configuration. No update/backup/restore/rotation/remote deployment subsystem, migrations or Phase 5. [Operator guide](../DEPLOYMENT_CLI.md) documents lifecycle and limitations; [CLI evidence](../verification/DEPLOYMENT_CLI.md) records actual verification.
+Local installation becomes guided while application architecture remains unchanged. The host private parent protects runtime-readable secret children required by non-root containers. Original AES keys must accompany an existing database containing encrypted OIDC configuration. No update/backup/restore/rotation/remote deployment subsystem, migrations or Phase 5. [Operator guide](../operations/local-deployment.md) documents lifecycle and limitations; [CLI evidence](../history/deployment-cli.md) records actual verification.

@@ -5,9 +5,11 @@
 
 Status: Implementation explicitly approved by the user. Phase 4 user acceptance pending implementation/evidence review.
 
+**Current outcome:** Phase 4 was subsequently HUMAN ACCEPTED / CLOSED; see the [compact closeout](../history/phase0-4.md). The pending statement above describes the ADR's original date.
+
 ## Authority
 
-DOMAIN.md, ARCHITECTURE.md and docs/plans/PHASE_4_PLAN.md are authoritative. L1–L19/N1/M1/S1 and I18N-1–I18N-13 are resolved. Preserve accepted Phases 0–3, historical ADRs and evidence. Real IServ interoperability remains pending manual verification, not a Phase 4 blocker.
+At this ADR's date, DOMAIN.md, ARCHITECTURE.md and the Phase 4 Plan defined the approved implementation. Current rules reside in [Domain](../../DOMAIN.md) and [architecture](../../ARCHITECTURE.md); the completed Plan is summarized in [history](../history/phase0-4.md). L1–L19/N1/M1/S1 and I18N-1–I18N-13 were resolved. Real IServ interoperability remains pending manual verification, not a Phase 4 blocker.
 
 ## Decisions
 
@@ -22,4 +24,4 @@ DOMAIN.md, ARCHITECTURE.md and docs/plans/PHASE_4_PLAN.md are authoritative. L1�
 
 ## Evidence and stop boundary
 
-Actual package versions, commands/counts/images/migration/concurrency/restore outcomes and limits belong in docs/verification/PHASE_4.md. Docker builder unit verification does not replace host PostgreSQL Testcontainers. No real IServ compatibility claim, Phase 5, commit/push/PR.
+Actual verification outcomes and limits are retained in the [Phase closeout](../history/phase0-4.md); original execution bytes remain in Git history. Docker builder unit verification does not replace host PostgreSQL Testcontainers. No real IServ compatibility claim or Phase 5 authorization follows from this ADR.

@@ -1,2 +1,0 @@
-Local documentation links, OpenAPI schema references and 19 unique operation IDs validated.
-28 historical file content hashes unchanged.

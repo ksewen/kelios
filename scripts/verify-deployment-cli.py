@@ -5,6 +5,7 @@ import hashlib, http.cookiejar, importlib.util, json, os, pathlib, secrets, shut
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 BASE=ROOT/'.cache/deployment-cli'
 BASE.mkdir(parents=True,exist_ok=True); BASE.chmod(0o700)
+(ROOT/'.cache/verification/deployment-cli').mkdir(parents=True,exist_ok=True)
 spec=importlib.util.spec_from_file_location('cli_control',ROOT/'scripts/test-deployment-cli.py')
 control=importlib.util.module_from_spec(spec); spec.loader.exec_module(control)
 RESULTS=[]
@@ -153,7 +154,7 @@ try:
     check('supplied versioned encryption keys retained',(EXTERNAL/'.kelios/secrets/auth/previous.aes').read_bytes()==(MANAGED/'.kelios/secrets/auth/previous.aes').read_bytes())
     external_versions=run(['docker','exec','kelios-cli-verification-external','psql','-U','kelios','-d','kelios','-Atc',"SELECT string_agg(version,',' ORDER BY installed_rank) FROM flyway_schema_history WHERE success"])
     check('external fresh V1-V6',external_versions=='1,2,3,4,5,6')
-    (ROOT/'docs/verification/deployment-cli/migrations.json').write_text(json.dumps({'managed':'1,2,3,4,5,6','external':external_versions})+'\n')
+    (ROOT/'.cache/verification/deployment-cli/migrations.json').write_text(json.dumps({'managed':'1,2,3,4,5,6','external':external_versions})+'\n')
     check('external mode no managed service','postgres' not in dc(EXTERNAL,'config','--services').splitlines())
     aes_path=EXTERNAL/'.kelios/secrets/auth/main.aes'; aes_path.rename(aes_path.with_suffix('.held'))
     check('missing encryption key refuses start',cli(EXTERNAL,'start',ok=False)[0]!=0)
@@ -176,7 +177,7 @@ try:
     cli(EXTERNAL,'uninstall',[('preserving database/configuration/keys','yes')])
     check('unrelated containers untouched',all(x in run(['docker','ps','-a','--format','{{.ID}}']).splitlines() for x in before))
     result={'passed':len(RESULTS),'failed':0,'checks':RESULTS}
-    (ROOT/'docs/verification/deployment-cli/results.json').write_text(json.dumps(result,indent=2)+'\n')
+    (ROOT/'.cache/verification/deployment-cli/results.json').write_text(json.dumps(result,indent=2)+'\n')
 finally:
     # Only this verifier's exact disposable project identities; preserve state for evidence/debug.
     for d in [MANAGED,EXTERNAL]:

@@ -2,7 +2,7 @@
 # Actual Phase 0/1 deployment regressions and Phase 2 HTTPS/browser evidence.
 set -eu
 cd "$(dirname "$0")/.."
-mkdir -p .cache/phase2-private .cache/tmp docs/verification/phase2
+mkdir -p .cache/phase2-private .cache/tmp .cache/verification/phase2
 chmod 700 .cache/phase2-private
 # The host-only private parent is not mounted. Its readable child is mounted for the runtime UID.
 if [ ! -d .cache/phase2-private/keys ] && [ -d .cache/phase2-secrets ]; then
@@ -16,7 +16,7 @@ export TMPDIR="$PWD/.cache/tmp"
 export npm_config_cache="$PWD/.cache/npm"
 # This original script writes only .cache; accepted Phase 0/1 evidence stays unchanged.
 ./scripts/smoke-phase0.sh
-cp .cache/docker-smoke.log docs/verification/phase2/docker-smoke.txt
+cp .cache/docker-smoke.log .cache/verification/phase2/docker-smoke.txt
 export KELIOS_AUTH_KEY_DIRECTORY="$PWD/.cache/phase2-private/keys"
 export KELIOS_TLS_DIRECTORY="$KELIOS_AUTH_KEY_DIRECTORY"
 export KELIOS_HTTPS_PORT="${KELIOS_HTTPS_PORT:-8443}"
@@ -66,8 +66,8 @@ for brand in blue green; do
   else
     (cd frontend && KELIOS_EXPECTED_BRAND="$brand" npm run test:smoke -- runtime-branding.spec.ts)
   fi
-  cp "frontend/test-results/$brand.png" "docs/verification/phase2/$brand.png"
+  cp "frontend/test-results/$brand.png" ".cache/verification/phase2/$brand.png"
 done
-compose exec -T postgres psql -U kelios -d kelios -c 'SELECT version, description, success FROM flyway_schema_history;' > docs/verification/phase2/migrations.txt
-compose logs --no-color backend > docs/verification/phase2/backend-startup.txt
+compose exec -T postgres psql -U kelios -d kelios -c 'SELECT version, description, success FROM flyway_schema_history;' > .cache/verification/phase2/migrations.txt
+compose logs --no-color backend > .cache/verification/phase2/backend-startup.txt
 printf 'Phase 2 HTTPS/authentication and both-brand deployment regression passed.\n'

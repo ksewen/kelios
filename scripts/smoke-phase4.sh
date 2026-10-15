@@ -5,7 +5,7 @@ export COMPOSE_PROJECT_NAME=kelios-phase4
 export KELIOS_HTTP_PORT="${KELIOS_HTTP_PORT:-9080}"
 export KELIOS_HTTPS_PORT="${KELIOS_HTTPS_PORT:-9443}"
 cd "$(dirname "$0")/.."
-mkdir -p .cache/phase2-private .cache/tmp docs/verification/phase4
+mkdir -p .cache/phase2-private .cache/tmp .cache/verification/phase4
 chmod 700 .cache/phase2-private
 # The host-only private parent is not mounted. Its readable child is mounted for the runtime UID.
 if [ ! -d .cache/phase2-private/keys ] && [ -d .cache/phase2-secrets ]; then
@@ -19,7 +19,7 @@ export TMPDIR="$PWD/.cache/tmp"
 export npm_config_cache="$PWD/.cache/npm"
 # This original script writes only .cache; accepted Phase 0/1 evidence stays unchanged.
 ./scripts/smoke-phase4-foundation.sh
-cp .cache/phase4-foundation.log docs/verification/phase4/docker-smoke.txt
+cp .cache/phase4-foundation.log .cache/verification/phase4/docker-smoke.txt
 export KELIOS_AUTH_KEY_DIRECTORY="$PWD/.cache/phase2-private/keys"
 export KELIOS_TLS_DIRECTORY="$KELIOS_AUTH_KEY_DIRECTORY"
 export KELIOS_HTTPS_PORT="${KELIOS_HTTPS_PORT:-8443}"
@@ -73,19 +73,19 @@ for brand in blue green; do
     (cd frontend && KELIOS_EXPECTED_BRAND="$brand" npm run test:smoke -- runtime-branding.spec.ts phase4-localization.spec.ts)
   fi
   if [ "$brand" = blue ]; then
-    cp frontend/test-results/inventory-loan.png docs/verification/phase4/inventory-loan.png
-    cp frontend/test-results/management-audit.png docs/verification/phase4/management-audit.png
+    cp frontend/test-results/inventory-loan.png .cache/verification/phase4/inventory-loan.png
+    cp frontend/test-results/management-audit.png .cache/verification/phase4/management-audit.png
   fi
-  cp "frontend/test-results/$brand-en.png" "docs/verification/phase4/$brand-en.png"
-  cp "frontend/test-results/$brand-de.png" "docs/verification/phase4/$brand-de.png"
-  cp "frontend/test-results/$brand.png" "docs/verification/phase4/$brand.png"
+  cp "frontend/test-results/$brand-en.png" ".cache/verification/phase4/$brand-en.png"
+  cp "frontend/test-results/$brand-de.png" ".cache/verification/phase4/$brand-de.png"
+  cp "frontend/test-results/$brand.png" ".cache/verification/phase4/$brand.png"
 done
-compose exec -T postgres psql -U kelios -d kelios -c 'SELECT version, description, success FROM flyway_schema_history;' > docs/verification/phase4/migrations.txt
-compose logs --no-color backend > docs/verification/phase4/backend-startup.txt
-compose exec -T postgres psql -U kelios -d kelios -c "SELECT column_name,data_type,is_nullable FROM information_schema.columns WHERE table_name='audit_log' ORDER BY ordinal_position; SELECT indexdef FROM pg_indexes WHERE tablename='audit_log'; SELECT conname,contype FROM pg_constraint WHERE conrelid='audit_log'::regclass;" > docs/verification/phase4/audit-schema.txt
-docker image inspect kelios-backend:phase0 kelios-frontend:phase0 --format '{{.RepoTags}} {{.Id}} user={{.Config.User}} architecture={{.Architecture}}' > docs/verification/phase4/images.txt
-docker version > docs/verification/phase4/docker-version.txt
-compose ps > docs/verification/phase4/compose-health.txt
+compose exec -T postgres psql -U kelios -d kelios -c 'SELECT version, description, success FROM flyway_schema_history;' > .cache/verification/phase4/migrations.txt
+compose logs --no-color backend > .cache/verification/phase4/backend-startup.txt
+compose exec -T postgres psql -U kelios -d kelios -c "SELECT column_name,data_type,is_nullable FROM information_schema.columns WHERE table_name='audit_log' ORDER BY ordinal_position; SELECT indexdef FROM pg_indexes WHERE tablename='audit_log'; SELECT conname,contype FROM pg_constraint WHERE conrelid='audit_log'::regclass;" > .cache/verification/phase4/audit-schema.txt
+docker image inspect kelios-backend:phase0 kelios-frontend:phase0 --format '{{.RepoTags}} {{.Id}} user={{.Config.User}} architecture={{.Architecture}}' > .cache/verification/phase4/images.txt
+docker version > .cache/verification/phase4/docker-version.txt
+compose ps > .cache/verification/phase4/compose-health.txt
 ./scripts/smoke-phase4-restore.sh
 ./scripts/smoke-phase4-clean.sh
 printf 'Phase 4 inventory/HTTPS/authentication and both-brand deployment regression passed.\n'

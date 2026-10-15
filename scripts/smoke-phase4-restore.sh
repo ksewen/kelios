@@ -7,7 +7,7 @@ test -n "${KELIOS_AUTH_KEY_DIRECTORY:-}"
 test -s "$KELIOS_AUTH_KEY_DIRECTORY/main.aes"
 test -s "$KELIOS_AUTH_KEY_DIRECTORY/main.private.pem"
 test -s "$KELIOS_AUTH_KEY_DIRECTORY/main.public.pem"
-mkdir -p .cache/phase4-private docs/verification/phase4
+mkdir -p .cache/phase4-private .cache/verification/phase4
 chmod 700 .cache/phase4-private
 compose() { docker compose -f deploy/compose.yaml -f deploy/compose.postgres.yaml -f deploy/compose.auth.yaml "$@"; }
 # Seed an encrypted disposable provider through the real authorized API, without provider network access.
@@ -35,13 +35,13 @@ SQL
 for table in app_user asset asset_event category manufacturer product location owner audit_log asset_tag_counter local_global_credential tenant_oidc_config tenant_oidc_allowed_group external_identity global_admin_recovery_guard flyway_schema_history; do
   printf "SELECT '%s',count(*),md5(coalesce(string_agg(to_jsonb(t)::text,'|' ORDER BY to_jsonb(t)::text),'')) FROM %s t;\n" "$table" "$table" >> .cache/phase4-private/digests.sql
 done
-compose exec -T postgres psql -U kelios -d kelios -At < .cache/phase4-private/digests.sql > docs/verification/phase4/restore-source-digests.txt
-compose exec -T postgres psql -U kelios -d "$restored" -At < .cache/phase4-private/digests.sql > docs/verification/phase4/restore-restored-digests.txt
-cmp docs/verification/phase4/restore-source-digests.txt docs/verification/phase4/restore-restored-digests.txt
+compose exec -T postgres psql -U kelios -d kelios -At < .cache/phase4-private/digests.sql > .cache/verification/phase4/restore-source-digests.txt
+compose exec -T postgres psql -U kelios -d "$restored" -At < .cache/phase4-private/digests.sql > .cache/verification/phase4/restore-restored-digests.txt
+cmp .cache/verification/phase4/restore-source-digests.txt .cache/verification/phase4/restore-restored-digests.txt
 printf 'services:\n  backend:\n    environment:\n      KELIOS_DATABASE_URL: jdbc:postgresql://postgres:5432/%s\n' "$restored" > .cache/phase4-private/restore.compose.yaml
 # Switch only disposable runtime to the restored database; original database is untouched.
 docker compose -f deploy/compose.yaml -f deploy/compose.postgres.yaml -f deploy/compose.auth.yaml -f .cache/phase4-private/restore.compose.yaml up -d --no-build --no-deps --force-recreate --wait --wait-timeout 180 backend
-compose exec -T backend sh -ec 'test -s /run/secrets/kelios-auth/main.aes; test -s /run/secrets/kelios-auth/main.private.pem; wget -q -O - http://127.0.0.1:8081/actuator/health/readiness' > docs/verification/phase4/restore-readiness.txt
+compose exec -T backend sh -ec 'test -s /run/secrets/kelios-auth/main.aes; test -s /run/secrets/kelios-auth/main.private.pem; wget -q -O - http://127.0.0.1:8081/actuator/health/readiness' > .cache/verification/phase4/restore-readiness.txt
 # Real HTTPS login against restored credentials, keeping CSRF/tokens/password entirely in memory.
 KELIOS_RESTORE_DATABASE="$restored" python3 - <<'PY'
 import os,json,ssl,urllib.request,http.cookiejar
@@ -61,7 +61,7 @@ body={k:config[k] for k in ['issuer','clientId','enabled','version','allowedGrou
 # Existing secret is decrypted with the externally mounted AES key and re-encrypted by the production service.
 result=json.load(client.open(urllib.request.Request(origin+'/api/v1/tenants/'+tenant+'/oidc',method='PUT',data=json.dumps(body).encode(),headers={**headers,'Content-Type':'application/json'})))
 assert result['version']==config['version']+1 and result['secretConfigured'] is True
-with open('docs/verification/phase4/restore-authentication.txt','w') as f:f.write('Restored HTTPS local GLOBAL login: passed\nRestored scoped Asset reads and localIdentifier: passed\nExternal RSA/AES keys available; restored OIDC secret decrypted/re-encrypted by production configuration service: passed\nExact source/restored all-table digests: passed\nOIDC envelope decryption and missing-key fail-closed separately verified by real PostgreSQL Phase4MetadataIT\n')
+with open('.cache/verification/phase4/restore-authentication.txt','w') as f:f.write('Restored HTTPS local GLOBAL login: passed\nRestored scoped Asset reads and localIdentifier: passed\nExternal RSA/AES keys available; restored OIDC secret decrypted/re-encrypted by production configuration service: passed\nExact source/restored all-table digests: passed\nOIDC envelope decryption and missing-key fail-closed separately verified by real PostgreSQL Phase4MetadataIT\n')
 PY
 # Restore original disposable runtime selection; do not drop either database or volume.
 compose up -d --no-build --no-deps --force-recreate --wait --wait-timeout 180 backend

@@ -1,9 +1,0 @@
-OpenAPI YAML parse: passed
-52 existing paths; no new endpoint: passed
-Both registration variants, replacement metadata, Asset and AssetDetail expose nullable localIdentifier: passed
-Metadata replacement nullable fields optional; omission/null clearing documented: passed
-128 Unicode code-point limit represented by maxLength and server checks: passed
-English/German static key sets: 320 each, equal
-Production browser storage references: only i18n.ts kelios.ui.language get/set
-Shell syntax validation: four Phase 4 smoke scripts passed
-Accepted Phase 0–3 architecture/business rules preserved; Phase 4 status sentences updated only

@@ -2,7 +2,7 @@
 # Actual Phase 0/1 deployment regressions and Phase 3 inventory/HTTPS/browser evidence.
 set -eu
 cd "$(dirname "$0")/.."
-mkdir -p .cache/phase2-private .cache/tmp docs/verification/phase3
+mkdir -p .cache/phase2-private .cache/tmp .cache/verification/phase3
 chmod 700 .cache/phase2-private
 # The host-only private parent is not mounted. Its readable child is mounted for the runtime UID.
 if [ ! -d .cache/phase2-private/keys ] && [ -d .cache/phase2-secrets ]; then
@@ -16,7 +16,7 @@ export TMPDIR="$PWD/.cache/tmp"
 export npm_config_cache="$PWD/.cache/npm"
 # This original script writes only .cache; accepted Phase 0/1 evidence stays unchanged.
 ./scripts/smoke-phase3-foundation.sh
-cp .cache/phase3-foundation.log docs/verification/phase3/docker-smoke.txt
+cp .cache/phase3-foundation.log .cache/verification/phase3/docker-smoke.txt
 export KELIOS_AUTH_KEY_DIRECTORY="$PWD/.cache/phase2-private/keys"
 export KELIOS_TLS_DIRECTORY="$KELIOS_AUTH_KEY_DIRECTORY"
 export KELIOS_HTTPS_PORT="${KELIOS_HTTPS_PORT:-8443}"
@@ -67,15 +67,15 @@ for brand in blue green; do
     (cd frontend && KELIOS_EXPECTED_BRAND="$brand" npm run test:smoke -- runtime-branding.spec.ts)
   fi
   if [ "$brand" = blue ]; then
-    cp frontend/test-results/inventory-loan.png docs/verification/phase3/inventory-loan.png
-    cp frontend/test-results/management-audit.png docs/verification/phase3/management-audit.png
+    cp frontend/test-results/inventory-loan.png .cache/verification/phase3/inventory-loan.png
+    cp frontend/test-results/management-audit.png .cache/verification/phase3/management-audit.png
   fi
-  cp "frontend/test-results/$brand.png" "docs/verification/phase3/$brand.png"
+  cp "frontend/test-results/$brand.png" ".cache/verification/phase3/$brand.png"
 done
-compose exec -T postgres psql -U kelios -d kelios -c 'SELECT version, description, success FROM flyway_schema_history;' > docs/verification/phase3/migrations.txt
-compose logs --no-color backend > docs/verification/phase3/backend-startup.txt
-compose exec -T postgres psql -U kelios -d kelios -c "SELECT column_name,data_type,is_nullable FROM information_schema.columns WHERE table_name='audit_log' ORDER BY ordinal_position; SELECT indexdef FROM pg_indexes WHERE tablename='audit_log'; SELECT conname,contype FROM pg_constraint WHERE conrelid='audit_log'::regclass;" > docs/verification/phase3/audit-schema.txt
-docker image inspect kelios-backend:phase0 kelios-frontend:phase0 --format '{{.RepoTags}} {{.Id}} user={{.Config.User}} architecture={{.Architecture}}' > docs/verification/phase3/images.txt
-docker version > docs/verification/phase3/docker-version.txt
-compose ps > docs/verification/phase3/compose-health.txt
+compose exec -T postgres psql -U kelios -d kelios -c 'SELECT version, description, success FROM flyway_schema_history;' > .cache/verification/phase3/migrations.txt
+compose logs --no-color backend > .cache/verification/phase3/backend-startup.txt
+compose exec -T postgres psql -U kelios -d kelios -c "SELECT column_name,data_type,is_nullable FROM information_schema.columns WHERE table_name='audit_log' ORDER BY ordinal_position; SELECT indexdef FROM pg_indexes WHERE tablename='audit_log'; SELECT conname,contype FROM pg_constraint WHERE conrelid='audit_log'::regclass;" > .cache/verification/phase3/audit-schema.txt
+docker image inspect kelios-backend:phase0 kelios-frontend:phase0 --format '{{.RepoTags}} {{.Id}} user={{.Config.User}} architecture={{.Architecture}}' > .cache/verification/phase3/images.txt
+docker version > .cache/verification/phase3/docker-version.txt
+compose ps > .cache/verification/phase3/compose-health.txt
 printf 'Phase 3 inventory/HTTPS/authentication and both-brand deployment regression passed.\n'

@@ -5,6 +5,8 @@
 
 Status: Accepted technical decisions; implementation explicitly authorized by the user. Phase 3 user acceptance remains pending review of implementation evidence.
 
+**Current outcome:** Phase 3 was subsequently HUMAN ACCEPTED / CLOSED as part of the Phase 0–4 baseline; see the [compact closeout](../history/phase0-4.md). The pending statement above describes the ADR's original date.
+
 Date: 2026-10-10
 
 ## Context
@@ -28,4 +30,4 @@ Phases 0–2 and Phase 3 P1–P8 / DEREGISTERED convention are accepted specific
 
 ## Consequences and validation
 
-Independent images and the accepted JWT/OIDC foundation remain intact. Internal Asset soft deletion and retained reference rules remain available but unexposed. Backend constraints and service guards remain authoritative; frontend controls are usability only. API/schema/transaction/query, deterministic OIDC, browser and image evidence are recorded in [Phase 3 verification](../verification/PHASE_3.md). Historical ADR 0001–0003 are not rewritten.
+Independent images and the accepted JWT/OIDC foundation remain intact. Internal Asset soft deletion and retained reference rules remain available but unexposed. Backend constraints and service guards remain authoritative; frontend controls are usability only. API/schema/transaction/query, deterministic OIDC, browser and image evidence are recorded in [Phase 3 verification](../history/phase0-4.md). Historical ADR 0001–0003 are not rewritten.

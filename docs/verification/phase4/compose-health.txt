@@ -1,4 +1,0 @@
-NAME                       IMAGE                    COMMAND                  SERVICE    CREATED          STATUS                    PORTS
-kelios-phase4-backend-1    kelios-backend:phase0    "java -jar /app/app.…"   backend    2 minutes ago    Up 2 minutes (healthy)    8080-8081/tcp
-kelios-phase4-frontend-1   kelios-frontend:phase0   "/docker-entrypoint.…"   frontend   22 seconds ago   Up 21 seconds (healthy)   127.0.0.1:9080->8080/tcp, 127.0.0.1:9443->8443/tcp
-kelios-phase4-postgres-1   postgres:17-alpine       "docker-entrypoint.s…"   postgres   15 minutes ago   Up 15 minutes (healthy)   5432/tcp

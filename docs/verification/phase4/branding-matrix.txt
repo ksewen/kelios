@@ -1,7 +1,0 @@
-en × blue: PASS
-de × blue: PASS
-en × green: PASS
-de × green: PASS
-Identical frontend image for all four: sha256:1884b553e9570cfa216359dffebafdc50b6ce7a84a6246093eb934ad7cc7f0d4
-Images not rebuilt between language/brand changes.
-Browser preference/switch/reload/storage, registration/replacement/clear/history/search, loan/terminal-state/Return and representative administration screens passed in both languages.

@@ -14,3 +14,5 @@ deploy/secrets/*
 
 .kelios.lock/
 scripts/__pycache__/
+
+.idea/

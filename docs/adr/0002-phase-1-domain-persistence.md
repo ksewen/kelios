@@ -3,7 +3,7 @@
 **Historical accepted implementation record.** Preserve the decisions and evidence below as implementation-time history. Current normative Domain/identity/query requirements are in [DOMAIN.md](../../DOMAIN.md) and [ARCHITECTURE.md](../../ARCHITECTURE.md); separately approved future work follows [the consolidated implementation gates](../plans/COLLECTION_QUERY_IMPLEMENTATION_PLAN.md). Earlier login identifiers/password minima, paging defaults, deleted selectors, sort ties and phase-specific exclusions are not competing target requirements.
 
 
-Status: Accepted by the user on 2026-10-10 through approval of the revised [Phase 1 plan](../plans/PHASE_1_PLAN.md). Scope: Phase 1 internal domain foundation only.
+Status: Accepted by the user on 2026-10-10 through approval of the revised [Phase 1 plan](../history/phase0-4.md). Scope: Phase 1 internal domain foundation only.
 
 ## Context and authority
 
@@ -30,4 +30,4 @@ JUnit unit tests run under Surefire, required PostgreSQL Testcontainers tests un
 
 An isolated Docker build has no host Docker socket and cannot launch Testcontainers. Its Maven command explicitly uses `-DskipITs verify`, compiling all tests and running unit verification; it is not PostgreSQL evidence. Full host verification is a separate required release gate before image/deployment smoke checks. No privileged/nested Docker or daemon socket mount is added to the builder. Runtime remains a non-root JRE with no Maven/compiler.
 
-Actual commands, results and limitations are recorded separately in [Phase 1 evidence](../verification/PHASE_1.md). Authentication, authorization, business REST/UI, transition/loan workflows, privacy policy and all other deferred features remain outside this ADR.
+Actual commands, results and limitations are recorded separately in [Phase 1 evidence](../history/phase0-4.md). Authentication, authorization, business REST/UI, transition/loan workflows, privacy policy and all other deferred features remain outside this ADR.

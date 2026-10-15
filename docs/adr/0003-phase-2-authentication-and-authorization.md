@@ -5,9 +5,11 @@
 
 Status: Accepted through the user's Phase 2 implementation approval and D1–D9 decisions, 2026-10-10. Scope: Phase 2 only. Latest clarification permits complete documented IServ implementation without real-provider access this cycle; interoperability remains pending manual evidence.
 
+**Current outcome:** Phase 2 is HUMAN ACCEPTED / CLOSED; real school Provider interoperability remains the separately blocked evidence item in [remaining work](../plans/remaining-work.md). The dated design below is preserved as history.
+
 ## Authority and preserved baseline
 
-[Domain](../../DOMAIN.md), [Architecture](../../ARCHITECTURE.md) and the approved [Phase 2 plan](../plans/PHASE_2_PLAN.md) are authoritative. Preserve [ADR 0001](0001-phase-0-foundation.md) / [ADR 0002](0002-phase-1-domain-persistence.md), Java 25, Boot 4.1.1, Maven 3.9.16 Wrapper, Node 24, separate non-root multi-stage images, runtime branding, V1–V3, minimal User and all accepted Phase 1 constraints/history/locking. This ADR resolves the earlier future browser-transport proposal; it does not rewrite historical ADRs or Phase 0/1 evidence.
+[Domain](../../DOMAIN.md), [Architecture](../../ARCHITECTURE.md) and the approved [Phase 2 plan](../history/phase0-4.md) are authoritative. Preserve [ADR 0001](0001-phase-0-foundation.md) / [ADR 0002](0002-phase-1-domain-persistence.md), Java 25, Boot 4.1.1, Maven 3.9.16 Wrapper, Node 24, separate non-root multi-stage images, runtime branding, V1–V3, minimal User and all accepted Phase 1 constraints/history/locking. This ADR resolves the earlier future browser-transport proposal; it does not rewrite historical ADRs or Phase 0/1 evidence.
 
 ## Decisions
 
@@ -29,6 +31,6 @@ Keep READ COMMITTED and explicit operation-local locks. Recovery/usability guard
 
 Real PostgreSQL/Testcontainers verify structural/concurrency semantics and V1–V3 upgrade preservation. Test-only HTTPS OIDC fixture exercises real Discovery/token/JWKS/UserInfo requests and PKCE against the documented contract, using production TLS trust configuration. No production mock-provider mode. Separate Playwright tests exercise real TLS local authentication/cookies/CSRF/refresh/logout and minimal pending/completion browser states; browser contract fixtures are explicitly labeled and do not prove provider interoperability.
 
-Implementation completion, deterministic documented-contract verification, and actual IServ interoperability are distinct. The first two may pass this cycle; actual IServ remains pending because no environment is available. [Manual procedure](../verification/PHASE_2_ISERV_MANUAL.md) requires configuration and sanitized evidence only, no code changes. [Phase 2 evidence](../verification/PHASE_2.md) records actual commands/counts/results and limitations.
+Implementation completion, deterministic documented-contract verification, and actual IServ interoperability are distinct. The first two may pass this cycle; actual IServ remains pending because no environment is available. [Manual procedure](../operations/iserv-interoperability.md) requires configuration and sanitized evidence only, no code changes. [Phase 2 evidence](../history/phase0-4.md) records actual commands/counts/results and limitations.
 
 Phase 3, credentials for Tenant users, automatic ADMIN mapping, Product/Owner/Location Merge, inventory workflows/UI, privacy/deletion/reactivation policy, cross-origin browser support and authentication/session persistence remain excluded. No commits or pushes are part of this decision.

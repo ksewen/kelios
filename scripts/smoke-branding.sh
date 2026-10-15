@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 cd "$(dirname "$0")/.."
-mkdir -p .cache/tmp
+mkdir -p .cache/tmp .cache/verification/branding
 export PLAYWRIGHT_BROWSERS_PATH="$PWD/.cache/playwright"
 export TMPDIR="$PWD/.cache/tmp"
 export npm_config_cache="$PWD/.cache/npm"
@@ -14,6 +14,6 @@ for brand in blue green; do
   initial_image="$current_image"
   printf '%s frontend image: %s\n' "$brand" "$current_image"
   (cd frontend && KELIOS_EXPECTED_BRAND="$brand" npm run test:smoke)
-  cp "frontend/test-results/$brand.png" "docs/verification/$brand.png"
+  cp "frontend/test-results/$brand.png" ".cache/verification/branding/$brand.png"
 done
 printf 'Both rendered branding smoke suites passed with the same frontend image.\n'

@@ -1,5 +1,7 @@
 # KELIOS frontend UI/UX redesign plan
 
+**Current documentary boundary (2026-10-15):** The redesign implementation was committed, and dependent Phase A/B plus F0–F6 integration were later HUMAN ACCEPTED / CLOSED. This original Plan and its [verification report](verification/UI_REDESIGN.md) still record a separate visual/user acceptance review as pending; no explicit decision satisfying or waiving it was found. [VR1](plans/remaining-work.md) owns that decision. Pre-redesign code, loginName/size25 and earlier routing/status statements below are dated design evidence, not current contracts. Current authority is [Domain](../DOMAIN.md), [architecture](../ARCHITECTURE.md) and [OpenAPI](api/openapi.yaml).
+
 ## 1. Status, authority and boundaries
 
 Redesign implementation is approved. The latest organization-selection decision supersedes the earlier default-provider proposal. Phases 0–4 are accepted; this document does not supersede their business or security invariants. The focused review below precedes further implementation. Historical ADRs, accepted verification evidence and business invariants remain unchanged. The isolated manual-test deployment is left running unchanged.

@@ -4,7 +4,7 @@ Status: Accepted by the user on 2026-10-10. Scope: Phase 0 only.
 
 ## Context
 
-`ARCHITECTURE.md` sections 1–2 mandate a Maven 3 modular monolith, independently deployable frontend/backend images, PostgreSQL, and runtime branding. Section 7 reserved implementation choices. The user approved [Phase 0 plan](../plans/PHASE_0_PLAN.md) with refinements recorded here. No business invariants in `DOMAIN.md` change.
+`ARCHITECTURE.md` sections 1–2 mandate a Maven 3 modular monolith, independently deployable frontend/backend images, PostgreSQL, and runtime branding. Section 7 reserved implementation choices. The user approved [Phase 0 plan](../history/phase0-4.md) with refinements recorded here. No business invariants in `DOMAIN.md` change.
 
 ## Decisions
 
@@ -16,7 +16,7 @@ Status: Accepted by the user on 2026-10-10. Scope: Phase 0 only.
 - Docker Compose runs PostgreSQL and both applications. Flyway SQL migrations execute at startup; Phase 0 migration has no business tables. PostgreSQL is the only persistence service.
 - REST uses `/api/v1`, JSON, UUID identifiers when later needed, UTC timestamps, RFC 9457 problems, and checked-in OpenAPI. Technical status is the only Phase 0 API.
 - Frontend proxy provides same-origin `/api/` routing. Root-path deployment is supported. Separate origins/subpaths require later deployment review; no permissive CORS configuration.
-- Mount public JSON and logo assets read-only. `KELIOS_CONFIG_FILE` chooses the container source file; nginx serves it at `/runtime/config.json`. The environment variable is consumed by the container, not Vite. React validates config before rendering; safe defaults and a text logo are always available. See `docs/RUNTIME_BRANDING.md`.
+- Mount public JSON and logo assets read-only. `KELIOS_CONFIG_FILE` chooses the container source file; nginx serves it at `/runtime/config.json`. The environment variable is consumed by the container, not Vite. React validates config before rendering; safe defaults and a text logo are always available. See `docs/operations/runtime-branding.md`.
 - Independently tag frontend/backend releases and pin deployment digests for production. Local Phase 0 tags use `kelios-backend:phase0` and `kelios-frontend:phase0`; no CI provider selected.
 - Health checks distinguish backend liveness from database-dependent readiness. Management endpoints remain internal. Local Compose uses file-mounted credentials; public images contain none.
 
@@ -30,4 +30,4 @@ Future inventory depends on tenancy/catalog application interfaces and audit int
 
 ## Consequences and verification
 
-Images can release independently; branding can change with no rebuild. Startup configuration is public and cannot hold secrets. Docker verification requires narrowly scoped daemon approval under the existing sandbox. Builds/cache files stay within the repository. Phase 0 acceptance requires actual Maven/npm builds, both Docker builds, healthy Compose startup, migration evidence, and the same frontend image rendered with two mounted brands. Evidence is recorded in `docs/verification/PHASE_0.md`; failed or unavailable checks cannot be marked complete.
+Images can release independently; branding can change with no rebuild. Startup configuration is public and cannot hold secrets. Docker verification requires narrowly scoped daemon approval under the existing sandbox. Builds/cache files stay within the repository. Phase 0 acceptance required actual Maven/npm builds, both Docker builds, healthy Compose startup, migration evidence, and the same frontend image rendered with two mounted brands. The [accepted closeout](../history/phase0-4.md) retains results and limitations; failed or unavailable checks were not marked complete.

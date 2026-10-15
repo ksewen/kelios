@@ -1,2 +1,0 @@
-[kelios-backend:phase0] sha256:38af72028c4b3cdb72633eddf0f2f24fb2eaac65925d972bf5e8c5d9f1ee973c user=kelios
-[kelios-frontend:phase0] sha256:b53d4ece0f0cd12933096d560d520eebbee7d65b8092d0fe385d8f6c3fcacb5b user=101

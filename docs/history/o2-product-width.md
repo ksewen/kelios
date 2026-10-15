@@ -1,0 +1,7 @@
+# O2 Product table width closeout
+
+O2 diagnosis and correction are **HUMAN ACCEPTED / CLOSED**. Diagnosis commit `d2cbf14dc962a3be2677b34c3fe5e89ffca295c3`; correction commit `4d9af4ef52ef3ffdcdbe27fce2a5506473f60754`. This bounded change is separate from still-open O6 table/filter presentation design.
+
+At 390px, Product Name could collapse to an unreadable narrow column when long/duplicate Product and reference labels competed for width. Intercepted DE/EN fixture captures showed the geometry. The accepted correction gives the **Product Name column only** a readable minimum width while retaining wrapping and table-local horizontal overflow. It does not change shared table behavior, UUID disambiguation, row/detail identity, server query semantics or page-level overflow.
+
+Focused browser regression checked DE/EN at 390/768/1024/1440, long/duplicate labels, keyboard/detail navigation, focus/scroll/node stability and absence of requests from pending typing. Final O2-focused 10, combined 27 browser cases and frontend 222 unit tests passed; production build passed. Evidence is intercepted rather than an operator-data/product live-write claim. The four [before/after 390px captures](assets/o2-product-width) are retained as a minimal paired visual example; automated assertions remain in `frontend/tests/product-table-readability.spec.ts`. No O6 redesign or backend/API change was authorized.
