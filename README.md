@@ -1,5 +1,9 @@
 # KELIOS
 
+## Start a local installation
+
+For guided local deployment, start with the **[operator deployment guide](docs/DEPLOYMENT_CLI.md)**. It covers prerequisites, fresh-source preparation, localhost TLS, `./kelios install`, GLOBAL ADMIN Email bootstrap, logs, start/stop and removal. Follow that guide rather than the developer build/manual Compose examples below. An existing `.kelios/` belongs to its installation: do not overwrite it.
+
 Phase 4 stabilization, Local identifier and bilingual inventory/administration on the accepted authentication/domain foundation: independent Spring Boot and React applications, PostgreSQL, runtime branding, immutable Asset history, GLOBAL local credentials and database-configured Tenant IServ OIDC. Explicit Asset workflows, Catalog/place management and target-owned administrative audit are available. Real IServ interoperability is pending manual verification.
 
 Read `ARCHITECTURE.md`, `DOMAIN.md`, and `CODEX_IMPLEMENTATION_TASK.md` for the approved contracts. Technical selections are recorded in [ADR 0001](docs/adr/0001-phase-0-foundation.md) [ADR 0002](docs/adr/0002-phase-1-domain-persistence.md), and [ADR 0003](docs/adr/0003-phase-2-authentication-and-authorization.md). Actual verification is tracked in [Phase 0 evidence](docs/verification/PHASE_0.md) [Phase 1 evidence](docs/verification/PHASE_1.md), and [Phase 2 evidence](docs/verification/PHASE_2.md).

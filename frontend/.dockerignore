@@ -1,6 +1,7 @@
 node_modules
 dist
 test-results
-tests
+tests/**
+!tests/backend-fixtures.ts
 playwright.config.ts
 *.log
