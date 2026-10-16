@@ -66,7 +66,7 @@ for(const language of ['en','de'] as const)for(const scope of ['GLOBAL','TENANT'
  const t=language==='en'?en:de;await page.setViewportSize({width:1440,height:1000});await setup(page,language,{scope,role,tenantId:scope==='TENANT'?tenant:null});await page.goto(scope==='TENANT'?`/tenants/${tenant}/assets`:'/assets');await expect(page.locator('main table')).toBeVisible();
  const header=page.locator('#application-topbar');
  if(scope==='GLOBAL'){
-  const context=header.getByRole('button',{name:t.ui.tenantContext,exact:true});await expect(context).toHaveText('Global');await expect(page.getByRole('button',{name:t.actions.create,exact:true})).toHaveCount(0);await context.click();await expect(page.getByRole('menuitem',{name:'Global',exact:true})).toBeVisible();await page.getByRole('menuitem',{name:'KBS',exact:true}).click();await expect(context).toHaveText('KBS');await expect(page).toHaveURL(`/tenants/${tenant}/assets`);
+  const context=header.getByRole('button',{name:t.ui.tenantContext,exact:true});await expect(context).toHaveText('Global');await expect(page.getByRole('button',{name:t.actions.create,exact:true})).toHaveCount(role==='ADMIN'?1:0);await context.click();await expect(page.getByRole('menuitem',{name:'Global',exact:true})).toBeVisible();await page.getByRole('menuitem',{name:'KBS',exact:true}).click();await expect(context).toHaveText('KBS');await expect(page).toHaveURL(`/tenants/${tenant}/assets`);
  }else await expect(header.getByText(role==='ADMIN'?'KBS':t.common.tenant.replace('{{tenant}}',tenant),{exact:true})).toBeVisible();
  await expect(page.getByRole('button',{name:t.actions.create,exact:true})).toHaveCount(role==='ADMIN'?1:0);
  await expect(header).not.toContainText(/\((?:Lesen|Read|read|Admin|Write|Schreiben)\)/);

@@ -58,9 +58,9 @@ test('Tenant/workspace change discards old rows before the new request finishes'
  await f.request(`/api/v1/tenants/${other}/assets`);await expect(page.getByText('Stable fixture')).toHaveCount(0);await expect(page.locator('main .animate-pulse')).toBeVisible();
 });
 test('reference picker keeps old options visible but disables selection until refreshed',async({page})=>{
- const f=await setup(page),path=`/api/v1/tenants/${tenant}/catalog/categories`;
+ const f=await setup(page),path=`/api/v1/tenants/${tenant}/catalog/products`;
  await page.goto(`/tenants/${tenant}/assets/new`);await f.reply(path,'',[row]);
- const input=page.getByRole('combobox',{name:en.fields.category,exact:true});await input.focus();const option=page.getByRole('option',{name:/Stable fixture/});await expect(option).toHaveAttribute('aria-disabled','false');
+ const input=page.getByRole('combobox',{name:en.ui.product,exact:true});await input.focus();const option=page.getByRole('option',{name:/Stable fixture/});await expect(option).toHaveAttribute('aria-disabled','false');
  await input.fill('changed');await f.request(path,'changed');await expect(option).toHaveAttribute('aria-disabled','true');await expect(option).toBeVisible();await expect(page.getByRole('status')).toHaveCount(0);await expect(page.getByRole('button',{name:'Filter',exact:true})).toHaveCount(0);
  await f.reply(path,'changed',[{...row,name:'New option'}]);await expect(page.getByRole('option',{name:/New option/})).toHaveAttribute('aria-disabled','false');await expect(option).toHaveCount(0);
 });

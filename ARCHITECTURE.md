@@ -197,6 +197,30 @@ Regression tests MUST observe intermediate pending states and stable DOM identit
 
 ## 13. Collection queries and authoritative Tenant scope
 
+### Assets collection presentation
+
+The Assets main page uses the ordered toolbar **Create → primary text search with a magnifying-glass submit control → More filters**. Create opens an in-context registration dialog, not a route change or a decorative control. Registration requires a concrete Tenant: a GLOBAL ADMIN selects the Asset's owning Tenant by authoritative UUID and readable name inside the form without changing the global operating context; a TENANT ADMIN sees its signed Tenant read-only. These are separate interactions with separate state. The backend remains authoritative for write permission and ownership. Save sends the supported registration command and refreshes the current collection; cancel sends no command, discards the draft and returns to the unchanged list. Search guidance belongs in the empty input placeholder, not in duplicate explanatory text. The German Assets placeholder is `Tag, lokale Kennung, Seriennummer oder externe Inventarnummer`; these four identifiers must match the backend `q` predicate. The Assets collection calls the generated identifier **Tag** in presentation; its API/Domain field remains `assetTag`.
+
+The Assets Create dialog selects an existing Product; there is no single-option Catalog selector or Direct Assignment mode in this UI. Backend direct-reference registration only reuses existing Category/Manufacturer records and creates neither label nor Product, so it must not be presented as label creation. Selecting a Product supplies its authoritative Category/Manufacturer associations. The separate backend direct-reference capability and Asset reassignment flow remain intact.
+
+The Assets additional-filter panel does not duplicate the global Tenant selector. Its first control is **Lokale Kennung** (Local identifier); remaining controls use readable field/concept labels rather than mechanically appending “Filter.” Column headers have consistent bold type regardless of sort state. Compact fixed-size icons distinguish unsorted, ascending and descending states without moving the header, and `aria-sort` remains authoritative for assistive technology. The toolbar, placeholder and header treatment are a collection-page design convention for future module iteration; they do not authorize changing another module's UI in this Assets gate.
+
+### Overlay, trigger and collection-control stability
+
+Popup-like surfaces (menus, combobox lists, selects, popovers, date pickers and action menus) MUST be anchored to their own trigger; dialogs are positioned relative to the viewport by design. Positioning must remain correct across supported widths and scrolling without viewport-specific pixel offsets. Transient overlay content MUST be out of surrounding document flow: opening or changing it must not push the form, toolbar, table or other unrelated content. If a scroll container limits available space, the surface must remain visible and associated with its trigger.
+
+Overlay geometry MUST be proportional to purpose, trigger and content. A dropdown/menu needs a sensible trigger-relative minimum, a content-based width with a viewport-safe maximum, and compact rows; it must not inherit a large empty dialog or form surface. Long labels must remain readable without horizontal page overflow. Comboboxes, dialogs and filter panels may use different sizing policies.
+
+Each visible interactive trigger MUST activate only its own action. IDs, labels, refs, event handlers, controlled state and portal relationships must not connect unrelated controls. Opening, closing, focusing, filtering or changing a control must preserve unrelated node identity, focus, selection and layout unless a deliberate transition is part of that control's design.
+
+An entity-reference combobox is not a free-text value. Its typed text is a search query; a mutation reference exists only after the operator explicitly selects a valid returned entity, and the payload sends that entity's authoritative identifier. Required references require a real selection. Optional references may be empty, but unmatched text is never a value. Changing a dependent Tenant or other context invalidates incompatible selections and their identifiers. No unmatched search text is silently converted into a new Product, Location, Owner or other Domain record. Backend reference authorization and validation remain authoritative.
+
+Controls within a toolbar or form use coherent heights, gaps, label alignment and responsive grid/flex behavior; sizing must accommodate localization. Collection toolbars following this pattern place **primary action → primary search → additional filters** in one coherent row when space permits and wrap deliberately at narrow widths. This convention guides future explicitly authorized module iterations; it does not itself authorize a redesign of other existing pages.
+
+For collection pages following the in-context Create pattern, the primary action opens an accessible creation dialog backed by a real mutation. A concrete-Tenant ownership field within that dialog must not operate the global context switcher. Cancel discards the unsaved local draft without a request; reopening starts a fresh draft. The pattern applies to other modules only when their iteration is explicitly authorized.
+
+### Collection query contract
+
 **Current approved target contract; implementation separately gated.** DOMAIN §12 defines resource capabilities; [the implementation plan](docs/plans/COLLECTION_QUERY_IMPLEMENTATION_PLAN.md) separates observed implementation from required changes. Historical ADRs and accepted evidence describe what was implemented, not alternative current requirements.
 
 ### Responsibilities and typed query contracts
