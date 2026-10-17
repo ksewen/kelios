@@ -70,6 +70,44 @@ class PlaceIT {
  @SuppressWarnings("unchecked") List<Map<String,Object>> items(MvcResult r){return (List<Map<String,Object>>)data(r).get("items");}
  long total(MvcResult r){return ((Number)data(r).get("totalElements")).longValue();}
  MvcResult list(PlaceService.Kind kind,UUID t,Map<String,String> query)throws Exception{var b=get(contextual(kind,t));query.forEach(b::param);var r=request(admin,b,null);assertEquals(200,status(r),r.getResponse().getContentAsString());return r;}
+ @ParameterizedTest @EnumSource(PlaceService.Kind.class) void rootAggregateIsPagedBeforeProjectionAndTenantRootStaysOwn(PlaceService.Kind kind)throws Exception{
+  String p=prefix();var expected=new HashSet<String>();
+  for(int i=0;i<24;i++)for(UUID t:List.of(tenant,other))expected.add(create(kind,t,p+(i%3),null).toString());
+  UUID deleted=create(kind,other,p+"deleted",null);places.delete(kind,other,deleted,actor);
+  for(Role role:Role.values()){
+   var global=principal(Scope.GLOBAL,role,Status.ACTIVE);var seen=new HashSet<String>();
+   for(int page=0;page<5;page++){
+    var r=request(global,get(root(kind)).param("q",p).param("sort","name").param("page",String.valueOf(page)).param("size","10"),null);
+    assertEquals(200,status(r));assertEquals(48,total(r));for(var row:items(r))seen.add((String)row.get("id"));
+   }
+   assertEquals(expected,seen);
+   assertEquals(24,total(request(global,get(contextual(kind,tenant)).param("q",p),null)));
+   var local=principal(Scope.TENANT,role,Status.ACTIVE);
+   assertEquals(24,total(request(local,get(root(kind)).param("q",p),null)));
+   assertEquals(24,total(request(local,get(contextual(kind,other)).param("q",p),null)));
+   assertEquals(403,status(request(principal(Scope.GLOBAL,role,Status.PENDING),get(root(kind)),null)));
+   assertEquals(403,status(request(principal(Scope.TENANT,role,Status.PENDING),get(root(kind)),null)));
+  }
+  assertEquals(400,status(request(admin,get(root(kind)).param("visibility","GLOBAL"),null)));
+  assertEquals(400,status(request(admin,get(root(kind)).param("tenantId",other.toString()),null)));
+ }
+ @ParameterizedTest @EnumSource(PlaceService.Kind.class) void readablePlaceActorsRemainBoundedWhenIdentityDisappears(PlaceService.Kind kind)throws Exception{
+  UUID creator=UUID.randomUUID();var now=java.sql.Timestamp.from(clock.now);
+  jdbc.update("INSERT INTO app_user(id,scope,tenant_id,role,status,display_name,created_by,created_at,updated_by,updated_at) VALUES(?,'GLOBAL',NULL,'USER','ACTIVE',?,?,?,?,?)",
+      creator,"Current place actor",actor.id(),now,actor.id(),now);
+  String name="Actor place "+UUID.randomUUID();UUID id=places.create(kind,tenant,name,null,new Actor(creator,"Old snapshot"));
+  var reader=principal(Scope.TENANT,Role.USER,Status.ACTIVE);
+  var detail=request(reader,get(root(kind)+"/"+id),null);
+  assertEquals(200,status(detail));
+  assertEquals("Current place actor",((Map<?,?>)data(detail).get("metadata")).get("createdByDisplayName"));
+  var page=list(kind,tenant,Map.of("q",name));assertEquals(1,total(page));
+  assertEquals("Current place actor",((Map<?,?>)items(page).getFirst().get("metadata")).get("createdByDisplayName"));
+  jdbc.update("DELETE FROM app_user WHERE id=?",creator);
+  detail=request(reader,get(root(kind)+"/"+id),null);
+  assertEquals(200,status(detail));assertNull(((Map<?,?>)data(detail).get("metadata")).get("createdByDisplayName"));
+  page=list(kind,tenant,Map.of("q",name));assertEquals(1,total(page));
+  assertNull(((Map<?,?>)items(page).getFirst().get("metadata")).get("createdByDisplayName"));
+ }
  @ParameterizedTest @EnumSource(PlaceService.Kind.class) void defaultsAndSizes(PlaceService.Kind kind)throws Exception{
   String p=prefix();UUID first=create(kind,tenant,p+"A",null);clock.now=clock.now.plusSeconds(1);UUID latest=create(kind,tenant,p+"Z",null);
   var r=list(kind,tenant,Map.of("q",p));assertEquals(0,data(r).get("page"));assertEquals(20,data(r).get("size"));assertEquals(latest.toString(),items(r).getFirst().get("id"));assertEquals(first.toString(),items(r).getLast().get("id"));

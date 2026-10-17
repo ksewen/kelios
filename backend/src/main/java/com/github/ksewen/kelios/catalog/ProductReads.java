@@ -47,8 +47,7 @@ public class ProductReads {
     private static String literal(String s) { return "%"+s.replace("\\","\\\\").replace("%","\\%").replace("_","\\_")+"%"; }
     Page<ProductModel> list(UUID effectiveTenant, ProductQuery q) {
         var args=new ArrayList<Object>();var where=new StringBuilder(" WHERE p.deleted_at IS NULL");
-        if(effectiveTenant==null)where.append(" AND p.tenant_id IS NULL");
-        else {where.append(" AND (p.tenant_id IS NULL OR p.tenant_id=?)");args.add(effectiveTenant);}
+        if(effectiveTenant!=null){where.append(" AND (p.tenant_id IS NULL OR p.tenant_id=?)");args.add(effectiveTenant);}
         if(q.visibility()!=null){where.append(" AND p.visibility=?");args.add(q.visibility().name());}
         if(q.search()!=null){where.append(" AND (p.name ILIKE ? ESCAPE '\\' OR p.manufacturer_number ILIKE ? ESCAPE '\\')");args.add(literal(q.search()));args.add(literal(q.search()));}
         if(q.categoryId()!=null){where.append(" AND p.category_id=?");args.add(q.categoryId());}

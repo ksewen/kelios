@@ -5,7 +5,7 @@ import com.github.ksewen.kelios.platform.BusinessFailure;
 /** Closed resource criteria. Scope is deliberately absent: the application service derives it. */
 public record CatalogLabelQuery(int page, int size, String search, CatalogLabel.Visibility visibility,
         Sort sort, Direction direction) {
-    public enum Sort { NAME, VISIBILITY }
+    public enum Sort { NAME, VISIBILITY, TENANT_NAME }
     public enum Direction { ASC, DESC }
     public CatalogLabelQuery {
         if (page < 0 || size < 1 || size > 100) throw BusinessFailure.invalid("Invalid pagination");

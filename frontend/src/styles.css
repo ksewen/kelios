@@ -8,6 +8,9 @@
 body{margin:0;background:var(--background);color:var(--foreground);font-size:14px;line-height:1.5;}button,a,input,select,textarea{outline-offset:3px;}button:not(:disabled),select{cursor:pointer;}*{border-color:var(--border);}h1,h2,h3{overflow-wrap:anywhere;}
 @layer components {
  .input{@apply mt-2 block min-h-10 w-full min-w-0 rounded-md border bg-card px-3 py-2 text-sm text-foreground shadow-xs transition-colors focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/15 disabled:opacity-50;}
+ select.input{appearance:none;padding-inline-end:2.75rem;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%235f6b6b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right .75rem center;background-size:1rem 1rem;}
+ .dark select.input{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23a6b4ae' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");}
+ select.input:dir(rtl){padding-inline-start:2.75rem;padding-inline-end:.75rem;background-position:left .75rem center;}
  .field{@apply block min-w-0 text-sm font-medium;}
  .page-title{@apply mb-1 text-2xl font-semibold tracking-tight;}
  .page-description{@apply mb-6 text-sm text-muted-foreground;}
@@ -16,10 +19,11 @@ body{margin:0;background:var(--background);color:var(--foreground);font-size:14p
  .error-box{@apply rounded-lg border border-destructive/20 bg-destructive/5 p-4 text-sm text-destructive;}
  .empty-state{@apply px-5 py-12 text-center;}
  .table-frame{@apply max-w-full overflow-x-auto rounded-lg border bg-card;}
- .data-table{@apply w-full text-left text-sm;}
- .data-table th{@apply whitespace-nowrap bg-muted/50 px-4 py-3 text-xs font-medium text-muted-foreground;}
- .assets-list .data-table th{font-weight:700;}
- .data-table td{@apply max-w-64 border-t px-4 py-3 align-middle;overflow-wrap:anywhere;}
+ .data-table{@apply w-full text-sm;}
+ .data-table th{@apply whitespace-nowrap bg-muted/50 px-4 py-3 text-center text-xs font-bold text-muted-foreground;border-block-end:1px solid var(--border);}
+ .data-table td{@apply max-w-64 px-4 py-3 text-left align-middle;overflow-wrap:anywhere;}
+ .data-table tbody tr+tr td{border-block-start:1px solid var(--border);}
+ .data-table th+th,.data-table td+td{border-inline-start:1px solid var(--border);}
  .product-management > .table-frame > .data-table > tbody > tr > td:first-child{min-width:14rem;}
  .data-table tbody tr{@apply transition-colors hover:bg-muted/40;}
  .nav-item{@apply flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring;}

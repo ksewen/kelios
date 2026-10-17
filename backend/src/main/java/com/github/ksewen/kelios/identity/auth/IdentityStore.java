@@ -47,13 +47,13 @@ public class IdentityStore {
     }
     public com.github.ksewen.kelios.identity.UserModel detail(UUID id,UUID forcedTenant){
         var args=new ArrayList<Object>(List.of(id));String scope="";
-        if(forcedTenant!=null){scope=" AND u.scope='TENANT' AND u.tenant_id=? AND u.role='USER'";args.add(forcedTenant);}
+        if(forcedTenant!=null){scope=" AND u.scope='TENANT' AND u.tenant_id=?";args.add(forcedTenant);}
         var rows=jdbc.query(READ+" WHERE u.id=?"+scope,IdentityStore::row,args.toArray());
         if(rows.isEmpty())throw new AuthFailure(404,"User not found in administrative scope");return rows.getFirst();
     }
     public com.github.ksewen.kelios.platform.Page<com.github.ksewen.kelios.identity.UserModel> list(UUID forcedTenant,com.github.ksewen.kelios.identity.UserQuery q){
         var args=new ArrayList<Object>();var where=new StringBuilder(" WHERE 1=1");
-        if(forcedTenant!=null){where.append(" AND u.scope='TENANT' AND u.tenant_id=? AND u.role='USER'");args.add(forcedTenant);}
+        if(forcedTenant!=null){where.append(" AND u.scope='TENANT' AND u.tenant_id=?");args.add(forcedTenant);}
         // The TENANT transport Tenant field has no authority and is not compared as proof.
         else if(q.tenantId()!=null){where.append(" AND u.tenant_id=?");args.add(q.tenantId());}
         if(q.scope()!=null){where.append(" AND u.scope=?");args.add(q.scope().name());}

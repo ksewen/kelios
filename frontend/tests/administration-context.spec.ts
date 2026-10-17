@@ -44,10 +44,29 @@ for(const scope of ['GLOBAL','TENANT'])test(`${scope} ADMIN: direct Tenant detai
  const f=await setup(page,scope,'ADMIN');await page.goto(`/tenants/${own}`);await expect(page.getByRole('heading',{name:'Own school',exact:true})).toBeVisible();await expect(page.locator('main')).toContainText(uid);await expect(page.locator('#desktop-navigation').getByRole('link',{name:en.fields.tenants,exact:true})).toHaveClass(/nav-active/);await expect(page.locator('#application-topbar > a')).toHaveAttribute('href',scope==='GLOBAL'?'/dashboard':`/tenants/${own}/dashboard`);await page.reload();await expect(page.getByRole('heading',{name:'Own school',exact:true})).toBeVisible();expect(f.calls.some(c=>c.path===`/api/v1/tenants/${own}`)).toBe(true);if(scope==='TENANT')expect(f.calls.some(c=>c.path==='/api/v1/tenants')).toBe(false);
 });
 test('GLOBAL USER safe detail has no administration actions',async({page})=>{await setup(page);await page.goto(`/tenants/${own}`);await expect(page.getByRole('heading',{name:'Own school',exact:true})).toBeVisible();await expect(page.locator('main button')).toHaveCount(0);await expect(page.locator('#desktop-navigation a[href="/tenants"]')).toHaveCount(0);});
+test('TENANT USER cannot open own Tenant administration detail',async({page})=>{
+ const f=await setup(page,'TENANT','USER');await page.goto(`/tenants/${own}`);
+ await expect(page.getByRole('heading',{name:en.redesign.pageUnavailable,exact:true})).toBeVisible();
+ expect(f.calls.some(c=>c.path===`/api/v1/tenants/${own}`)).toBe(false);
+});
 test('TENANT ADMIN foreign detail is nondisclosing; foreign business URL redirects before request',async({page})=>{
  const f=await setup(page,'TENANT','ADMIN');await page.goto(`/tenants/${foreign}`);await expect(page.getByRole('alert')).toHaveText(en.errors.NOT_FOUND);await expect(page.getByText('Other school',{exact:true})).toHaveCount(0);await page.goto(`/tenants/${foreign}/locations`);await expect(page).toHaveURL(new RegExp(`/tenants/${own}/dashboard$`));expect(f.calls.some(c=>c.path===`/api/v1/tenants/${foreign}/locations`)).toBe(false);
 });
 for(const scope of ['GLOBAL','TENANT'])for(const target of ['/users','/audit','/oidc','/tenants'])test(`${scope} USER: blocked administration URL ${target}`,async({page})=>{const f=await setup(page,scope);await page.goto(target);await expect(page.getByRole('heading',{name:en.redesign.pageUnavailable,exact:true})).toBeVisible();expect(f.calls.some(c=>/\/users|\/audit-log|\/oidc$/.test(c.path))).toBe(false);if(scope==='TENANT')expect(f.calls.some(c=>c.path.startsWith('/api/v1/tenants'))).toBe(false);});
+for(const scope of ['GLOBAL','TENANT'])for(const target of [`/users/${foreign}`,`/tenants/${own}/oidc`,`/audit/${foreign}`])test(`${scope} USER: blocked direct administration URL ${target}`,async({page})=>{
+ const f=await setup(page,scope);await page.goto(target);
+ await expect(page.getByRole('heading',{name:en.redesign.pageUnavailable,exact:true})).toBeVisible();
+ expect(f.calls.some(c=>/\/users\/|\/audit-log|\/oidc$/.test(c.path))).toBe(false);
+});
+test('TENANT ADMIN reads own elevated User without management commands',async({page})=>{
+ const f=await setup(page,'TENANT','ADMIN');
+ await page.route('**/api/v1/users**',route=>{const path=new URL(route.request().url()).pathname;return route.fulfill({json:path.endsWith(foreign)?{id:foreign,scope:'TENANT',tenantId:own,role:'ADMIN',status:'ACTIVE',displayName:'Own elevated',tenant:{id:own,name:'Own school'},metadata,globalAccount:null}:{items:[{id:foreign,scope:'TENANT',tenantId:own,role:'ADMIN',status:'ACTIVE',displayName:'Own elevated',tenant:{id:own,name:'Own school'},metadata}],page:0,size:20,totalElements:1}});});
+ await page.goto('/users');await expect(page.getByText('Own elevated',{exact:true})).toBeVisible();
+ await page.goto(`/users/${foreign}`);await expect(page.getByRole('heading',{name:'Own elevated',exact:true})).toBeVisible();
+ await expect(page.getByRole('button',{name:en.ui.disableUser,exact:true})).toHaveCount(0);
+ await expect(page.getByRole('button',{name:en.ui.changeUserRole,exact:true})).toHaveCount(0);
+ expect(f.calls.some(c=>c.path==='/api/v1/tenants')).toBe(false);
+});
 test('TENANT ADMIN own provider read/update uses signed Tenant and existing command body',async({page})=>{
  const f=await setup(page,'TENANT','ADMIN');await page.goto('/oidc');const issuer=page.getByLabel(en.ui.iservIssuer,{exact:true});await expect(issuer).toHaveValue('https://provider.example');await issuer.fill('https://changed.example');await page.getByRole('button',{name:en.ui.saveOIDCConfiguration,exact:true}).click();await expect.poll(()=>f.calls.filter(c=>c.method==='PUT').length).toBe(1);expect(f.calls.find(c=>c.method==='PUT')).toEqual({path:`/api/v1/tenants/${own}/oidc`,method:'PUT',body:{issuer:'https://changed.example',clientId:'client',clientSecret:null,enabled:true,version:0,allowedGroupIds:[uid]}});expect(f.calls.some(c=>c.path==='/api/v1/tenants')).toBe(false);
 });

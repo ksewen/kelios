@@ -48,7 +48,7 @@ for(const kind of ['categories','manufacturers','products','locations','owners']
  const f=await setup(page),path=`/api/v1/tenants/${tenant}/${['locations','owners'].includes(kind)?'':'catalog/'}${kind}`;
  await page.goto(`/tenants/${tenant}/${kind}`);await f.reply(path,'',[row]);
  const table=page.locator('main table');await expect(table).toBeVisible();await table.evaluate(el=>(window as any).originalTable=el);
- await page.getByRole('toolbar').getByLabel(kind==='products'?en.ui.productSearch:en.ui.name).fill('changed');await page.getByRole('toolbar').getByLabel(kind==='products'?en.ui.productSearch:en.ui.name).press('Enter');await f.request(path,'changed');
+ const search=page.getByRole('toolbar').getByLabel(({categories:en.ui.categorySearch,manufacturers:en.ui.manufacturerSearch,products:en.ui.productSearch,locations:en.ui.locationSearch,owners:en.ui.ownerSearch} as Record<string,string>)[kind]);await search.fill('changed');await search.press('Enter');await f.request(path,'changed');
  await expect(page.locator('main .animate-pulse')).toHaveCount(0);expect(await table.evaluate(el=>el===(window as any).originalTable)).toBe(true);
  await f.reply(path,'changed',[row]);await expect(page.getByText(en.redesign.updatingResults)).toHaveCount(0);
 });

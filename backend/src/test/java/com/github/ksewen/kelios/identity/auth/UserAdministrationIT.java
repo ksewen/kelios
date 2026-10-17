@@ -92,10 +92,14 @@ class UserAdministrationIT {
  }
  @Test void tenantAdminForcedScopeAndIndependentDetail()throws Exception{
   String p=prefix();var allowed=own(p+"Own");var foreign=insert(Scope.TENANT,other,Role.USER,Status.PENDING,p+"Foreign");var elevated=insert(Scope.TENANT,tenant,Role.ADMIN,Status.ACTIVE,p+"Admin");var global=insert(Scope.GLOBAL,null,Role.USER,Status.ACTIVE,p+"Global");var who=principal(Scope.TENANT,Role.ADMIN,Status.ACTIVE);
-  for(UUID supplied:List.of(tenant,other,UUID.randomUUID())){var r=list(who,Map.of("q",p,"tenantId",supplied.toString()));assertEquals(1,total(r));assertEquals(allowed.id().toString(),items(r).getFirst().get("id"));}
-  for(Map<String,String> q:List.of(Map.of("q",p,"scope","GLOBAL"),Map.of("q",p,"role","ADMIN"))){assertEquals(0,total(list(who,q)));}
+  for(UUID supplied:List.of(tenant,other,UUID.randomUUID())){var r=list(who,Map.of("q",p,"tenantId",supplied.toString(),"sort","role","direction","asc","size","1"));assertEquals(2,total(r));assertEquals(elevated.id().toString(),items(r).getFirst().get("id"));assertEquals(allowed.id().toString(),items(list(who,Map.of("q",p,"tenantId",supplied.toString(),"sort","role","direction","asc","size","1","page","1"))).getFirst().get("id"));}
+  assertEquals(0,total(list(who,Map.of("q",p,"scope","GLOBAL"))));
+  assertEquals(elevated.id().toString(),items(list(who,Map.of("q",p,"role","ADMIN"))).getFirst().get("id"));
   assertEquals(1,total(list(who,Map.of("q",p,"scope","TENANT","role","USER","status","PENDING"))));
-  for(UUID id:List.of(foreign.id(),elevated.id(),global.id(),UUID.randomUUID())){var r=request(who,get("/api/v1/users/"+id),null);assertEquals(404,status(r));assertEquals("User not found in administrative scope",data(r).get("detail"));}
+  for(UUID id:List.of(foreign.id(),global.id(),UUID.randomUUID())){var r=request(who,get("/api/v1/users/"+id),null);assertEquals(404,status(r));assertEquals("User not found in administrative scope",data(r).get("detail"));}
+  assertEquals("ADMIN",data(request(who,get("/api/v1/users/"+elevated.id()),null)).get("role"));
+  assertEquals(404,status(request(who,post("/api/v1/users/"+elevated.id()+"/disable"),null)));
+  assertEquals(403,status(request(who,put("/api/v1/users/"+elevated.id()+"/role"),Map.of("role","USER"))));
   var d=data(request(who,get("/api/v1/users/"+allowed.id()),null));assertEquals(allowed.id().toString(),d.get("id"));assertEquals(tenant.toString(),((Map<?,?>)d.get("tenant")).get("id"));assertNotNull(((Map<?,?>)d.get("tenant")).get("name"));
   assertEquals(404,status(request(admin,get("/api/v1/users").param("tenantId",UUID.randomUUID().toString()),null)));
   assertEquals(1,total(list(admin,Map.of("q",p,"tenantId",other.toString()))));assertEquals(4,total(list(admin,Map.of("q",p))));

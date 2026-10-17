@@ -54,6 +54,18 @@ test('identical explicit UUIDs cannot preview/execute; source edit invalidates p
  await page.getByLabel(en.ui.mergeSourceIDExplicit,{exact:true}).fill(a);await page.getByLabel(en.ui.mergeTargetIDExplicit,{exact:true}).fill(a);await expect(page.getByRole('button',{name:en.ui.previewMerge,exact:true})).toBeDisabled();await expect(page.getByRole('button',{name:en.ui.confirmMerge,exact:true})).toHaveCount(0);expect(f.posts.length).toBe(0);
  await page.getByLabel(en.ui.mergeTargetIDExplicit,{exact:true}).fill(b);await page.getByRole('button',{name:en.ui.previewMerge,exact:true}).click();await expect(page.getByRole('button',{name:en.ui.confirmMerge,exact:true})).toBeVisible();await page.getByLabel(en.ui.mergeSourceIDExplicit,{exact:true}).fill(c);await expect(page.getByRole('button',{name:en.ui.confirmMerge,exact:true})).toHaveCount(0);
 });
+for(const language of ['en','de'] as const)test(`${language}: merge rejection explains Promote-first and preserves the selected IDs`,async({page})=>{
+ const t=language==='en'?en:de,f=await setup(page,'categories',language);
+ await page.route('**/catalog/categories/merge',route=>route.fulfill({status:409,json:{code:'MERGE_REQUIRES_GLOBAL_TARGET',detail:'Promote the intended survivor to Global first'}}));
+ await page.getByRole('button',{name:t.actions.merge,exact:true}).click();await f.reply('');
+ await page.getByText(t.redesign.advancedIdentifiers,{exact:true}).click();
+ const source=page.getByLabel(t.ui.mergeSourceIDExplicit,{exact:true}),target=page.getByLabel(t.ui.mergeTargetIDExplicit,{exact:true});
+ await source.fill(a);await target.fill(b);await page.getByRole('button',{name:t.ui.previewMerge,exact:true}).click();
+ await page.getByRole('button',{name:t.ui.confirmMerge,exact:true}).click();
+ await page.getByRole('alertdialog').getByRole('button').last().click();
+ await expect(page.getByRole('dialog').getByRole('alert')).toContainText(t.errors.MERGE_REQUIRES_GLOBAL_TARGET);
+ await expect(source).toHaveValue(a);await expect(target).toHaveValue(b);
+});
 test('GLOBAL USER has no Merge controls',async({page})=>{await setup(page,'categories','en','USER');await expect(page.getByRole('button',{name:en.actions.merge,exact:true})).toHaveCount(0);});
 
 test('a late preview cannot restore an obsolete source/target pair',async({page})=>{

@@ -24,7 +24,7 @@ A User belongs either to GLOBAL (`tenantId == null`) or to exactly one TENANT (`
 OR (scope = 'TENANT' AND tenant_id IS NOT NULL)
 ```
 
-- **GLOBAL ADMIN:** manage all Tenants/assets, Tenant OIDC configuration, GLOBAL users, global Catalog, publication/merges; approve users in any Tenant; grant ADMIN.
+- **GLOBAL ADMIN:** manage all Tenants/assets, Tenant OIDC configuration, GLOBAL users, GLOBAL and authorized Tenant-owned Catalog entries, publication/merges; approve users in any Tenant; grant ADMIN. Selecting an operating context does not itself grant Catalog write authority.
 - **GLOBAL USER:** approved business reads across Tenants; no administration access.
 - **TENANT ADMIN:** manage assets, locations, owners and permitted ordinary users in their signed Tenant; create Tenant Catalog entries; approve Tenant USERs; read own Tenant detail and manage own IServ/OIDC singleton including physical deletion. No Tenant collection/switching; **cannot grant ADMIN or administer other admins/Tenants**.
 - **TENANT USER:** approved business reads within signed own Tenant; no administration access or Tenant switching.
@@ -39,7 +39,7 @@ Application Service is authoritative for effective Tenant scope. For TENANT, it 
 
 ### Administration access
 
-Administration capabilities require ACTIVE ADMIN; USER/PENDING/DISABLED have no User/Tenant/configuration/Audit administration access. GLOBAL ADMIN retains approved User administration and Tenant list/detail/create. TENANT ADMIN manages only its signed Tenant's permitted ordinary USER population, has no Tenant list/general administration, and may directly read only its own Tenant detail. Tenant rename/edit/delete remain undefined. TENANT ADMIN navigation opens its own detail, not a list. TENANT ADMIN/USER never select another Tenant; /api/v1/tenants coupling for such a selector is obsolete and must be removed. GLOBAL USER uses the unpaged Tenant collection for ordinary context discovery without administration authority; GLOBAL ADMIN retains administration. Minimal self-authentication and approved business association projections are not administrative resource access.
+Administration capabilities require ACTIVE ADMIN; USER/PENDING/DISABLED have no User/Tenant/configuration/Audit administration access. GLOBAL ADMIN retains approved User administration and Tenant list/detail/create. TENANT ADMIN reads all Users in its signed Tenant and manages only permitted ordinary USERs, has no Tenant list/general administration, and may directly read only its own Tenant detail. Tenant rename/edit/delete remain undefined. TENANT ADMIN navigation opens its own detail, not a list. TENANT ADMIN/USER never select another Tenant; /api/v1/tenants coupling for such a selector is obsolete and must be removed. GLOBAL USER uses the unpaged Tenant collection for ordinary context discovery without administration authority; GLOBAL ADMIN retains administration. Minimal self-authentication and approved business association projections are not administrative resource access.
 
 ## 2. Authentication domain
 
@@ -81,7 +81,9 @@ Distinct entities:
 - **Manufacturer:** flat manufacturer name, e.g. Lenovo, Epson.
 - **Product:** specific identifiable product, with `categoryId`, `manufacturerId`, `name` and optional `manufacturerNumber` (Hersteller-Nr., e.g. `21SK00EEGE`). Do not confuse product with an individual Asset.
 
-Each Category, Manufacturer and Product has `CatalogVisibility { GLOBAL, TENANT }`, `tenantId` (null for GLOBAL; non-null for TENANT), ID, creation/update audit metadata and soft-delete metadata. All Tenants can use GLOBAL entries; Tenant entries are usable only within their Tenant. Tenant admins can create/edit their Tenant entries within the mutation guards below; GLOBAL ADMIN manages global entries within those same guards.
+Each Category, Manufacturer and Product has `CatalogVisibility { GLOBAL, TENANT }`, `tenantId` (null for GLOBAL; non-null for TENANT), ID, creation/update audit metadata and soft-delete metadata. All Tenants can use GLOBAL entries; Tenant entries are usable only within their Tenant. Tenant admins can create/edit their Tenant entries within the mutation guards below; GLOBAL ADMIN may manage GLOBAL and authorized concrete-Tenant entries within those same guards.
+
+For Category, Manufacturer and Product collection reads, GLOBAL resource scope is distinct from Global operating context: an authorized GLOBAL principal's root collection contains active Global and Tenant-owned rows across authorized Tenants. A concrete-Tenant collection contains active Global and that Tenant's rows; a TENANT principal remains bounded to Global and signed-own rows. Optional visibility filtering narrows this already authorized set and never selects another Tenant. Normal collections still exclude soft-deleted rows. Their shared-catalog aggregate query is implemented through the existing root endpoints; no additional Catalog endpoint is introduced.
 
 **Publish/Freigeben:** GLOBAL ADMIN changes an existing Tenant entry to GLOBAL, retaining its ID (no copy). A GLOBAL Product must reference GLOBAL Category and GLOBAL Manufacturer. A Tenant Product may reference GLOBAL or same-Tenant Category/Manufacturer. Validate reference visibility on creation, update, publication, and merge.
 
@@ -356,11 +358,11 @@ Pagination notation 0/20/100 means default page/default size/max size. Soft-dele
 
 | Resource | Pagination | Search fields | Structured filters | Selectable sorts | Default order |
 |---|---|---|---|---|---|
-| Category | REQUIRED 0/20/100 | name | visibility enum | name, visibility | createdAt DESC |
+| Category | REQUIRED 0/20/100 | name | visibility enum | name, visibility, tenantName | createdAt DESC |
 | Manufacturer | REQUIRED 0/20/100 | name | visibility enum | name, visibility | createdAt DESC |
 | Product | REQUIRED 0/20/100 | name, manufacturerNumber | visibility; categoryId/manufacturerId UUID; manufacturerNumber literal substring | name, manufacturerNumber, visibility | createdAt DESC |
-| Location | REQUIRED 0/20/100 | name | authoritative concrete-Tenant scope only | name | createdAt DESC |
-| Owner | REQUIRED 0/20/100 | name | authoritative concrete-Tenant scope only | name | createdAt DESC |
+| Location | REQUIRED 0/20/100 | name | GLOBAL authorized aggregate or concrete-Tenant scope; no ownership filter | name | createdAt DESC |
+| Owner | REQUIRED 0/20/100 | name | GLOBAL authorized aggregate or concrete-Tenant scope; no ownership filter | name | createdAt DESC |
 | Asset | REQUIRED 0/20/100 | assetTag, localIdentifier, serialNumber, externalInventoryNumber | lifecycle/condition enums; loaned/loanable booleans; locationId/ownerId/categoryId/manufacturerId/productId UUID; localIdentifier/serialNumber/externalInventoryNumber literal substring; authorized GLOBAL tenantId | assetTag, createdAt, lifecycle, condition | createdAt DESC |
 | User | REQUIRED 0/20/100 | displayName | scope/role/status enums; authorized GLOBAL tenantId | displayName, scope, role, status | createdAt DESC |
 | AuditLog | REQUIRED 0/20/100 | none | exact action/targetType; targetId/actorId UUID; optional inclusive from/until; authorized GLOBAL ADMIN tenantId/globalOnly narrowing, mutually exclusive | occurredAt ASC/DESC | occurredAt DESC |
@@ -371,9 +373,9 @@ Pagination notation 0/20/100 means default page/default size/max size. Soft-dele
 
 Product number participates in both q and its dedicated filter; blank optional stored values do not match nonblank text. Name/number are not unique identity. Product Category/Manufacturer filtering uses IDs, not joined-name search/sort. Manufacturer has no manufacturerNumber field.
 
-Catalog visibility and dependency rules stay unchanged: GLOBAL entries or same-Tenant entries only within the established endpoint context. No new aggregate Catalog endpoint is implied. Location/Owner reads remain concrete-Tenant scoped. GLOBAL aggregate Asset reads may narrow, but cannot mutate without a concrete authorized Tenant. DEREGISTERED is visible business state, not soft deletion. Reference-filter validation must preserve retained-history semantics without enabling assignment of deleted references.
+Catalog reference visibility remains Global entries or same-Tenant entries only; a GLOBAL aggregate read never permits a foreign-Tenant association. Category, Manufacturer and Product root collections implement the shared-catalog aggregate rule through their existing endpoints. Location/Owner root collections aggregate authorized Tenant rows for GLOBAL principals and remain signed-own for TENANT principals; writes remain concrete-Tenant-only. GLOBAL aggregate Asset reads may narrow, but cannot mutate without a concrete authorized Tenant. DEREGISTERED is visible business state, not soft deletion. Reference-filter validation must preserve retained-history semantics without enabling assignment of deleted references. See the [resource-authority Plan](docs/plans/global-tenant-resource-authority.md) for implementation gates rather than treating target rules as completion evidence.
 
-User administration keeps forced limits: ACTIVE GLOBAL ADMIN may narrow the authorized set; ACTIVE TENANT ADMIN remains own-Tenant TENANT ordinary USER-only. A transport tenantId never determines or proves TENANT authority. Requested role/scope cannot remove this service predicate. Readers/PENDING remain denied. Email belongs to GLOBAL credential/account design, not an added universal User search/sort or TENANT username.
+User administration keeps forced limits: ACTIVE GLOBAL ADMIN may narrow the authorized set; the approved ACTIVE TENANT ADMIN read target is Users of the signed Tenant, while existing mutation commands retain their narrower role/status/self-protection guards. The read implementation includes all roles within the signed Tenant; mutation guards remain narrower. A transport tenantId never determines or proves TENANT authority. Requested role/scope cannot remove the signed-Tenant service predicate. Ordinary readers/PENDING remain denied administrative collection access. Email belongs to GLOBAL credential/account design, not an added universal User search/sort or TENANT username. No generic displayName/profile edit is authorized without the [resource-authority Plan's](docs/plans/global-tenant-resource-authority.md#user-field-boundary-and-human-decision) human decision.
 
 Audit authority is captured target Tenant attribution, not actor ownership, live target ownership or display name. Actor UUID filters do not grant access. Date boundaries are independently optional and inclusive: from <= occurredAt <= until; reject reversed supplied bounds and malformed instants. No arbitrary maximum range duration or username dependency is introduced. Bounded query pagination remains required even with no date bound.
 
@@ -456,6 +458,8 @@ All persisted business resources additionally carry §13 server-owned creation/u
 
 Persisted business Domains (including Tenant, User, Catalog, Location, Owner and Asset) carry **createdBy, createdAt, updatedBy, updatedAt**, in addition to logical deletion where applicable. Actor IDs come from the authoritative identity model; timestamps are absolute UTC instants supplied server-side. createdBy is an actor, never a timestamp. Inserts establish creation/update metadata; updates preserve creation and change update attribution. Immutable AuditLog/AssetEvent preserve appropriate creation/actor/time metadata without introducing an update path or altering snapshots. Internal counters/guard rows are technical persistence, not business Domain lists; system-owned bootstrap seeds require deliberate nonhuman attribution, never invented human authority.
 
+Category read projections may include the current User display name for resolvable `createdBy`/`updatedBy` actors. This is a presentation lookup, not a stored Category actor-name snapshot, an Email/username identity key, a mandatory User foreign key, or a change to immutable AuditLog/AssetEvent snapshots. Missing actors remain unresolved; the reserved system actor retains its explicit nonhuman label.
+
 DTOs, application models, persistence entities and frontend projections may differ. Exposed associations include ID plus necessary readable values; ordinary UI displays name, selectors submit ID. Duplicate names need scope/other useful disambiguation; UUID may supplement when necessary. Do not eager-load full graphs for these lightweight projections or reflectively copy arbitrary request fields into entities.
 
 Frontend displays absolute timestamps in client-local timezone and converts local input to UTC instants. Inclusive from/until bounds are independently optional. Date-only bounds cover the entire selected local calendar day: local start through the last representable instant before next local midnight, converted using that timezone/DST. API/storage precision must be explicit at implementation review; no guessed fixed 24-hour duration or stored-time rewrite.
@@ -516,7 +520,7 @@ If configuration is recreated and its current configuration/credentials make an 
 | Tenant | GET `/api/v1/tenants/{id}` | Required target; absent from current controller |
 | IServ configuration | GET `/api/v1/tenants/{id}/oidc` | Singleton read: GA authorized Tenant or TA own signed Tenant; USER denied |
 
-A caller must not use q/UUID text search or scan a list to obtain detail. New User detail applies the same forced administrative set as Users collection, including TA ordinary USER-only scope; it does not grant a TA visibility of administrators through an ID. Tenant detail allows ACTIVE GLOBAL ADMIN/USER or TA signed own Tenant. TA has no collection; TU denied. Scoped selection/projection occurs before response; absent/out-of-scope detail preserves the existing non-disclosure/problem contract, without an unscoped existence query or secret-bearing fallback. Missing configuration uses the existing missing-resource behavior, not an invented empty secret response.
+A caller must not use q/UUID text search or scan a list to obtain detail. User detail applies the same forced administrative read set as Users collection, including all roles in the TA signed Tenant. This read scope does not widen TA mutation authority. Tenant detail allows ACTIVE GLOBAL ADMIN/USER or TA signed own Tenant. TA has no collection; TU denied. Scoped selection/projection occurs before response; absent/out-of-scope detail preserves the existing non-disclosure/problem contract, without an unscoped existence query or secret-bearing fallback. Missing configuration uses the existing missing-resource behavior, not an invented empty secret response.
 
 ### Established command transport families
 
@@ -531,7 +535,7 @@ These route families record established shapes; their Domain guards and authoriz
 | Catalog creation/list | /api/v1/catalog/{categories\|manufacturers\|products}, with existing /tenants/{tenant}/catalog/... variants |
 | Catalog edit/soft delete/publication | PUT/DELETE /api/v1/catalog/{kind}/{id}; POST .../{id}/publish |
 | Category/Manufacturer preview/Merge | POST /api/v1/catalog/{kind}/merge-preview and /merge; sourceId/targetId UUIDs |
-| Place creation/list | /api/v1/tenants/{tenant}/{locations\|owners}; PUT/DELETE /api/v1/{locations\|owners}/{id} |
+| Place creation/list | POST and scoped GET /api/v1/tenants/{tenant}/{locations\|owners}; aggregate GET /api/v1/{locations\|owners}; PUT/DELETE /api/v1/{locations\|owners}/{id} |
 | User creation/admin actions | POST /api/v1/users/global; POST /users/{id}/approve and /disable; PUT /users/{id}/role and /local-credential under /api/v1 |
 | Own GLOBAL password change | PUT /api/v1/auth/local/password; current-password verified, not an admin bypass |
 | Tenant creation/list | GA-only POST /api/v1/tenants; ACTIVE GLOBAL ADMIN/USER GET collection/detail; TA own detail only |

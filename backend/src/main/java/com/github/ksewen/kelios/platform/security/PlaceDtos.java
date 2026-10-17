@@ -33,7 +33,9 @@ final class PlaceDtos {
     record Item(UUID id,UUID tenantId,Tenant tenant,String name,Metadata metadata){}
     record Detail(UUID id,UUID tenantId,Tenant tenant,String name,String note,boolean deleted,Instant deletedAt,UUID deletedBy,Metadata metadata){}
     private static Tenant tenant(PlaceModel p){return new Tenant(p.tenant().id(),p.tenant().name());}
-    private static Metadata metadata(PlaceModel p){var m=p.metadata();return new Metadata(m.createdBy(),m.createdAt(),m.updatedBy(),m.updatedAt(),SystemActor.displayName(m.createdBy()),SystemActor.displayName(m.updatedBy()));}
+    private static Metadata metadata(PlaceModel p){var m=p.metadata();return new Metadata(m.createdBy(),m.createdAt(),m.updatedBy(),m.updatedAt(),
+        m.createdByDisplayName()==null?SystemActor.displayName(m.createdBy()):m.createdByDisplayName(),
+        m.updatedByDisplayName()==null?SystemActor.displayName(m.updatedBy()):m.updatedByDisplayName());}
     static Page<Item> page(Page<PlaceModel> page){return new Page<>(page.items().stream().map(p->new Item(p.id(),p.tenant().id(),tenant(p),p.name(),metadata(p))).toList(),page.page(),page.size(),page.totalElements());}
     static Detail detail(PlaceModel p){return new Detail(p.id(),p.tenant().id(),tenant(p),p.name(),p.note(),p.deletedAt()!=null,p.deletedAt(),p.deletedBy(),metadata(p));}
 }

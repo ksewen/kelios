@@ -23,7 +23,11 @@ public class PlaceOperations {
         try{tenants.require(effective);}catch(IllegalArgumentException ex){throw BusinessFailure.missing();}
         return effective;
     }
-    @Transactional(readOnly=true) public Page<PlaceModel> list(PlaceService.Kind kind,UUID supplied,PlaceQuery query){var a=actor();return reads.list(kind,context(a,supplied),query);}
+    @Transactional(readOnly=true) public Page<PlaceModel> list(PlaceService.Kind kind,UUID supplied,PlaceQuery query){
+        var a=actor();
+        if(supplied==null)return reads.list(kind,a.scope()==Scope.TENANT?a.tenantId():null,query);
+        return reads.list(kind,context(a,supplied),query);
+    }
     @Transactional(readOnly=true) public PlaceModel detail(PlaceService.Kind kind,UUID id){var a=actor();return reads.detail(kind,id,a.scope()==Scope.TENANT?a.tenantId():null);}
     @Transactional public UUID create(PlaceService.Kind kind,UUID supplied,PlaceModel.Command command){
         var a=actor();Authorization.administrator(a);UUID tenant=context(a,supplied);Authorization.writeTenant(a,tenant);

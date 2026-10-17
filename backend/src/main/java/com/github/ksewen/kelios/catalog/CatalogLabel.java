@@ -16,7 +16,8 @@ public record CatalogLabel(UUID id, String name, Visibility visibility, Tenant t
     }
     public enum Visibility { GLOBAL, TENANT }
     public record Tenant(UUID id, String name) {}
-    public record Metadata(UUID createdBy, Instant createdAt, UUID updatedBy, Instant updatedAt) {}
+    public record Metadata(UUID createdBy, Instant createdAt, UUID updatedBy, Instant updatedAt,
+            String createdByDisplayName, String updatedByDisplayName) {}
     public record Name(String value) {
         public Name {
             if (value == null || value.isBlank()) throw BusinessFailure.invalid("Name required");

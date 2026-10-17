@@ -108,9 +108,34 @@ class ProductIT {
   UUID gone=catalog.createProduct(tenant,c,m,p+"Deleted","HP-42",actor);catalog.delete(CatalogService.Kind.PRODUCT,gone,actor);
   var q=Map.of("q",p,"visibility","TENANT","categoryId",c.toString(),"manufacturerId",m.toString(),"manufacturerNumber","hp","sort","name","direction","desc","page","1","size","2");
   var r=list(tenant,q);assertEquals(5,total(r));assertEquals(2,items(r).size());assertTrue(items(r).stream().allMatch(x->x.get("categoryId").equals(c.toString())&&x.get("manufacturerId").equals(m.toString())));
-  assertEquals(0,total(list(null,q)));assertEquals(0,total(list(tenant,Map.of("categoryId",UUID.randomUUID().toString()))));
+  assertEquals(5,total(list(null,q)));assertEquals(0,total(list(tenant,Map.of("categoryId",UUID.randomUUID().toString()))));
   UUID foreignC=catalog.createCategory(other,"Foreign",actor);catalog.createProduct(other,foreignC,manufacturer,p+"Foreign ref",null,actor);
   assertEquals(0,total(list(tenant,Map.of("categoryId",foreignC.toString()))));
+ }
+ @Test void rootAggregatesGlobalAndTenantProductsBeforeFilteringSortingAndPaging()throws Exception{
+  String p=prefix();var ids=new HashSet<String>();
+  for(int i=0;i<24;i++){
+   ids.add(create(null,p+"Global "+i,"Part-"+i).toString());
+   ids.add(create(tenant,p+"North "+i,"Part-"+i).toString());
+   ids.add(create(other,p+"South "+i,"Part-"+i).toString());
+  }
+  UUID deleted=create(other,p+"Deleted",null);catalog.delete(CatalogService.Kind.PRODUCT,deleted,actor);
+  assertEquals(72,total(list(null,Map.of("q",p))));
+  assertEquals(24,total(list(null,Map.of("q",p+"South"))));
+  assertEquals(48,total(list(null,Map.of("q",p,"visibility","TENANT"))));
+  assertEquals(24,total(list(null,Map.of("q",p,"visibility","GLOBAL"))));
+  for(String direction:List.of("asc","desc")){
+   var seen=new HashSet<String>();String previous=null;
+   for(int page=0;page<4;page++)for(var item:items(list(null,Map.of("q",p,"sort","name","direction",direction,"page",String.valueOf(page))))){
+    String name=(String)item.get("name");if(previous!=null)assertTrue(direction.equals("asc")?previous.compareTo(name)<=0:previous.compareTo(name)>=0);
+    previous=name;assertTrue(seen.add((String)item.get("id")));
+   }
+   assertEquals(ids,seen);
+  }
+  assertEquals(48,total(list(tenant,Map.of("q",p))));
+  var own=principal(Scope.TENANT,Role.USER,Status.ACTIVE);
+  var result=request(own,get(ROOT).param("q",p),null);assertEquals(200,status(result));assertEquals(48,total(result));
+  assertTrue(items(result).stream().noneMatch(item->other.toString().equals(item.get("tenantId"))));
  }
  @Test void authoritativeTenantAndIndependentDetail()throws Exception{
   UUID own=create(tenant,"Own","number"),foreign=create(other,"Foreign",null);var local=principal(Scope.TENANT,Role.ADMIN,Status.ACTIVE);

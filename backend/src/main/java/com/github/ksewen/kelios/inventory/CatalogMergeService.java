@@ -12,7 +12,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** Explicit cross-module transaction coordinator, internal until Phase 2/3 authorization and UI. */
+/** Cross-module transaction coordinator for Category/Manufacturer Merge. */
 @Service
 public class CatalogMergeService {
     private final CatalogService catalog;
@@ -31,7 +31,7 @@ public class CatalogMergeService {
         for(UUID id:ids) {
             Asset a=em.find(Asset.class,id);em.refresh(a);
             if(!(kind==MergeKind.CATEGORY?a.categoryId:a.manufacturerId).equals(source))continue;
-            catalog.requireVisible(pair.target(),a.tenantId,false);
+            catalog.requireMergeTargetVisible(pair,a.tenantId);
             var before=assets.snapshot(a);
             if(kind==MergeKind.CATEGORY)a.categoryId=target;else a.manufacturerId=target;
             catalog.requireVisible(catalog.share(Kind.CATEGORY,a.categoryId),a.tenantId,false);

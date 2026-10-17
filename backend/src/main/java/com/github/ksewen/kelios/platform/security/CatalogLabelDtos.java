@@ -38,7 +38,7 @@ final class CatalogLabelDtos {
         @com.fasterxml.jackson.annotation.JsonAnySetter
         public void reject(String key, Object value) { throw BusinessFailure.invalid("Unknown command field"); }
     }
-    static CatalogLabelQuery query(Map<String, String> input) {
+    static CatalogLabelQuery query(Map<String, String> input, CatalogLabel.Kind kind) {
         ListInput.keys(input, "visibility", "sort", "direction");
         // Controller supplies resource-specific defaults; unrelated resources retain their separately gated contract.
         int page = ListInput.page(Map.of("page", input.getOrDefault("page", "0")));
@@ -50,6 +50,10 @@ final class CatalogLabelDtos {
         }
         CatalogLabelQuery.Sort sort = input.containsKey("sort") ? switch (input.get("sort")) {
             case "name" -> CatalogLabelQuery.Sort.NAME; case "visibility" -> CatalogLabelQuery.Sort.VISIBILITY;
+            case "tenantName" -> {
+                if (kind != CatalogLabel.Kind.CATEGORY) throw BusinessFailure.invalid("Unsupported Catalog sort");
+                yield CatalogLabelQuery.Sort.TENANT_NAME;
+            }
             default -> throw BusinessFailure.invalid("Unsupported Catalog sort");
         } : null;
         CatalogLabelQuery.Direction direction = input.containsKey("direction") ? switch (input.get("direction")) {
@@ -70,7 +74,8 @@ final class CatalogLabelDtos {
     private static UUID tenantId(CatalogLabel m) { return m.tenant() == null ? null : m.tenant().id(); }
     private static Metadata metadata(CatalogLabel m) {
         var a = m.metadata(); return new Metadata(a.createdBy(), a.createdAt(), a.updatedBy(), a.updatedAt(),
-            SystemActor.displayName(a.createdBy()), SystemActor.displayName(a.updatedBy()));
+            a.createdByDisplayName() == null ? SystemActor.displayName(a.createdBy()) : a.createdByDisplayName(),
+            a.updatedByDisplayName() == null ? SystemActor.displayName(a.updatedBy()) : a.updatedByDisplayName());
     }
     static Page<Item> page(Page<CatalogLabel> page) {
         return new Page<>(page.items().stream().map(m -> new Item(m.id(), m.name(), m.visibility().name(), tenantId(m), tenant(m), metadata(m))).toList(),

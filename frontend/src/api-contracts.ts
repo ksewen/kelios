@@ -86,6 +86,7 @@ export type AssetReturnCommand = { expectedVersion: number };
 // Closed endpoint criteria. Pending/applied UI behavior remains owned by later gates.
 export type PagingQuery = { page?: number; size?: number };
 export type CatalogLabelQuery = PagingQuery & { q?: string; visibility?: Visibility; sort?: 'name' | 'visibility'; direction?: Direction };
+export type CategoryQuery = Omit<CatalogLabelQuery, 'sort'> & { sort?: 'name' | 'visibility' | 'tenantName' };
 export type ProductQuery = PagingQuery & { q?: string; visibility?: Visibility; categoryId?: UUID; manufacturerId?: UUID; manufacturerNumber?: string; sort?: 'name' | 'visibility' | 'manufacturerNumber'; direction?: Direction };
 export type PlaceQuery = PagingQuery & { q?: string; sort?: 'name'; direction?: Direction };
 export type UserQuery = PagingQuery & { q?: string; scope?: Scope; role?: Role; status?: UserStatus; tenantId?: UUID; sort?: 'displayName' | 'scope' | 'role' | 'status'; direction?: Direction };

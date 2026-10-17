@@ -1,6 +1,8 @@
 # Remaining work index
 
-Status: **APPROVED BACKLOG OWNERSHIP; no implementation gate authorized by this index.** Updated after the human-accepted O1, O2, integration and Wave 3 closeouts on 2026-10-15. [ARCHITECTURE](../../ARCHITECTURE.md), [DOMAIN](../../DOMAIN.md), current human decisions and resource-specific Plans define the actual contract. This index provides one current owner/status for genuine remaining work. [Governance history](../history/documentation-governance.md) records the accepted documentation consolidation, not execution authority.
+Status: **APPROVED BACKLOG OWNERSHIP; no implementation gate authorized by this index.** Updated 2026-10-17 after acceptance of the Global/Tenant resource-authority Plan; earlier O1, O2, integration and Wave 3 closeouts remain accepted. [ARCHITECTURE](../../ARCHITECTURE.md), [DOMAIN](../../DOMAIN.md), current human decisions and resource-specific Plans define the actual contract. This index provides one current owner/status for genuine remaining work. [Governance history](../history/documentation-governance.md) records the accepted documentation consolidation, not execution authority.
+
+The [Global/Tenant resource-authority Plan](global-tenant-resource-authority.md) is **HUMAN ACCEPTED / CLOSED** across Phases 0–5 on 2026-10-17, including the documented live-HTTPS/operator-data limitations. Its [execution checkpoint](../../IMPLEMENTATION_STATUS.md) records the accepted work without closing O3/T3 or the pending `displayName` decision by implication.
 
 | ID | Status and narrow remaining question | Owning contract / prerequisite |
 |---|---|---|
@@ -14,7 +16,7 @@ Status: **APPROVED BACKLOG OWNERSHIP; no implementation gate authorized by this 
 | BQ3 / Phase E | **FUTURE / DECISION REQUIRED.** Consider a residual C/D checkpoint only after O3/O4 outcomes; do not repeat accepted F6 integration. | UX Plan §§11,14. |
 | T1 / X1 | **FUTURE / DECISION REQUIRED.** Full authorized filtered Excel export with readable associations and formula safety; decide bounds and delivery policy. | [Collection implementation Plan](COLLECTION_QUERY_IMPLEMENTATION_PLAN.md) X1; DOMAIN §14. |
 | T2 / I2 | **FUTURE / DECISION REQUIRED.** Real Email verification/delivery, reset and self-registration; decide tokens, approval, abuse and delivery semantics. Current manual verified Email/bootstrap/recovery is closed. | Collection Plan I2; DOMAIN §2. |
-| T3 | **FUTURE / DECISION REQUIRED.** User profile/reactivation/deletion/anonymization and privacy lifecycle need explicit decisions. | DOMAIN §§8,15. |
+| T3 | **BLOCKED / HUMAN DECISION REQUIRED for `displayName` editing** by administrators or the User, including OIDC-provisioned names, validation and audit behavior. Other profile/reactivation/deletion/anonymization and privacy lifecycle work remains FUTURE / DECISION REQUIRED. | [Accepted resource-authority Plan](global-tenant-resource-authority.md#user-field-boundary-and-human-decision); DOMAIN §§8,15. |
 | T4 | **FUTURE / DECISION REQUIRED.** Tenant rename/edit/delete remain undefined; approved create/list/detail are closed. | DOMAIN §15; accepted Step7. |
 | T5 | **FUTURE / DECISION REQUIRED.** Additional Provider reset/restore semantics are undefined; physical OIDC DELETE/recreate and enable/disable are closed. | DOMAIN §15; accepted Step8. |
 | T6 | **FUTURE / DECISION REQUIRED.** Bulk CSV/XLSX import needs format, preview, limits and failure policy. | DOMAIN §9. |

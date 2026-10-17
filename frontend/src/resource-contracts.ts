@@ -22,7 +22,7 @@ export type MutationResource='asset'|'product'|'catalog'|'place'|'user'|'oidc';
 export function mutationFeedback(error:FeedbackError,resource?:MutationResource) {
   const status=typeof error==='object'?error.status:undefined,code=typeof error==='object'?error.code:error;
   const uncertain=status===0&&!['AUTH_UNAVAILABLE','AUTHENTICATION_REQUIRED','INVALID_AUTH_RESPONSE'].includes(code??'')||code==='UNCERTAIN'||code==='REQUEST_FAILED';
-  const guard=['REFERENCED','PRODUCT_EDIT_FROZEN','PROTECTED_UNKNOWN','DELETED_TARGET','INVALID_DEPENDENCY','INVALID_TRANSITION','OUTSTANDING_LOAN','NOT_LOANABLE'].includes(code??'');
+  const guard=['REFERENCED','PRODUCT_EDIT_FROZEN','PROTECTED_UNKNOWN','DELETED_TARGET','INVALID_DEPENDENCY','MERGE_REQUIRES_GLOBAL_TARGET','INVALID_TRANSITION','OUTSTANDING_LOAN','NOT_LOANABLE'].includes(code??'');
   // B2 is not repaired here: retain the backend status/code, avoid asserting an Asset conflict for Product.
   const productMismatch=resource==='product'&&code==='STALE_ASSET_VERSION';
   const message=productMismatch?i18n.t('errors.HTTP_CONFLICT'):errorMessage(error);

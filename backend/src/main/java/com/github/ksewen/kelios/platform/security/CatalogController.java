@@ -14,11 +14,11 @@ public class CatalogController {
  public CatalogController(ProductOperations products,CatalogLabelOperations labels){this.products=products;this.labels=labels;}
  @GetMapping("/catalog/categories")
  public Page<CatalogLabelDtos.Item> categories(@RequestParam Map<String,String> query) {
-  return CatalogLabelDtos.page(labels.list(CatalogLabel.Kind.CATEGORY,null,CatalogLabelDtos.query(query)));
+  return CatalogLabelDtos.page(labels.list(CatalogLabel.Kind.CATEGORY,null,CatalogLabelDtos.query(query,CatalogLabel.Kind.CATEGORY)));
  }
  @GetMapping("/tenants/{tenant}/catalog/categories")
  public Page<CatalogLabelDtos.Item> categoriesTenant(@PathVariable UUID tenant,@RequestParam Map<String,String> query) {
-  return CatalogLabelDtos.page(labels.list(CatalogLabel.Kind.CATEGORY,tenant,CatalogLabelDtos.query(query)));
+  return CatalogLabelDtos.page(labels.list(CatalogLabel.Kind.CATEGORY,tenant,CatalogLabelDtos.query(query,CatalogLabel.Kind.CATEGORY)));
  }
  @GetMapping("/catalog/categories/{id}")
  public CatalogLabelDtos.Detail categoriesDetail(@PathVariable UUID id) { return CatalogLabelDtos.detail(labels.detail(CatalogLabel.Kind.CATEGORY,id)); }
@@ -52,11 +52,11 @@ public class CatalogController {
  }
  @GetMapping("/catalog/manufacturers")
  public Page<CatalogLabelDtos.Item> manufacturers(@RequestParam Map<String,String> query) {
-  return CatalogLabelDtos.page(labels.list(CatalogLabel.Kind.MANUFACTURER,null,CatalogLabelDtos.query(query)));
+  return CatalogLabelDtos.page(labels.list(CatalogLabel.Kind.MANUFACTURER,null,CatalogLabelDtos.query(query,CatalogLabel.Kind.MANUFACTURER)));
  }
  @GetMapping("/tenants/{tenant}/catalog/manufacturers")
  public Page<CatalogLabelDtos.Item> manufacturersTenant(@PathVariable UUID tenant,@RequestParam Map<String,String> query) {
-  return CatalogLabelDtos.page(labels.list(CatalogLabel.Kind.MANUFACTURER,tenant,CatalogLabelDtos.query(query)));
+  return CatalogLabelDtos.page(labels.list(CatalogLabel.Kind.MANUFACTURER,tenant,CatalogLabelDtos.query(query,CatalogLabel.Kind.MANUFACTURER)));
  }
  @GetMapping("/catalog/manufacturers/{id}")
  public CatalogLabelDtos.Detail manufacturersDetail(@PathVariable UUID id) { return CatalogLabelDtos.detail(labels.detail(CatalogLabel.Kind.MANUFACTURER,id)); }

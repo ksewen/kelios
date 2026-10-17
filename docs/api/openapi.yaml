@@ -322,8 +322,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
       description: ACTIVE GLOBAL ADMIN authorized population with validated optional
-        Tenant narrowing; ACTIVE TENANT ADMIN forced signed Tenant, TENANT scope and
-        ordinary USER role. Transport tenantId is ignored for TENANT authority; requested
+        Tenant narrowing; ACTIVE TENANT ADMIN forced signed Tenant and TENANT scope, including
+        all roles. Transport tenantId is ignored for TENANT authority; requested
         scope/role/status only intersect the forced set. Full SQL predicates/order precede
         bounded paging. Omission never means unbounded.
       parameters:
@@ -402,9 +402,9 @@ paths:
     get:
       operationId: getUsersId
       summary: Read administratively authorized User by UUID
-      description: Independent application-service scope; TENANT ADMIN sees only own
-        Tenant ordinary USERs. Absent, foreign, GLOBAL and elevated targets outside
-        that scope have the same 404. No credential/provider projection or audit write.
+      description: Independent application-service scope; TENANT ADMIN sees all Users
+        in its signed Tenant. Absent, foreign and GLOBAL targets outside that scope
+        have the same 404. No credential/provider projection or audit write.
       security:
       - AccessBearer: []
       parameters:
@@ -1172,9 +1172,11 @@ paths:
       description: ACTIVE principal required. Application service derives TENANT scope exclusively from signed identity,
         ignoring supplied Tenant path IDs; GLOBAL supplied Tenant narrows context after validation. Resource IDs never
         grant authority; foreign/missing detail uses the existing non-disclosure error contract. Actors/timestamps
-        are server-owned. Global-context GLOBAL reads contain GLOBAL labels; concrete-Tenant reads contain GLOBAL
-        plus that Tenant. Normal collections exclude all soft-deleted rows and reject deleted/unpaged/unknown query
-        parameters. Scope/filter/order/count/page are one server query.
+        are server-owned. For an authorized GLOBAL principal, the root Category collection contains all active GLOBAL
+        and Tenant-owned Categories across Tenants. For a TENANT principal, signed-own scope still bounds the result
+        to GLOBAL plus own-Tenant Categories. Optional visibility narrows this authorized set; it does not select a
+        Tenant. Normal collections exclude all soft-deleted rows and reject deleted/unpaged/unknown query parameters.
+        Scope/filter/order/count/page are one server query.
       security:
       - AccessBearer: []
       responses:
@@ -1229,13 +1231,13 @@ paths:
       - name: sort
         in: query
         required: false
-        description: 'Selectable full-collection server sort. Omitted: createdAt DESC. No createdAt/id selectable
-          field.'
+        description: 'Selectable full-collection server sort. tenantName orders the operator-visible Global or authoritative Tenant name, then UUID; visibility remains the separate scope sort. Omitted: createdAt DESC. No createdAt/id selectable field.'
         schema:
           type: string
           enum:
           - name
           - visibility
+          - tenantName
       - name: direction
         in: query
         required: false
@@ -1290,9 +1292,11 @@ paths:
       description: ACTIVE principal required. Application service derives TENANT scope exclusively from signed identity,
         ignoring supplied Tenant path IDs; GLOBAL supplied Tenant narrows context after validation. Resource IDs never
         grant authority; foreign/missing detail uses the existing non-disclosure error contract. Actors/timestamps
-        are server-owned. Global-context GLOBAL reads contain GLOBAL labels; concrete-Tenant reads contain GLOBAL
-        plus that Tenant. Normal collections exclude all soft-deleted rows and reject deleted/unpaged/unknown query
-        parameters. Scope/filter/order/count/page are one server query.
+        are server-owned. For an authorized GLOBAL principal, the concrete-Tenant Category collection contains active
+        GLOBAL Categories plus Categories owned by that Tenant. A TENANT principal remains bounded to GLOBAL plus
+        signed-own Categories even if the path names another Tenant. Optional visibility narrows this authorized set;
+        it does not grant another Tenant. Normal collections exclude all soft-deleted rows and reject deleted/unpaged/unknown
+        query parameters. Scope/filter/order/count/page are one server query.
       security:
       - AccessBearer: []
       responses:
@@ -1353,13 +1357,13 @@ paths:
       - name: sort
         in: query
         required: false
-        description: 'Selectable full-collection server sort. Omitted: createdAt DESC. No createdAt/id selectable
-          field.'
+        description: 'Selectable full-collection server sort. tenantName orders the operator-visible Global or authoritative Tenant name, then UUID; visibility remains the separate scope sort. Omitted: createdAt DESC. No createdAt/id selectable field.'
         schema:
           type: string
           enum:
           - name
           - visibility
+          - tenantName
       - name: direction
         in: query
         required: false
@@ -1587,7 +1591,8 @@ paths:
         are server-owned. GLOBAL ADMIN only. UUID participants, UNKNOWN/source/target/visibility guards. Preview is
         advisory and writes nothing; execution freshly locks/revalidates and atomically redirects retained Product/Asset
         references, soft-deletes source, writes one source-attributed AuditLog and one UPDATED AssetEvent per redirected
-        Asset.
+        Asset. If a private target cannot serve every retained dependent, execution returns 409
+        MERGE_REQUIRES_GLOBAL_TARGET; promote the intended survivor to GLOBAL first and retry.
       security:
       - AccessBearer: []
       responses:
@@ -1614,8 +1619,10 @@ paths:
       description: ACTIVE principal required. Application service derives TENANT scope exclusively from signed identity,
         ignoring supplied Tenant path IDs; GLOBAL supplied Tenant narrows context after validation. Resource IDs never
         grant authority; foreign/missing detail uses the existing non-disclosure error contract. Actors/timestamps
-        are server-owned. Global-context GLOBAL reads contain GLOBAL labels; concrete-Tenant reads contain GLOBAL
-        plus that Tenant. Normal collections exclude all soft-deleted rows and reject deleted/unpaged/unknown query
+        are server-owned. For a GLOBAL principal the root collection contains authorized GLOBAL and Tenant-owned
+        Manufacturers across Tenants; a concrete-Tenant collection contains GLOBAL plus that Tenant, and a TENANT
+        principal sees GLOBAL plus signed-own rows. Optional visibility narrows only this authorized result. Normal
+        collections exclude all soft-deleted rows and reject deleted/unpaged/unknown query
         parameters. Scope/filter/order/count/page are one server query.
       security:
       - AccessBearer: []
@@ -1732,8 +1739,10 @@ paths:
       description: ACTIVE principal required. Application service derives TENANT scope exclusively from signed identity,
         ignoring supplied Tenant path IDs; GLOBAL supplied Tenant narrows context after validation. Resource IDs never
         grant authority; foreign/missing detail uses the existing non-disclosure error contract. Actors/timestamps
-        are server-owned. Global-context GLOBAL reads contain GLOBAL labels; concrete-Tenant reads contain GLOBAL
-        plus that Tenant. Normal collections exclude all soft-deleted rows and reject deleted/unpaged/unknown query
+        are server-owned. For a GLOBAL principal the root collection contains authorized GLOBAL and Tenant-owned
+        Manufacturers across Tenants; a concrete-Tenant collection contains GLOBAL plus that Tenant, and a TENANT
+        principal sees GLOBAL plus signed-own rows. Optional visibility narrows only this authorized result. Normal
+        collections exclude all soft-deleted rows and reject deleted/unpaged/unknown query
         parameters. Scope/filter/order/count/page are one server query.
       security:
       - AccessBearer: []
@@ -2029,7 +2038,8 @@ paths:
         are server-owned. GLOBAL ADMIN only. UUID participants, UNKNOWN/source/target/visibility guards. Preview is
         advisory and writes nothing; execution freshly locks/revalidates and atomically redirects retained Product/Asset
         references, soft-deletes source, writes one source-attributed AuditLog and one UPDATED AssetEvent per redirected
-        Asset.
+        Asset. If a private target cannot serve every retained dependent, execution returns 409
+        MERGE_REQUIRES_GLOBAL_TARGET; promote the intended survivor to GLOBAL first and retry.
       security:
       - AccessBearer: []
       responses:
@@ -2055,8 +2065,9 @@ paths:
       summary: Read visible products
       description: ACTIVE principal. Application service derives TENANT scope solely from signed identity; supplied
         Tenant path IDs are ignored for TENANT. GLOBAL supplied context is validated. UUIDs locate resources, not
-        grant authority; foreign/missing targets follow non-disclosure. Server-owned actor/time metadata. GLOBAL root
-        reads GLOBAL Products; concrete context includes GLOBAL plus that Tenant. Scope and all filters constrain
+        grant authority; foreign/missing targets follow non-disclosure. Server-owned actor/time metadata. For a GLOBAL
+        principal, root reads include authorized GLOBAL and Tenant-owned Products across Tenants; concrete context
+        includes GLOBAL plus that Tenant, while TENANT principals remain signed-own plus GLOBAL. Scope and filters constrain
         the full collection before server sort/count/SQL paging. Soft-deleted Products excluded; deleted/unpaged/unknown
         parameters rejected. Foreign/nonexistent reference filters cannot expand visibility and simply yield no authorized
         matches.
@@ -2199,8 +2210,9 @@ paths:
       summary: Read visible products
       description: ACTIVE principal. Application service derives TENANT scope solely from signed identity; supplied
         Tenant path IDs are ignored for TENANT. GLOBAL supplied context is validated. UUIDs locate resources, not
-        grant authority; foreign/missing targets follow non-disclosure. Server-owned actor/time metadata. GLOBAL root
-        reads GLOBAL Products; concrete context includes GLOBAL plus that Tenant. Scope and all filters constrain
+        grant authority; foreign/missing targets follow non-disclosure. Server-owned actor/time metadata. For a GLOBAL
+        principal, root reads include authorized GLOBAL and Tenant-owned Products across Tenants; concrete context
+        includes GLOBAL plus that Tenant, while TENANT principals remain signed-own plus GLOBAL. Scope and filters constrain
         the full collection before server sort/count/SQL paging. Soft-deleted Products excluded; deleted/unpaged/unknown
         parameters rejected. Foreign/nonexistent reference filters cannot expand visibility and simply yield no authorized
         matches.
@@ -2483,13 +2495,81 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/EmptyCommand'
+  /locations:
+    get:
+      operationId: getRootLocations
+      summary: Read authorized aggregate locations
+      description: ACTIVE GLOBAL principals read all current Tenant-owned locations; ACTIVE TENANT principals read signed-own rows only.
+        Search, total count, sort and paging apply to the complete authorized set. Soft-deleted rows are excluded.
+        Tenant ownership is projected per row; this collection confers no cross-Tenant write authority.
+      security:
+      - AccessBearer: []
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlacePage'
+        default:
+          description: RFC 9457. 400 INVALID_INPUT; 401 AUTHENTICATION_REQUIRED; 403 FORBIDDEN; 404 NOT_FOUND including
+            out-of-scope object; 409 guard/version/concurrency/constraint conflict; 503 SERVICE_UNAVAILABLE. No automatic
+            mutation retry.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      parameters:
+      - name: page
+        in: query
+        required: false
+        description: Zero-based page; beyond-end pages return empty items with current count.
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+      - name: size
+        in: query
+        required: false
+        description: Bounded server page size.
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      - name: q
+        in: query
+        required: false
+        description: Name-only literal case-insensitive substring; note never participates. Strip surrounding whitespace;
+          blank means no search; maximum 128 UTF-16 units after stripping. %, _ and backslash are literal.
+        schema:
+          type: string
+      - name: sort
+        in: query
+        required: false
+        description: Only name is selectable. Omitted sort uses createdAt DESC; note, Tenant and id are not selectable
+          sorts.
+        schema:
+          type: string
+          enum:
+          - name
+      - name: direction
+        in: query
+        required: false
+        description: Requires sort. Selected sort defaults to asc; omitted sort uses fixed createdAt DESC.
+        schema:
+          type: string
+          enum:
+          - asc
+          - desc
+          default: asc
   /tenants/{tenantId}/locations:
     get:
       operationId: getTenantsTenantidLocations
       summary: Read own authorized Tenant locations
       description: ACTIVE principal. Application service resolves effective TENANT exclusively from signed identity;
         transport Tenant path IDs are ignored for TENANT, never compared as authority. GLOBAL requires validated concrete
-        Tenant collection/create context; no aggregate Place list. Detail UUID is independently constrained to authorized
+        Tenant write context; root aggregate reads remain separate. Detail UUID is independently constrained to authorized
         ownership; foreign/missing use non-disclosure. Actors/timestamps server-owned. Authorized scope/search/count/full-result
         sort/SQL page combine. Soft-deleted records excluded for every role. Unsupported note/deleted/unpaged/other
         filter fields are validation errors.
@@ -2565,7 +2645,7 @@ paths:
       summary: ADMIN create Tenant locations
       description: ACTIVE principal. Application service resolves effective TENANT exclusively from signed identity;
         transport Tenant path IDs are ignored for TENANT, never compared as authority. GLOBAL requires validated concrete
-        Tenant collection/create context; no aggregate Place list. Detail UUID is independently constrained to authorized
+        Tenant write context; root aggregate reads remain separate. Detail UUID is independently constrained to authorized
         ownership; foreign/missing use non-disclosure. Actors/timestamps server-owned. ADMIN only; explicit name/note
         replacement command. Omitted/null/blank note clears it, no PATCH semantics. Mutation and administrative AuditLog
         atomic.
@@ -2610,7 +2690,7 @@ paths:
       summary: Read scoped locations
       description: ACTIVE principal. Application service resolves effective TENANT exclusively from signed identity;
         transport Tenant path IDs are ignored for TENANT, never compared as authority. GLOBAL requires validated concrete
-        Tenant collection/create context; no aggregate Place list. Detail UUID is independently constrained to authorized
+        Tenant write context; root aggregate reads remain separate. Detail UUID is independently constrained to authorized
         ownership; foreign/missing use non-disclosure. Actors/timestamps server-owned. Independent safe Tenant ID/name
         + detail note/metadata projection. Retained/deleted detail remains readable inside authorized scope; no secrets
         or read AuditLog.
@@ -2643,7 +2723,7 @@ paths:
       summary: ADMIN edit guarded locations
       description: ACTIVE principal. Application service resolves effective TENANT exclusively from signed identity;
         transport Tenant path IDs are ignored for TENANT, never compared as authority. GLOBAL requires validated concrete
-        Tenant collection/create context; no aggregate Place list. Detail UUID is independently constrained to authorized
+        Tenant write context; root aggregate reads remain separate. Detail UUID is independently constrained to authorized
         ownership; foreign/missing use non-disclosure. Actors/timestamps server-owned. ADMIN only; explicit name/note
         replacement command. Omitted/null/blank note clears it, no PATCH semantics. Mutation and administrative AuditLog
         atomic. Referenced Location remains editable by stable ID; metadata edit does not mutate Asset facts or create
@@ -2679,7 +2759,7 @@ paths:
       summary: ADMIN delete guarded locations
       description: ACTIVE principal. Application service resolves effective TENANT exclusively from signed identity;
         transport Tenant path IDs are ignored for TENANT, never compared as authority. GLOBAL requires validated concrete
-        Tenant collection/create context; no aggregate Place list. Detail UUID is independently constrained to authorized
+        Tenant write context; root aggregate reads remain separate. Detail UUID is independently constrained to authorized
         ownership; foreign/missing use non-disclosure. Actors/timestamps server-owned. ADMIN guarded soft deletion;
         every retained Asset reference blocks deletion including DEREGISTERED/soft-deleted Assets. No hard deletion,
         undelete or Merge.
@@ -2703,13 +2783,81 @@ paths:
         schema:
           type: string
           format: uuid
+  /owners:
+    get:
+      operationId: getRootOwners
+      summary: Read authorized aggregate owners
+      description: ACTIVE GLOBAL principals read all current Tenant-owned owners; ACTIVE TENANT principals read signed-own rows only.
+        Search, total count, sort and paging apply to the complete authorized set. Soft-deleted rows are excluded.
+        Tenant ownership is projected per row; this collection confers no cross-Tenant write authority.
+      security:
+      - AccessBearer: []
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlacePage'
+        default:
+          description: RFC 9457. 400 INVALID_INPUT; 401 AUTHENTICATION_REQUIRED; 403 FORBIDDEN; 404 NOT_FOUND including
+            out-of-scope object; 409 guard/version/concurrency/constraint conflict; 503 SERVICE_UNAVAILABLE. No automatic
+            mutation retry.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+      parameters:
+      - name: page
+        in: query
+        required: false
+        description: Zero-based page; beyond-end pages return empty items with current count.
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+      - name: size
+        in: query
+        required: false
+        description: Bounded server page size.
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      - name: q
+        in: query
+        required: false
+        description: Name-only literal case-insensitive substring; note never participates. Strip surrounding whitespace;
+          blank means no search; maximum 128 UTF-16 units after stripping. %, _ and backslash are literal.
+        schema:
+          type: string
+      - name: sort
+        in: query
+        required: false
+        description: Only name is selectable. Omitted sort uses createdAt DESC; note, Tenant and id are not selectable
+          sorts.
+        schema:
+          type: string
+          enum:
+          - name
+      - name: direction
+        in: query
+        required: false
+        description: Requires sort. Selected sort defaults to asc; omitted sort uses fixed createdAt DESC.
+        schema:
+          type: string
+          enum:
+          - asc
+          - desc
+          default: asc
   /tenants/{tenantId}/owners:
     get:
       operationId: getTenantsTenantidOwners
       summary: Read own authorized Tenant owners
       description: ACTIVE principal. Application service resolves effective TENANT exclusively from signed identity;
         transport Tenant path IDs are ignored for TENANT, never compared as authority. GLOBAL requires validated concrete
-        Tenant collection/create context; no aggregate Place list. Detail UUID is independently constrained to authorized
+        Tenant write context; root aggregate reads remain separate. Detail UUID is independently constrained to authorized
         ownership; foreign/missing use non-disclosure. Actors/timestamps server-owned. Authorized scope/search/count/full-result
         sort/SQL page combine. Soft-deleted records excluded for every role. Unsupported note/deleted/unpaged/other
         filter fields are validation errors.
@@ -2785,7 +2933,7 @@ paths:
       summary: ADMIN create Tenant owners
       description: ACTIVE principal. Application service resolves effective TENANT exclusively from signed identity;
         transport Tenant path IDs are ignored for TENANT, never compared as authority. GLOBAL requires validated concrete
-        Tenant collection/create context; no aggregate Place list. Detail UUID is independently constrained to authorized
+        Tenant write context; root aggregate reads remain separate. Detail UUID is independently constrained to authorized
         ownership; foreign/missing use non-disclosure. Actors/timestamps server-owned. ADMIN only; explicit name/note
         replacement command. Omitted/null/blank note clears it, no PATCH semantics. Mutation and administrative AuditLog
         atomic.
@@ -2830,7 +2978,7 @@ paths:
       summary: Read scoped owners
       description: ACTIVE principal. Application service resolves effective TENANT exclusively from signed identity;
         transport Tenant path IDs are ignored for TENANT, never compared as authority. GLOBAL requires validated concrete
-        Tenant collection/create context; no aggregate Place list. Detail UUID is independently constrained to authorized
+        Tenant write context; root aggregate reads remain separate. Detail UUID is independently constrained to authorized
         ownership; foreign/missing use non-disclosure. Actors/timestamps server-owned. Independent safe Tenant ID/name
         + detail note/metadata projection. Retained/deleted detail remains readable inside authorized scope; no secrets
         or read AuditLog.
@@ -2863,7 +3011,7 @@ paths:
       summary: ADMIN edit guarded owners
       description: ACTIVE principal. Application service resolves effective TENANT exclusively from signed identity;
         transport Tenant path IDs are ignored for TENANT, never compared as authority. GLOBAL requires validated concrete
-        Tenant collection/create context; no aggregate Place list. Detail UUID is independently constrained to authorized
+        Tenant write context; root aggregate reads remain separate. Detail UUID is independently constrained to authorized
         ownership; foreign/missing use non-disclosure. Actors/timestamps server-owned. ADMIN only; explicit name/note
         replacement command. Omitted/null/blank note clears it, no PATCH semantics. Mutation and administrative AuditLog
         atomic. Every referenced Owner edit is prohibited, including unchanged-name/note-only changes; resolve references
@@ -2899,7 +3047,7 @@ paths:
       summary: ADMIN delete guarded owners
       description: ACTIVE principal. Application service resolves effective TENANT exclusively from signed identity;
         transport Tenant path IDs are ignored for TENANT, never compared as authority. GLOBAL requires validated concrete
-        Tenant collection/create context; no aggregate Place list. Detail UUID is independently constrained to authorized
+        Tenant write context; root aggregate reads remain separate. Detail UUID is independently constrained to authorized
         ownership; foreign/missing use non-disclosure. Actors/timestamps server-owned. ADMIN guarded soft deletion;
         every retained Asset reference blocks deletion including DEREGISTERED/soft-deleted Assets. No hard deletion,
         undelete or Merge.
@@ -3046,7 +3194,7 @@ components:
           type: string
           description: Stable safe business error, including INVALID_INPUT, STALE_ASSET_VERSION, INVALID_TRANSITION,
             LOAN_GUARD, NO_CURRENT_LOAN, OUTSTANDING_LOAN, REFERENCED, PRODUCT_EDIT_FROZEN, PROTECTED_UNKNOWN, DELETED_TARGET,
-            INVALID_DEPENDENCY, CONCURRENT_OPERATION, CONSTRAINT_CONFLICT and SERVICE_UNAVAILABLE.
+            INVALID_DEPENDENCY, MERGE_REQUIRES_GLOBAL_TARGET, CONCURRENT_OPERATION, CONSTRAINT_CONFLICT and SERVICE_UNAVAILABLE.
     TechnicalStatus:
       type: object
       required:
@@ -4174,7 +4322,7 @@ components:
     BusinessMetadata:
       type: object
       additionalProperties: false
-      description: Server-owned creation/update attribution; reserved actor 00000000-0000-0000-0000-000000000003 is KELIOS system/seed, never a User or authority. No historical human-name reconstruction.
+      description: Server-owned creation/update attribution; reserved actor 00000000-0000-0000-0000-000000000003 is KELIOS system/seed, never a User or authority. Category, Manufacturer, Location and Owner reads project the current User display name when resolvable, otherwise null; the frontend uses an explicit localized unresolved-actor label. This is not a historical actor-name snapshot or a User profile response.
       required: [createdBy, createdAt, updatedBy, updatedAt]
       properties:
         createdBy:

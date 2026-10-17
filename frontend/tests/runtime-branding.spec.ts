@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 test('mounted logo and palette render, and API proxy connects', async ({ page }) => {
+  test.skip(process.env.KELIOS_TEST_TLS !== 'true', 'Requires deployed HTTPS and API proxy');
   const green = process.env.KELIOS_EXPECTED_BRAND === 'green';
   await page.goto('/');
   await expect(page.getByLabel('Email',{exact:true})).toBeVisible();

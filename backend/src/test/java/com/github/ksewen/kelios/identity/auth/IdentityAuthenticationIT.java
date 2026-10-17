@@ -228,7 +228,7 @@ class IdentityAuthenticationIT {
     @Test void tenantAdminApprovalLimitsAndReadOnlyRoles(){
         var tenantAdmin=fixture(Scope.TENANT,tenant,Role.ADMIN,Status.ACTIVE);var pending=fixture(Scope.TENANT,tenant,Role.USER,Status.PENDING);var otherPending=fixture(Scope.TENANT,other,Role.USER,Status.PENDING);var adminPending=fixture(Scope.TENANT,tenant,Role.ADMIN,Status.PENDING);
         assertEquals(Status.ACTIVE,auth.approve(tenantAdmin,pending.id()).status());assertThrows(AuthFailure.class,()->auth.approve(tenantAdmin,otherPending.id()));assertThrows(AuthFailure.class,()->auth.approve(tenantAdmin,adminPending.id()));assertThrows(AuthFailure.class,()->auth.role(tenantAdmin,pending.id(),Role.ADMIN));
-        assertThrows(AuthFailure.class,()->auth.disable(tenantAdmin,adminPending.id()));assertTrue(auth.list(tenantAdmin,new com.github.ksewen.kelios.identity.UserQuery(0,100,null,null,null,null,null,null,null)).items().stream().allMatch(u->u.tenant().id().equals(tenant) && u.role()==Role.USER));
+        assertThrows(AuthFailure.class,()->auth.disable(tenantAdmin,adminPending.id()));var visible=auth.list(tenantAdmin,new com.github.ksewen.kelios.identity.UserQuery(0,100,null,null,null,null,null,null,null)).items();assertTrue(visible.stream().allMatch(u->u.tenant().id().equals(tenant)));assertTrue(visible.stream().anyMatch(u->u.id().equals(adminPending.id()) && u.role()==Role.ADMIN));
         for(var reader:List.of(fixture(Scope.GLOBAL,null,Role.USER,Status.ACTIVE),fixture(Scope.TENANT,tenant,Role.USER,Status.ACTIVE)))assertThrows(AuthFailure.class,()->auth.approve(reader,otherPending.id()));
     }
     @Test void currentDatabaseRefreshRoleAndStatusAndAbsoluteExpiry(){

@@ -66,6 +66,10 @@ public class CatalogService {
         if(!entry.global() && !Objects.equals(entry.tenantId(),tenantId))throw new BusinessFailure(newAssignment && tenantId!=null?"NOT_FOUND":"INVALID_DEPENDENCY","Catalog dependency is not visible in the target scope");
         if(newAssignment && entry.deleted())throw new BusinessFailure("DELETED_TARGET","Deleted Catalog entry");
     }
+    public void requireMergeTargetVisible(MergePair pair, UUID tenantId) {
+        if(!pair.target().global() && !Objects.equals(pair.target().tenantId(),tenantId))
+            throw new BusinessFailure("MERGE_REQUIRES_GLOBAL_TARGET","Promote the intended survivor to Global first");
+    }
     private static String required(String value) {
         if(value==null || value.isBlank())throw new BusinessFailure("INVALID_INPUT","Name required");return value.strip();
     }
@@ -161,7 +165,7 @@ public class CatalogService {
             Entry product=load(Kind.PRODUCT,id,"");
             UUID existing=pair.kind()==Kind.CATEGORY?product.categoryId():product.manufacturerId();
             if(!existing.equals(pair.source().id()))continue;
-            requireVisible(pair.target(),product.tenantId(),false);
+            requireMergeTargetVisible(pair,product.tenantId());
             // Existing retained references may themselves be deleted; visibility must still hold.
             requireVisible(share(Kind.CATEGORY,pair.kind()==Kind.CATEGORY?pair.target().id():product.categoryId()),product.tenantId(),false);
             requireVisible(share(Kind.MANUFACTURER,pair.kind()==Kind.MANUFACTURER?pair.target().id():product.manufacturerId()),product.tenantId(),false);

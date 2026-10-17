@@ -41,7 +41,7 @@ export function catalogQuery(kind:string,page:number,size:number,criteria:Catalo
   const catalog=['categories','manufacturers','products'].includes(kind);
   if(catalog&&criteria.visibility)q.set('visibility',criteria.visibility);
   if(kind==='products')for(const key of ['categoryId','manufacturerId','manufacturerNumber'] as const)if(criteria[key])q.set(key,criteria[key]);
-  if(sort&&(['name',...(catalog?['visibility']:[]),...(kind==='products'?['manufacturerNumber']:[])]).includes(sort)){q.set('sort',sort);q.set('direction',direction);}
+  if(sort&&(['name',...(catalog?['visibility']:[]),...(kind==='categories'?['tenantName']:[]),...(kind==='products'?['manufacturerNumber']:[])]).includes(sort)){q.set('sort',sort);q.set('direction',direction);}
   return q.toString();
 }
 export function userQuery(page:number,size:number,criteria:UserCriteria,sort:string,direction:string,globalAdmin:boolean):string {
