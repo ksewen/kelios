@@ -67,3 +67,44 @@ test('Asset status entry points retain transition payload and deregistration con
  await dialog.getByRole('button',{name:en.ui.changeLifecycle,exact:true}).click();await page.getByRole('alertdialog').getByRole('button',{name:en.redesign.confirm,exact:true}).click();
  await expect(page.getByRole('button',{name:`${en.ui.changeLifecycle}: ${en.enums.DEREGISTERED}`})).toHaveCount(0);expect(f.writes[1]).toEqual({path:`/api/v1/assets/${id}/lifecycle-transitions`,method:'POST',body:{expectedVersion:4,target:'DEREGISTERED',reason:'LOST',note:null}});
 });
+
+for(const language of ['de','en'] as const)for(const width of [390,1440])test(`${language}/${width} Asset action cleanup keeps guarded paths and Catalog confirmation`,async({page})=>{
+ const text=language==='de'?de:en,f=await setup(page,{language});await page.setViewportSize({width,height:900});
+ const nextCategory='88888888-8888-8888-8888-888888888888',nextManufacturer='77777777-7777-7777-7777-777777777777',nextProduct='99999999-9999-9999-9999-999999999999';
+ await page.route('**/api/v1/tenants/**/catalog/**',route=>{const path=new URL(route.request().url()).pathname;
+  const [id,name]=path.endsWith('/categories')?[nextCategory,'Next Category']:path.endsWith('/manufacturers')?[nextManufacturer,'Next Manufacturer']:[nextProduct,'Next Product'];
+  return route.fulfill({json:{items:[{id,name,tenantId:tenant,tenant:{id:tenant,name:'Fixture Tenant'}}],page:0,size:20,totalElements:1}});
+ });
+ await page.goto(`/inventory/assets/${id}`);
+ const actions=page.getByRole('button',{name:text.ui.editCategory,exact:true}).locator('..');
+ const labels=[text.ui.editCategory,text.ui.reassignCatalog,text.ui.changeLifecycle,text.ui.changeCondition,text.ui.exitDetail];
+ await expect(actions.getByRole('button')).toHaveText(labels);
+ for(const key of ['changeLoanability','changeLocation','changeOwner'] as const)await expect(page.getByRole('button',{name:text.ui[key],exact:true})).toHaveCount(0);
+ await expect(page.getByRole('button',{name:`${text.ui.changeLoanability}: ${text.ui.notLoanable}`,exact:true})).toBeVisible();
+ await expect(page.getByRole('button',{name:`${text.ui.changeLocation}: Fixture Location`,exact:true})).toBeVisible();
+ await expect(page.getByRole('button',{name:`${text.ui.changeOwner}: —`,exact:true})).toBeVisible();
+ await page.getByRole('tab',{name:text.redesign.history}).click();await expect(actions.getByRole('button')).toHaveText(labels);await page.getByRole('tab',{name:text.redesign.overview}).click();
+ const catalog=page.getByRole('button',{name:text.ui.reassignCatalog,exact:true});await catalog.focus();await page.keyboard.press('Enter');
+ let dialog=page.getByRole('dialog',{name:text.ui.reassignCatalog});await expect(dialog.getByRole('button',{name:text.redesign.confirm,exact:true})).toBeVisible();
+ await expect(dialog.getByLabel(text.ui.catalogSelection)).toHaveValue('Direct');
+ await dialog.getByRole('combobox',{name:text.ui.category}).click();await dialog.getByRole('option',{name:/Next Category/}).click();
+ await dialog.getByRole('combobox',{name:text.ui.manufacturer}).click();await dialog.getByRole('option',{name:/Next Manufacturer/}).click();
+ await dialog.getByRole('button',{name:text.redesign.confirm,exact:true}).click();await expect(dialog).toHaveCount(0);
+ expect(f.writes[0]).toEqual({path:`/api/v1/assets/${id}/catalog`,method:'PUT',body:{expectedVersion:3,categoryId:nextCategory,manufacturerId:nextManufacturer}});
+ await catalog.focus();await page.keyboard.press('Enter');dialog=page.getByRole('dialog',{name:text.ui.reassignCatalog});
+ await dialog.getByLabel(text.ui.catalogSelection).selectOption('Product');await expect(dialog).not.toContainText(text.ui.productDependencyHelp);
+ await dialog.getByRole('combobox',{name:text.ui.product,exact:true}).click();await dialog.getByRole('option',{name:/Next Product/}).click();
+ await dialog.getByRole('button',{name:text.redesign.confirm,exact:true}).focus();await page.keyboard.press('Enter');await expect(dialog).toHaveCount(0);await expect(catalog).toBeFocused();
+ expect(f.writes[1]).toEqual({path:`/api/v1/assets/${id}/catalog`,method:'PUT',body:{expectedVersion:4,productId:nextProduct}});
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});
+
+for(const loanedTo of [null,'Borrower'])for(const role of ['ADMIN','USER'] as const)test(`${role} Asset action cleanup preserves ${loanedTo?'return':'loan'} authorization`,async({page})=>{
+ const f=await setup(page,{role,state:{lifecycle:'DEPLOYED',condition:'WORKING',loanable:true,loanedTo}});await page.goto(`/inventory/assets/${id}`);
+ const bottom=page.getByRole('button',{name:en.ui.exitDetail,exact:true}).locator('..');
+ const expected=role==='ADMIN'?[en.ui.editCategory,en.ui.reassignCatalog,en.ui.changeLifecycle,en.ui.changeCondition,loanedTo?en.ui.returnAsset:en.ui.loanAsset,en.ui.exitDetail]:[en.ui.exitDetail];
+ await expect(bottom.getByRole('button')).toHaveText(expected);
+ for(const key of ['changeLoanability','changeLocation','changeOwner'] as const)await expect(page.getByRole('button',{name:en.ui[key],exact:true})).toHaveCount(0);
+ await expect(page.getByRole('button',{name:`${en.ui.changeLoanability}: ${en.ui.loanable}`,exact:true})).toHaveCount(role==='ADMIN'&&!loanedTo?1:0);
+ expect(f.writes).toHaveLength(0);
+});
