@@ -1,6 +1,6 @@
 # Assets UI/UX consolidation
 
-Status: **APPROVED; implementation prerequisite unresolved. No gate is IN PROGRESS.** HUMAN approved the proposed Plan direction on 2026-10-19 by requesting implementation. Gate execution remains subject to the exact-gate authorization and prerequisite below. [Implementation checkpoint](../../IMPLEMENTATION_STATUS.md); [remaining work](remaining-work.md).
+Status: **IN PROGRESS; Gate A HUMAN ACCEPTED / CLOSED on 2026-10-19.** HUMAN accepted the verified Asset list/detail presentation and separately authorized its ten-file commit. Gates B–E are not authorized by that commit permission. [Implementation checkpoint](../../IMPLEMENTATION_STATUS.md); [remaining work](remaining-work.md).
 
 ## Baseline, ownership and prerequisite
 
@@ -52,4 +52,8 @@ Run full `cd backend && mvn -B verify`; `cd frontend && npm test`, `npm run buil
 
 ## Current checkpoint
 
-2026-10-19: Plan approved in principle; no exact implementation gate has started. Prior-work provenance/acceptance/commit prerequisite remains unresolved. No Asset implementation or verification is claimed by this documentation checkpoint.
+2026-10-19 Gate A: The predecessor prerequisite was resolved in clean HEAD `5886fb2c4a39d85cf8b53e51e64435a399e9b75c`, and HUMAN authorized Gate A. The Asset collection now renders the same nine ordered columns in Global and Tenant contexts. Detail removes Reload and the redundant Overview heading, presents the requested four field rows with separate loan facts, and places Edit/Exit with the bottom actions below both tabs. Existing server queries, commands, authorization and API contracts were unchanged.
+
+Verification on that HEAD plus the Gate A worktree: `cd frontend && npm test -- --run` passed **222/222** unit tests; `cd frontend && npm run build` passed TypeScript/Vite (**2,143 modules**). The first focused Chromium attempt inside the sandbox failed to launch Chromium (`SIGTRAP`) and was interrupted after 19 attempted launches; it supplied no application assertion evidence. Against isolated Vite at `http://127.0.0.1:12780/`, the permitted `PLAYWRIGHT_BROWSERS_PATH=../.cache/ms-playwright KELIOS_BASE_URL=http://127.0.0.1:12780 npx playwright test tests/assets-toolbar.spec.ts tests/f4-resource-detail.spec.ts tests/dialog-toolbar.spec.ts tests/form-lifecycle.spec.ts --reporter=dot --retries=0` initially passed **147/147** intercepted Chromium tests. Final diff review found that the bottom actions were hidden on the History tab; the action area was moved below the tabs. The four new detail cases passed **4/4**, and the full focused Chromium set passed again **147/147**; unit tests and build also passed again with the same counts. New assertions cover complete header order/cell count in Global and Tenant contexts, 390px/1440px and German/English, server sort/paging, keyboard Tag navigation, detail field order, long/missing/loan values, bottom action position, visibility on History and keyboard use. `git diff --check` passed before this documentation update. No backend/PostgreSQL, live 8443, provider or operator-data verification was required or performed for this frontend-only gate.
+
+**Gate A HUMAN ACCEPTED / CLOSED on 2026-10-19:** HUMAN accepted the list/detail scope and the recorded frontend-only, intercepted-browser limitations. HUMAN separately authorized a Gate A-only commit. Gate B remains the next reviewable gate; no Gate B implementation, push, deployment or operator-data change is authorized by this acceptance.

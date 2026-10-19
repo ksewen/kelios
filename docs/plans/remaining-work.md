@@ -1,6 +1,6 @@
 # Remaining work index
 
-The [Assets UI/UX consolidation Plan](assets-ui-ux-consolidation.md) is **APPROVED in direction; no implementation gate in progress** as of 2026-10-19. HUMAN accepted the outstanding predecessor reviews after the 89-path provenance audit and separately authorized one combined predecessor/Assets planning commit. Gate A still requires the resulting committed baseline and its own exact-gate authorization. The approved frontend-only direction keeps separate Asset backend commands and excludes backend no-op/audit changes. No Asset implementation is claimed.
+The [Assets UI/UX consolidation Plan](assets-ui-ux-consolidation.md) remains **IN PROGRESS; Gate A HUMAN ACCEPTED / CLOSED** on 2026-10-19. Its frontend unit/build and focused intercepted Chromium evidence is recorded in the Plan. HUMAN separately authorized only the Gate A commit. Gates B–E remain for separately authorized implementation and review. The approved frontend-only direction keeps separate Asset backend commands and excludes backend no-op/audit changes.
 
 The [Administration UI feedback and User table consistency Plan](administration-ui-feedback-consistency.md) is **HUMAN ACCEPTED / CLOSED** on 2026-10-19: Gate 1 UX and Gate 2 notification consistency were separately accepted with their recorded intercepted/live-evidence limits. Prior Tenant/User Gate 2 evidence and its pending final Plan acceptance remain intact.
 

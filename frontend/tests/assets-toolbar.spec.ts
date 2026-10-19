@@ -3,11 +3,13 @@ import en from '../src/locales/en.json' with {type:'json'};
 import de from '../src/locales/de.json' with {type:'json'};
 import {assetItemFixture,tenantFixture} from './backend-fixtures';
 const tenant='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+const assetHeaders=(text:typeof en)=>[text.ui.tag,text.fields.localIdentifier,text.fields.tenantName,text.fields.productName,text.fields.locationName,text.fields.lifecycle,text.fields.condition,text.fields.loanedTo,text.fields.createdAt];
 for(const language of ['de','en'] as const)for(const width of [390,1440])test(`${language}/${width} Assets toolbar and stable sortable headers`,async({page})=>{
  const text=language==='de'?de:en,requests:URL[]=[];
  await page.setViewportSize({width,height:900});await page.addInitScript(l=>localStorage.setItem('kelios.ui.language',l),language);
  await page.route('**/api/v1/**',r=>{const u=new URL(r.request().url());if(u.pathname.endsWith('/csrf'))return r.fulfill({json:{token:'fixture'}});if(u.pathname.endsWith('/session/refresh'))return r.fulfill({json:{accessToken:'fixture',expiresIn:900,user:{id:tenant,scope:'GLOBAL',role:'ADMIN',status:'ACTIVE',tenantId:null,displayName:'Fixture'}}});if(u.pathname==='/api/v1/tenants')return r.fulfill({json:[tenantFixture(tenant,'Workspace')]});if(u.pathname===`/api/v1/tenants/${tenant}`)return r.fulfill({json:tenantFixture(tenant,'Workspace')});requests.push(u);return r.fulfill({json:{items:[assetItemFixture({assetTag:'KEL-2026-000001',localIdentifier:'Local-1',product:{id:tenant,name:'Long readable Product label for ordinary inventory'},location:{id:tenant,name:'Long readable Location'}})],page:Number(u.searchParams.get('page')||0),size:20,totalElements:41}});});
  await page.goto(`/tenants/${tenant}/assets`);await expect(page.locator('tbody tr')).toHaveCount(1);
+ await expect(page.locator('.assets-list thead th')).toHaveText(assetHeaders(text));await expect(page.locator('.assets-list tbody tr').first().locator('td')).toHaveCount(9);await expect(page.locator('.assets-list tbody tr').first().locator('td').nth(2)).toHaveText('Fixture Tenant');
  const toolbar=page.getByRole('toolbar',{name:text.ui.assets}),input=toolbar.getByRole('textbox'),node=await input.elementHandle(),row=await page.locator('tbody tr').elementHandle();
  await expect(input).toHaveAttribute('placeholder',text.ui.assetSearchPlaceholder);await expect(page.locator('main').getByText(/Asset Tag.*suchen|Search Asset Tag/i)).toHaveCount(0);
  expect(await toolbar.evaluate(el=>Array.from(el.children).map(n=>n.tagName))).toEqual(['BUTTON','FORM','BUTTON','BUTTON']);
@@ -20,6 +22,19 @@ for(const language of ['de','en'] as const)for(const width of [390,1440])test(`$
  const frame=page.locator('.table-frame');await frame.evaluate(n=>n.scrollLeft=100);const scroll=await frame.evaluate(n=>n.scrollLeft);await input.focus();await input.fill('unapplied');expect(await frame.evaluate(n=>n.scrollLeft)).toBe(scroll);expect(await node!.evaluate(n=>n===document.activeElement)).toBe(true);expect(await row!.evaluate(n=>n.isConnected)).toBe(true);
  await toolbar.getByRole('button',{name:text.actions.moreFilters}).click();const filters=page.getByRole('dialog');await expect(filters).toBeVisible();await expect(filters.locator('input').first()).toHaveAttribute('aria-label',text.fields.localIdentifier);await expect(filters.getByLabel(text.ui.tenantContext)).toHaveCount(0);await page.screenshot({path:`../.cache/verification/assets-iteration2/${language}-${width}-filters.png`,fullPage:true});await filters.getByRole('button',{name:text.redesign.close,exact:true}).click();
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await input.fill('');await frame.evaluate(n=>n.scrollLeft=0);await page.screenshot({path:`../.cache/verification/assets-iteration1/${language}-${width}.png`,fullPage:true});
+});
+
+for(const language of ['de','en'] as const)for(const width of [390,1440])test(`${language}/${width} GLOBAL Assets retain nine ordered columns and server paging`,async({page})=>{
+ const text=language==='de'?de:en,requests:URL[]=[];
+ await page.setViewportSize({width,height:900});await page.addInitScript(l=>localStorage.setItem('kelios.ui.language',l),language);
+ await page.route('**/api/v1/**',route=>{const url=new URL(route.request().url());if(url.pathname.endsWith('/csrf'))return route.fulfill({json:{token:'fixture'}});if(url.pathname.endsWith('/session/refresh'))return route.fulfill({json:{accessToken:'fixture',expiresIn:900,user:{id:tenant,scope:'GLOBAL',role:'ADMIN',status:'ACTIVE',tenantId:null,displayName:'Fixture'}}});if(url.pathname==='/api/v1/tenants')return route.fulfill({json:[tenantFixture(tenant,'Workspace')]});requests.push(url);return route.fulfill({json:{items:[assetItemFixture({assetTag:'KEL-2026-000001',localIdentifier:'Local-1'})],page:Number(url.searchParams.get('page')||0),size:20,totalElements:41}});});
+ await page.goto('/assets');await expect(page.locator('.assets-list tbody tr')).toHaveCount(1);
+ await expect(page.locator('.assets-list thead th')).toHaveText(assetHeaders(text));await expect(page.locator('.assets-list tbody tr').first().locator('td')).toHaveCount(9);await expect(page.locator('.assets-list tbody tr').first().locator('td').nth(2)).toHaveText('Fixture Tenant');
+ await expect.poll(()=>requests.find(url=>url.pathname==='/api/v1/assets')?.searchParams.get('sort')).toBe('createdAt');
+ await page.getByRole('columnheader',{name:text.ui.tag,exact:true}).getByRole('button').click();await expect.poll(()=>requests.at(-1)?.searchParams.get('sort')).toBe('tag');
+ await page.getByRole('button',{name:text.ui.nextPage,exact:true}).click();await expect.poll(()=>requests.at(-1)?.searchParams.get('page')).toBe('1');expect(requests.at(-1)?.pathname).toBe('/api/v1/assets');
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ const tag=page.getByRole('link',{name:'KEL-2026-000001',exact:true});await tag.focus();await page.keyboard.press('Enter');await expect(page).toHaveURL(/\/inventory\/assets\//);
 });
 
 async function createFixture(page:import('@playwright/test').Page,scope:'GLOBAL'|'TENANT',role:'ADMIN'|'USER',status='ACTIVE'){
