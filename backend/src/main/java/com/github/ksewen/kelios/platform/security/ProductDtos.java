@@ -28,6 +28,18 @@ final class ProductDtos {
         @com.fasterxml.jackson.annotation.JsonAnySetter public void reject(String key,Object value){throw BusinessFailure.invalid("Unknown command field");}
         ProductModel.Command model(){return new ProductModel.Command(name,categoryId,manufacturerId,manufacturerNumber);}
     }
+    record EditCommand(ProductModel.Command model,boolean publishGlobally) {
+        @com.fasterxml.jackson.annotation.JsonCreator
+        public static EditCommand bind(@com.fasterxml.jackson.annotation.JsonProperty("name") Object name,
+                @com.fasterxml.jackson.annotation.JsonProperty("categoryId") Object category,
+                @com.fasterxml.jackson.annotation.JsonProperty("manufacturerId") Object manufacturer,
+                @com.fasterxml.jackson.annotation.JsonProperty("manufacturerNumber") Object number,
+                @com.fasterxml.jackson.annotation.JsonProperty("publishGlobally") Object publish) {
+            if(publish!=null && !(publish instanceof Boolean))throw BusinessFailure.invalid("Boolean publication intent required");
+            return new EditCommand(Command.bind(name,category,manufacturer,number).model(),Boolean.TRUE.equals(publish));
+        }
+        @com.fasterxml.jackson.annotation.JsonAnySetter public void reject(String key,Object value){throw BusinessFailure.invalid("Unknown command field");}
+    }
     static ProductQuery query(Map<String,String> input){
         ListInput.keys(input,"visibility","categoryId","manufacturerId","manufacturerNumber","sort","direction");
         int page=ListInput.page(Map.of("page",input.getOrDefault("page","0"))),size=ListInput.size(Map.of("size",input.getOrDefault("size","20")));
@@ -43,7 +55,7 @@ final class ProductDtos {
     record Detail(UUID id,String name,String manufacturerNumber,String visibility,UUID tenantId,Reference tenant,UUID categoryId,Reference category,UUID manufacturerId,Reference manufacturer,boolean deleted,Instant deletedAt,UUID deletedBy,Metadata metadata) {}
     private static Reference ref(ProductModel.Reference r){return r==null?null:new Reference(r.id(),r.name());}
     private static UUID tenantId(ProductModel p){return p.tenant()==null?null:p.tenant().id();}
-    private static Metadata metadata(ProductModel p){var m=p.metadata();return new Metadata(m.createdBy(),m.createdAt(),m.updatedBy(),m.updatedAt(),SystemActor.displayName(m.createdBy()),SystemActor.displayName(m.updatedBy()));}
+    private static Metadata metadata(ProductModel p){var m=p.metadata();return new Metadata(m.createdBy(),m.createdAt(),m.updatedBy(),m.updatedAt(),m.createdByDisplayName()==null?SystemActor.displayName(m.createdBy()):m.createdByDisplayName(),SystemActor.displayName(m.updatedBy()));}
     static Page<Item> page(Page<ProductModel> page){return new Page<>(page.items().stream().map(p->new Item(p.id(),p.name(),p.manufacturerNumber(),p.visibility().name(),tenantId(p),ref(p.tenant()),p.category().id(),ref(p.category()),p.manufacturer().id(),ref(p.manufacturer()),metadata(p))).toList(),page.page(),page.size(),page.totalElements());}
     static Detail detail(ProductModel p){return new Detail(p.id(),p.name(),p.manufacturerNumber(),p.visibility().name(),tenantId(p),ref(p.tenant()),p.category().id(),ref(p.category()),p.manufacturer().id(),ref(p.manufacturer()),p.deletedAt()!=null,p.deletedAt(),p.deletedBy(),metadata(p));}
 }

@@ -16,9 +16,9 @@ public class PlaceReads {
     private final JdbcTemplate jdbc;
     public PlaceReads(JdbcTemplate jdbc){this.jdbc=jdbc;}
     private static final String FIELDS="p.id,p.name,p.note,p.tenant_id,t.name AS tenant_name,"
-        +"p.created_by,p.created_at,p.updated_by,p.updated_at,p.deleted_at,p.deleted_by,"
-        +"cb.display_name AS created_by_display_name,ub.display_name AS updated_by_display_name";
-    private static final String ACTOR_JOINS=" LEFT JOIN app_user cb ON cb.id=p.created_by LEFT JOIN app_user ub ON ub.id=p.updated_by";
+        +"p.created_by,p.created_by_display_name,p.created_at,p.updated_by,p.updated_at,p.deleted_at,p.deleted_by,"
+        +"ub.display_name AS updated_by_display_name";
+    private static final String ACTOR_JOINS=" LEFT JOIN app_user ub ON ub.id=p.updated_by";
     private static String table(PlaceService.Kind kind){return switch(kind){case LOCATION->"location";case OWNER->"owner";};}
     private record Row(UUID id,String name,String note,UUID tenantId,String tenantName,UUID createdBy,
             Instant createdAt,UUID updatedBy,Instant updatedAt,Instant deletedAt,UUID deletedBy,

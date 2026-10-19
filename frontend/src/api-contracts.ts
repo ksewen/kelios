@@ -22,8 +22,8 @@ export type ProductDetail = ProductItem & { deleted: boolean; deletedAt: Instant
 export type PlaceItem = { id: UUID; tenantId: UUID; tenant: Reference; name: string; metadata: Metadata };
 export type PlaceDetail = PlaceItem & { note: string | null; deleted: boolean; deletedAt: Instant | null; deletedBy: UUID | null };
 export type UserState = Identity;
-export type UserItem = UserState & { tenant: Reference | null; metadata: Metadata };
-export type UserDetail = UserItem & { globalAccount: { email: string; emailVerifiedAt: Instant | null } | null };
+export type UserItem = UserState & { email: string | null; tenant: Reference | null; metadata: Metadata };
+export type UserDetail = Omit<UserItem, 'email'> & { globalAccount: { email: string; emailVerifiedAt: Instant | null } | null };
 export type TenantItem = { id: UUID; name: string; metadata: Metadata };
 export type TenantDetail = TenantItem;
 /** Tenant POST returns a JSON UUID string, unlike Catalog/Place POST {id}. */
@@ -32,6 +32,7 @@ export type OidcConfigurationDetail = {
   tenantId: UUID; issuer: string; clientId: string; secretConfigured: boolean; enabled: boolean;
   version: number; allowedGroupIds: UUID[]; callbackUri: string; tenant: Reference; metadata: Metadata;
 };
+export type OidcConfigurationSummary = { tenantId: UUID; tenant: Reference; issuer: string; clientId: string; enabled: boolean; version: number };
 export type RoutingOrganization = { routingId: UUID; name: string };
 export type RoutingOrganizations = Page<RoutingOrganization>;
 export type Lifecycle = 'REGISTERED' | 'IN_STOCK' | 'DEPLOYED' | 'DEREGISTERED';
@@ -59,7 +60,8 @@ export type MergePreview = { productCount: number; assetCount: number; affectedT
 
 // Request DTOs contain mutable input only. Defining Email DTOs does not migrate the F1a login client/UI.
 export type LocalLoginRequest = { email: string; password: string };
-export type GlobalUserCreate = { email: string; displayName: string; password: string };
+export type GlobalUserCreate = { email: string; displayName: string; password: string; role?: Role };
+export type UserAdministrationEdit = { email?: string; role?: Role };
 export type GlobalCredentialCommand = { email: string; password: string };
 export type GlobalEmailCommand = { email: string };
 export type PasswordChangeCommand = { currentPassword: string; newPassword: string };
@@ -67,6 +69,8 @@ export type UserRoleCommand = { role: Role };
 export type TenantCreate = { name: string };
 export type CatalogLabelCommand = { name: string };
 export type ProductCommand = { name: string; categoryId: UUID; manufacturerId: UUID; manufacturerNumber?: string | null };
+export type CatalogLabelEditCommand = CatalogLabelCommand & { publishGlobally?: boolean };
+export type ProductEditCommand = ProductCommand & { publishGlobally?: boolean };
 export type PlaceCommand = { name: string; note?: string | null };
 export type MergeCommand = { sourceId: UUID; targetId: UUID };
 export type OidcConfigureCommand = { issuer: string; clientId: string; clientSecret?: string | null; enabled: boolean; version?: number | null; allowedGroupIds: UUID[] };

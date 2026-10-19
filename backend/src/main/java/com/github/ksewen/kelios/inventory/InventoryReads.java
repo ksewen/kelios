@@ -67,7 +67,7 @@ public class InventoryReads {
         var state=new AssetService.View(r.getObject("id",UUID.class),r.getObject("tenant_id",UUID.class),r.getString("asset_tag"),
             r.getObject("category_id",UUID.class),r.getObject("manufacturer_id",UUID.class),r.getObject("product_id",UUID.class),r.getObject("location_id",UUID.class),r.getObject("owner_id",UUID.class),
             LifecycleState.valueOf(r.getString("lifecycle")),ConditionState.valueOf(r.getString("condition")),r.getBoolean("loanable"),r.getString("serial_number"),r.getString("external_inventory_number"),r.getString("note"),r.getString("local_identifier"),r.getLong("version"),instant(r,"deleted_at"),
-            r.getString("loaned_to"),instant(r,"loaned_at"),instant(r,"expected_return_at"),r.getString("loan_note"),instant(r,"created_at"),r.getObject("created_by",UUID.class),instant(r,"updated_at"),r.getObject("updated_by",UUID.class));
+            r.getString("loaned_to"),instant(r,"loaned_at"),instant(r,"expected_return_at"),r.getString("loan_note"),instant(r,"created_at"),r.getObject("created_by",UUID.class),instant(r,"updated_at"),r.getObject("updated_by",UUID.class),r.getString("created_by_display_name"));
         return new Row(state,reference(r,"tenant"),reference(r,"category"),reference(r,"manufacturer"),reference(r,"product"),reference(r,"location"),reference(r,"owner")).model();
     }
     private static final tools.jackson.databind.json.JsonMapper JSON=tools.jackson.databind.json.JsonMapper.builder().build();

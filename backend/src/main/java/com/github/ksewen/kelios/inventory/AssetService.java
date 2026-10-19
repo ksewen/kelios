@@ -31,7 +31,7 @@ public class AssetService {
     public record View(UUID id,UUID tenantId,String assetTag,UUID categoryId,UUID manufacturerId,UUID productId,
         UUID locationId,UUID ownerId,LifecycleState lifecycle,ConditionState condition,boolean loanable,
         String serialNumber,String externalInventoryNumber,String note,String localIdentifier,long version,Instant deletedAt,
-        String loanedTo,Instant loanedAt,Instant expectedReturnAt,String loanNote,Instant createdAt,UUID createdBy,Instant updatedAt,UUID updatedBy) {}
+        String loanedTo,Instant loanedAt,Instant expectedReturnAt,String loanNote,Instant createdAt,UUID createdBy,Instant updatedAt,UUID updatedBy,String createdByDisplayName) {}
     private record References(UUID categoryId,UUID manufacturerId,UUID productId) {}
     private final EntityManager em;
     private final TenantService tenants;
@@ -76,7 +76,7 @@ public class AssetService {
         a.categoryId=refs.categoryId();a.manufacturerId=refs.manufacturerId();a.productId=refs.productId();a.locationId=command.locationId();a.ownerId=command.ownerId();
         a.loanable=command.loanable();a.lifecycle=LifecycleState.REGISTERED;a.condition=ConditionState.UNKNOWN;
         a.serialNumber=optional(command.serialNumber());a.externalInventoryNumber=optional(command.externalInventoryNumber());a.note=optional(command.note());a.localIdentifier=localIdentifier(command.localIdentifier());
-        a.createdAt=now;a.updatedAt=now;a.createdBy=actor.id();a.updatedBy=actor.id();em.persist(a);em.flush();
+        a.createdAt=now;a.updatedAt=now;a.createdBy=actor.id();a.createdByDisplayName=actor.displayName();a.updatedBy=actor.id();em.persist(a);em.flush();
         history.append(a,"REGISTERED",actor,null,snapshot(a));return view(a);
     }
     private Asset load(UUID tenant,UUID id) {
@@ -89,7 +89,7 @@ public class AssetService {
         Asset asset=em.find(Asset.class,id);if(asset==null)throw new BusinessFailure("NOT_FOUND","Asset not found");return asset.tenantId;
     }
     @Transactional(readOnly=true) public View get(UUID tenant,UUID id) {return view(load(tenant,id));}
-    private View view(Asset a) {return new View(a.id,a.tenantId,a.assetTag,a.categoryId,a.manufacturerId,a.productId,a.locationId,a.ownerId,a.lifecycle,a.condition,a.loanable,a.serialNumber,a.externalInventoryNumber,a.note,a.localIdentifier,a.version,a.deletedAt,a.loanedTo,a.loanedAt,a.expectedReturnAt,a.loanNote,a.createdAt,a.createdBy,a.updatedAt,a.updatedBy);}
+    private View view(Asset a) {return new View(a.id,a.tenantId,a.assetTag,a.categoryId,a.manufacturerId,a.productId,a.locationId,a.ownerId,a.lifecycle,a.condition,a.loanable,a.serialNumber,a.externalInventoryNumber,a.note,a.localIdentifier,a.version,a.deletedAt,a.loanedTo,a.loanedAt,a.expectedReturnAt,a.loanNote,a.createdAt,a.createdBy,a.updatedAt,a.updatedBy,a.createdByDisplayName);}
     /** Snapshots load authoritative display data; also protect parents used by before/after history. */
     @Transactional(propagation=Propagation.MANDATORY)
     public Map<String,Object> snapshot(Asset a) {

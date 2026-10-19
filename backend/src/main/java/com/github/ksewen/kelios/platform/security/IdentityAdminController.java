@@ -16,13 +16,15 @@ public class IdentityAdminController {
     @PostMapping("/tenants") public UUID tenant(@RequestBody TenantDtos.Create command){return tenants.create(command.name());}
     @GetMapping("/users") public com.github.ksewen.kelios.platform.Page<UserDtos.Item> users(@RequestParam Map<String,String> q){return UserDtos.page(users.list(CurrentIdentity.require(),UserDtos.query(q)));}
     @GetMapping("/users/{id}") public UserDtos.Detail user(@PathVariable UUID id){return UserDtos.detail(users.detail(CurrentIdentity.require(),id));}
-    @PostMapping("/users/global") public UserDtos.State global(@RequestBody UserDtos.GlobalInput command){return UserDtos.state(users.createGlobal(CurrentIdentity.require(),command.email(),command.displayName(),command.password()));}
+    @PostMapping("/users/global") public UserDtos.State global(@RequestBody UserDtos.GlobalInput command){return UserDtos.state(users.createGlobal(CurrentIdentity.require(),command.email(),command.displayName(),command.password(),command.role()));}
+    @PutMapping("/users/{id}/administration") public UserDtos.State administration(@PathVariable UUID id,@RequestBody UserDtos.AdministrationInput command){return UserDtos.state(users.administration(CurrentIdentity.require(),id,command.email(),command.role()));}
     @PostMapping("/users/{id}/approve") public UserDtos.State approve(@PathVariable UUID id){return UserDtos.state(users.approve(CurrentIdentity.require(),id));}
     @PutMapping("/users/{id}/role") public UserDtos.State role(@PathVariable UUID id,@RequestBody UserDtos.RoleInput command){return UserDtos.state(users.role(CurrentIdentity.require(),id,command.role()));}
     @PostMapping("/users/{id}/disable") public UserDtos.State disable(@PathVariable UUID id){return UserDtos.state(users.disable(CurrentIdentity.require(),id));}
     @PutMapping("/users/{id}/local-credential") public void credential(@PathVariable UUID id,@RequestBody UserDtos.CredentialInput command){users.resetCredential(CurrentIdentity.require(),id,command.email(),command.password());}
     @PutMapping("/users/{id}/email") public void email(@PathVariable UUID id,@RequestBody UserDtos.EmailInput command){users.email(CurrentIdentity.require(),id,command.email());}
     @GetMapping("/tenants/{id}/oidc") public OidcConfigurationDtos.Detail provider(@PathVariable UUID id){return OidcConfigurationDtos.detail(providers.get(CurrentIdentity.require(),id));}
+    @GetMapping("/oidc-configurations") public com.github.ksewen.kelios.platform.Page<OidcConfigurationDtos.Summary> providers(@RequestParam Map<String,String> query){var paging=OidcConfigurationDtos.query(query);return OidcConfigurationDtos.page(providers.configurations(CurrentIdentity.require(),paging[0],paging[1]));}
     @DeleteMapping("/tenants/{id}/oidc") public void deleteProvider(@PathVariable UUID id,@RequestParam Map<String,String> query){providers.delete(CurrentIdentity.require(),id,OidcConfigurationDtos.deleteVersion(query));}
     @PutMapping("/tenants/{id}/oidc") public OidcConfigurationDtos.Detail provider(@PathVariable UUID id,@RequestBody OidcConfigurationDtos.Configure command){return OidcConfigurationDtos.detail(providers.put(CurrentIdentity.require(),id,command.issuer(),command.clientId(),command.clientSecret(),command.enabled(),command.version(),command.allowedGroupIds()));}
 }

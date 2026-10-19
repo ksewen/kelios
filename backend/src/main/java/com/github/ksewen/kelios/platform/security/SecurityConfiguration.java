@@ -27,7 +27,7 @@ public class SecurityConfiguration {
         if(status==401)response.setHeader("WWW-Authenticate","Bearer");if(status==429)response.setHeader("Retry-After","60");
         response.getWriter().write(JsonMapper.builder().build().writeValueAsString(Map.of("type","about:blank","title",status==401?"Unauthorized":status==403?"Forbidden":"Request failed","status",status,"detail",detail,"code",status==401?"AUTHENTICATION_REQUIRED":status==403?"FORBIDDEN":status==404?"NOT_FOUND":"INVALID_INPUT")));
     }
-    private static boolean identityPath(String path){return path.equals("/api/v1/auth/me") || path.equals("/api/v1/users") || path.startsWith("/api/v1/users/") || path.equals("/api/v1/tenants") || path.matches("/api/v1/tenants/[^/]+") || path.matches("/api/v1/tenants/[^/]+/oidc");}
+    private static boolean identityPath(String path){return path.equals("/api/v1/auth/me") || path.equals("/api/v1/oidc-configurations") || path.equals("/api/v1/users") || path.startsWith("/api/v1/users/") || path.equals("/api/v1/tenants") || path.matches("/api/v1/tenants/[^/]+") || path.matches("/api/v1/tenants/[^/]+/oidc");}
     private static boolean inventoryRequest(HttpServletRequest r){
         String p=r.getRequestURI(),m=r.getMethod(),id="[^/]+";
         if(m.equals("GET"))return p.matches("/api/v1/(assets|audit-log)(/"+id+"(/events)?)?") || p.matches("/api/v1/tenants/"+id+"/(assets|locations|owners|catalog/(categories|manufacturers|products))") || p.matches("/api/v1/(catalog/(categories|manufacturers|products)|locations|owners)(/"+id+")?");
@@ -46,7 +46,7 @@ public class SecurityConfiguration {
             .sessionManagement(s->s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(a->a.requestMatchers("/api/v1/status","/actuator/health","/actuator/health/**","/error").permitAll()
                 .requestMatchers("/api/v1/auth/me").authenticated().requestMatchers("/api/v1/auth/**").permitAll()
-                .requestMatchers(r->inventoryRequest(r)).authenticated().requestMatchers("/api/v1/users","/api/v1/users/**","/api/v1/tenants","/api/v1/tenants/*","/api/v1/tenants/*/oidc").authenticated().anyRequest().denyAll())
+                .requestMatchers(r->inventoryRequest(r)).authenticated().requestMatchers("/api/v1/oidc-configurations","/api/v1/users","/api/v1/users/**","/api/v1/tenants","/api/v1/tenants/*","/api/v1/tenants/*/oidc").authenticated().anyRequest().denyAll())
             .exceptionHandling(e->e.authenticationEntryPoint((r,s,x)->problem(s,protectedRequest(r)?401:404,"Authentication required"))
                 .accessDeniedHandler((r,s,x)->problem(s,protectedRequest(r)?403:404,"Access denied")))
             .addFilterBefore(new AuthFilter(tokens,browser,throttle,events),UsernamePasswordAuthenticationFilter.class).build();

@@ -22,12 +22,12 @@ async function fixture(page:Page,language:string,unknown=false){
 for(const language of ['en','de'] as const)for(const width of [1440,1024,768,390])test(`${language}/${width} supported Audit actions localize list and independent detail`,async({page})=>{
  await page.setViewportSize({width,height:900});const f=await fixture(page,language),r=language==='de'?de:en;await page.goto('/audit');
  for(const [i,action] of (['GLOBAL_EMAIL_CHANGED','OIDC_CONFIG_DELETED'] as const).entries()){
- const row=page.locator('tbody tr').filter({hasText:r.enums[action]});await expect(row).toHaveCount(1);await row.getByRole('button',{name:r.ui.open,exact:true}).click();
+ const row=page.locator('tbody tr').filter({hasText:r.enums[action]});await expect(row).toHaveCount(1);await row.locator('td').first().getByRole('button').click();
  await expect(page.getByRole('dialog').getByRole('heading',{name:r.enums[action],exact:true})).toBeVisible();await expect(page.getByRole('dialog')).toContainText('Historical actor');expect(f.details.at(-1)).toBe(ids[i]);
  await page.keyboard.press('Escape');await expect(page.getByRole('dialog')).toHaveCount(0);await expect(row).toBeVisible();}
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);expect(f.mutations).toEqual([]);
 });
 for(const language of ['en','de'] as const)test(`${language} unknown Audit action retains generic fallback`,async({page})=>{
  const f=await fixture(page,language,true),r=language==='de'?de:en;await page.goto('/audit');await expect(page.locator('tbody')).toContainText(r.ui.unavailable);await expect(page.locator('tbody')).not.toContainText('FUTURE_UNKNOWN_ACTION');
- await page.locator('tbody').getByRole('button',{name:r.ui.open,exact:true}).click();await expect(page.getByRole('dialog').getByRole('heading',{name:r.ui.unavailable,exact:true})).toBeVisible();expect(f.details).toEqual([ids[0]]);expect(f.mutations).toEqual([]);
+ await page.locator('tbody tr').first().locator('td').first().getByRole('button').click();await expect(page.getByRole('dialog').getByRole('heading',{name:r.ui.unavailable,exact:true})).toBeVisible();expect(f.details).toEqual([ids[0]]);expect(f.mutations).toEqual([]);
 });

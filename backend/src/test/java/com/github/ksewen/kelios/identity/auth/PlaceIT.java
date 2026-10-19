@@ -99,14 +99,14 @@ class PlaceIT {
   var reader=principal(Scope.TENANT,Role.USER,Status.ACTIVE);
   var detail=request(reader,get(root(kind)+"/"+id),null);
   assertEquals(200,status(detail));
-  assertEquals("Current place actor",((Map<?,?>)data(detail).get("metadata")).get("createdByDisplayName"));
+  assertEquals("Old snapshot",((Map<?,?>)data(detail).get("metadata")).get("createdByDisplayName"));
   var page=list(kind,tenant,Map.of("q",name));assertEquals(1,total(page));
-  assertEquals("Current place actor",((Map<?,?>)items(page).getFirst().get("metadata")).get("createdByDisplayName"));
+  assertEquals("Old snapshot",((Map<?,?>)items(page).getFirst().get("metadata")).get("createdByDisplayName"));
   jdbc.update("DELETE FROM app_user WHERE id=?",creator);
   detail=request(reader,get(root(kind)+"/"+id),null);
-  assertEquals(200,status(detail));assertNull(((Map<?,?>)data(detail).get("metadata")).get("createdByDisplayName"));
+  assertEquals(200,status(detail));assertEquals("Old snapshot",((Map<?,?>)data(detail).get("metadata")).get("createdByDisplayName"));
   page=list(kind,tenant,Map.of("q",name));assertEquals(1,total(page));
-  assertNull(((Map<?,?>)items(page).getFirst().get("metadata")).get("createdByDisplayName"));
+  assertEquals("Old snapshot",((Map<?,?>)items(page).getFirst().get("metadata")).get("createdByDisplayName"));
  }
  @ParameterizedTest @EnumSource(PlaceService.Kind.class) void defaultsAndSizes(PlaceService.Kind kind)throws Exception{
   String p=prefix();UUID first=create(kind,tenant,p+"A",null);clock.now=clock.now.plusSeconds(1);UUID latest=create(kind,tenant,p+"Z",null);

@@ -75,23 +75,27 @@ class CatalogLabelIT {
   UUID id=catalog.createCategory(null,"Actor projection "+UUID.randomUUID(),new Actor(creator,"Creation snapshot"));
   var reader=principal(Scope.GLOBAL,Role.USER,Status.ACTIVE);
   var detail=request(reader,get(root(CatalogLabel.Kind.CATEGORY)+"/"+id),null);
-  assertEquals(200,status(detail));assertEquals("Current display name",metadata(detail).get("createdByDisplayName"));
+  assertEquals(200,status(detail));assertEquals("Creation snapshot",metadata(detail).get("createdByDisplayName"));
   assertEquals("Current display name",metadata(detail).get("updatedByDisplayName"));
   var rows=items(list(CatalogLabel.Kind.CATEGORY,null,Map.of("q",(String)data(detail).get("name"))));
-  assertEquals("Current display name",((Map<?,?>)rows.getFirst().get("metadata")).get("createdByDisplayName"));
+  assertEquals("Creation snapshot",((Map<?,?>)rows.getFirst().get("metadata")).get("createdByDisplayName"));
   UUID manufacturerId=catalog.createManufacturer(null,"Unchanged manufacturer actor "+UUID.randomUUID(),new Actor(creator,"Creation snapshot"));
-  assertEquals("Current display name",metadata(request(reader,get(root(CatalogLabel.Kind.MANUFACTURER)+"/"+manufacturerId),null)).get("createdByDisplayName"));
-  assertEquals("Current display name",((Map<?,?>)items(list(CatalogLabel.Kind.MANUFACTURER,null,Map.of("q","Unchanged manufacturer actor"))).getFirst().get("metadata")).get("createdByDisplayName"));
+  assertEquals("Creation snapshot",metadata(request(reader,get(root(CatalogLabel.Kind.MANUFACTURER)+"/"+manufacturerId),null)).get("createdByDisplayName"));
+  assertEquals("Creation snapshot",((Map<?,?>)items(list(CatalogLabel.Kind.MANUFACTURER,null,Map.of("q","Unchanged manufacturer actor"))).getFirst().get("metadata")).get("createdByDisplayName"));
+  jdbc.update("UPDATE app_user SET display_name='Renamed actor' WHERE id=?",creator);
+  assertEquals("Creation snapshot",metadata(request(reader,get(root(CatalogLabel.Kind.CATEGORY)+"/"+id),null)).get("createdByDisplayName"));
   jdbc.update("UPDATE app_user SET status='DISABLED' WHERE id=?",creator);
-  assertEquals("Current display name",metadata(request(reader,get(root(CatalogLabel.Kind.CATEGORY)+"/"+id),null)).get("createdByDisplayName"));
+  assertEquals("Creation snapshot",metadata(request(reader,get(root(CatalogLabel.Kind.CATEGORY)+"/"+id),null)).get("createdByDisplayName"));
   jdbc.update("DELETE FROM app_user WHERE id=?",creator);
-  assertNull(metadata(request(reader,get(root(CatalogLabel.Kind.CATEGORY)+"/"+id),null)).get("createdByDisplayName"));
-  assertNull(metadata(request(reader,get(root(CatalogLabel.Kind.MANUFACTURER)+"/"+manufacturerId),null)).get("createdByDisplayName"));
+  assertEquals("Creation snapshot",metadata(request(reader,get(root(CatalogLabel.Kind.CATEGORY)+"/"+id),null)).get("createdByDisplayName"));
+  assertEquals("Creation snapshot",metadata(request(reader,get(root(CatalogLabel.Kind.MANUFACTURER)+"/"+manufacturerId),null)).get("createdByDisplayName"));
   var afterRemoval=request(reader,get(root(CatalogLabel.Kind.CATEGORY)).param("q",(String)data(detail).get("name")),null);
   assertEquals(200,status(afterRemoval));assertEquals(1,total(afterRemoval));assertEquals(id.toString(),items(afterRemoval).getFirst().get("id"));
-  assertNull(((Map<?,?>)items(afterRemoval).getFirst().get("metadata")).get("createdByDisplayName"));
+  assertEquals("Creation snapshot",((Map<?,?>)items(afterRemoval).getFirst().get("metadata")).get("createdByDisplayName"));
   assertFalse(items(afterRemoval).getFirst().containsKey("globalAccount"));
   assertFalse(items(afterRemoval).getFirst().containsKey("email"));
+  jdbc.update("UPDATE category SET created_by_display_name=NULL WHERE id=?",id);
+  assertNull(metadata(request(reader,get(root(CatalogLabel.Kind.CATEGORY)+"/"+id),null)).get("createdByDisplayName"));
   assertEquals(SystemActor.DISPLAY_NAME,metadata(request(reader,get(root(CatalogLabel.Kind.CATEGORY)+"/00000000-0000-0000-0000-000000000001"),null)).get("createdByDisplayName"));
  }
  MvcResult list(CatalogLabel.Kind k,UUID t,Map<String,String> query)throws Exception{
@@ -272,6 +276,27 @@ class CatalogLabelIT {
   assertEquals(204,status(request(admin,post(root(k)+"/"+id+"/publish"),Map.of())));after=data(request(admin,get(root(k)+"/"+id),null));assertEquals("GLOBAL",after.get("visibility"));assertNull(after.get("tenant"));assertEquals(id.toString(),after.get("id"));assertEquals(tenant,attribution(k+"_PUBLISHED",id));
   assertEquals(204,status(request(admin,delete(root(k)+"/"+id),null)));assertEquals(true,data(request(admin,get(root(k)+"/"+id),null)).get("deleted"));assertEquals(409,status(request(admin,put(root(k)+"/"+id),Map.of("name","Deleted edit"))));
  }
+ @ParameterizedTest @EnumSource(CatalogLabel.Kind.class) void combinedSaveAndPublishOnlyRetainGuardsAndAudit(CatalogLabel.Kind k)throws Exception{
+  UUID combined=create(k,tenant,"Before combined");
+  assertEquals(204,status(request(admin,put(root(k)+"/"+combined),Map.of("name","After combined","publishGlobally",true))));
+  var result=data(request(admin,get(root(k)+"/"+combined),null));assertEquals("After combined",result.get("name"));assertEquals("GLOBAL",result.get("visibility"));
+  assertEquals(tenant,attribution(k+"_EDITED",combined));assertEquals(tenant,attribution(k+"_PUBLISHED",combined));
+  UUID referenced=create(k,tenant,"Referenced publish only");
+  if(k==CatalogLabel.Kind.CATEGORY)catalog.createProduct(tenant,referenced,manufacturer,"Dependent",null,actor);
+  else catalog.createProduct(tenant,category,referenced,"Dependent",null,actor);
+  assertEquals(204,status(request(admin,put(root(k)+"/"+referenced),Map.of("name","Referenced publish only","publishGlobally",true))));
+  assertEquals("GLOBAL",data(request(admin,get(root(k)+"/"+referenced),null)).get("visibility"));
+  assertEquals(0L,jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE action=? AND target_id=?",Long.class,k+"_EDITED",referenced));
+  assertEquals(tenant,attribution(k+"_PUBLISHED",referenced));
+  UUID blocked=create(k,tenant,"Blocked combined");
+  if(k==CatalogLabel.Kind.CATEGORY)catalog.createProduct(tenant,blocked,manufacturer,"Guarded",null,actor);
+  else catalog.createProduct(tenant,category,blocked,"Guarded",null,actor);
+  assertEquals(409,status(request(admin,put(root(k)+"/"+blocked),Map.of("name","Changed","publishGlobally",true))));
+  result=data(request(admin,get(root(k)+"/"+blocked),null));assertEquals("Blocked combined",result.get("name"));assertEquals("TENANT",result.get("visibility"));
+  assertEquals(0L,jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE action IN (?,?) AND target_id=?",Long.class,k+"_EDITED",k+"_PUBLISHED",blocked));
+  assertEquals(403,status(request(principal(Scope.TENANT,Role.ADMIN,Status.ACTIVE),put(root(k)+"/"+create(k,tenant,"Own")),Map.of("name","Own","publishGlobally",true))));
+  assertEquals(400,status(request(admin,put(root(k)+"/"+create(k,tenant,"Strict")),Map.of("name","Strict","publishGlobally","true"))));
+ }
  @ParameterizedTest @EnumSource(CatalogLabel.Kind.class) void strictCommandDtoRejectsOverpostingAndTypeCoercion(CatalogLabel.Kind k)throws Exception{
   for(String field:List.of("createdBy","createdAt","updatedBy","updatedAt","tenantId","visibility","deletedAt","deletedBy","actor","manufacturerNumber")){
    assertEquals(400,status(request(admin,post(root(k)),Map.of("name","Overposting",field,UUID.randomUUID().toString()))));
@@ -318,6 +343,86 @@ class CatalogLabelIT {
   var p=request(admin,post(root(k)+"/merge-preview"),body);assertEquals(200,status(p));assertEquals(1L,((Number)data(p).get("productCount")).longValue());assertEquals(1L,((Number)data(p).get("assetCount")).longValue());assertEquals(audits,jdbc.queryForObject("SELECT count(*) FROM audit_log",Long.class));
   assertEquals(204,status(request(admin,post(root(k)+"/merge"),body)));assertEquals(target,jdbc.queryForObject("SELECT "+column+" FROM product WHERE id=?",UUID.class,dependent));assertEquals(target,jdbc.queryForObject("SELECT "+column+" FROM asset WHERE id=?",UUID.class,a.id()));assertEquals(2,events(a.id()));assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE action=? AND target_id=?",Integer.class,k+"_MERGED",source));
   UUID s=create(k,null,"Obsolete source"),t=create(k,null,"Obsolete target");body=Map.of("sourceId",s.toString(),"targetId",t.toString());assertEquals(200,status(request(admin,post(root(k)+"/merge-preview"),body)));catalog.delete(CatalogService.Kind.valueOf(k.name()),t,actor);assertEquals(409,status(request(admin,post(root(k)+"/merge"),body)));assertNull(jdbc.queryForObject("SELECT deleted_at FROM "+k.name().toLowerCase()+" WHERE id=?",java.sql.Timestamp.class,s));
+ }
+ @Test void manufacturerCrossTenantMergeWithoutDependentsIsLegal()throws Exception{
+  var k=CatalogLabel.Kind.MANUFACTURER;UUID source=create(k,tenant,"Unused source"),target=create(k,other,"Private survivor");
+  var body=Map.of("sourceId",source,"targetId",target);long audits=jdbc.queryForObject("SELECT count(*) FROM audit_log",Long.class);
+  var preview=data(request(admin,post(root(k)+"/merge-preview"),body));
+  assertEquals(0L,((Number)preview.get("productCount")).longValue());assertEquals(0L,((Number)preview.get("assetCount")).longValue());assertEquals(List.of(),preview.get("blockers"));
+  assertEquals(audits,jdbc.queryForObject("SELECT count(*) FROM audit_log",Long.class));
+  assertEquals(204,status(request(admin,post(root(k)+"/merge"),body)));
+  assertNotNull(jdbc.queryForObject("SELECT deleted_at FROM manufacturer WHERE id=?",java.sql.Timestamp.class,source));
+  assertNull(jdbc.queryForObject("SELECT deleted_at FROM manufacturer WHERE id=?",java.sql.Timestamp.class,target));
+  assertEquals(tenant,attribution("MANUFACTURER_MERGED",source));
+  assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE action='MANUFACTURER_MERGED' AND target_id=?",Integer.class,source));
+  assertEquals(audits+1,jdbc.queryForObject("SELECT count(*) FROM audit_log",Long.class));
+ }
+ @Test void manufacturerCrossTenantMergeRedirectsEveryRetainedSurvivorTenantDependent()throws Exception{
+  var k=CatalogLabel.Kind.MANUFACTURER;UUID source=create(k,null,"Global source"),target=create(k,other,"Private survivor");
+  UUID liveProduct=catalog.createProduct(other,category,source,"Live dependent",null,actor);
+  UUID deletedProduct=catalog.createProduct(other,category,source,"Retained deleted dependent",null,actor);
+  catalog.delete(CatalogService.Kind.PRODUCT,deletedProduct,actor);
+  UUID otherLocation=places.create(PlaceService.Kind.LOCATION,other,"Other room",actor);
+  var liveAsset=assets.register(other,new AssetService.Registration(new AssetService.ProductSelection(liveProduct),otherLocation,null,true,null,null,null),actor);
+  var deletedAsset=assets.register(other,new AssetService.Registration(new AssetService.DirectSelection(category,source),otherLocation,null,true,null,null,null),actor);
+  assets.lifecycle(other,deletedAsset.id(),0,LifecycleState.DEREGISTERED,DeregistrationReason.ERROR,null,actor);
+  assets.delete(other,deletedAsset.id(),1,actor);
+  long liveEvents=events(liveAsset.id()),deletedEvents=events(deletedAsset.id()),audits=jdbc.queryForObject("SELECT count(*) FROM audit_log",Long.class);
+  var body=Map.of("sourceId",source,"targetId",target);var preview=data(request(admin,post(root(k)+"/merge-preview"),body));
+  assertEquals(2L,((Number)preview.get("productCount")).longValue());assertEquals(2L,((Number)preview.get("assetCount")).longValue());
+  var affected=(List<?>)preview.get("affectedTenants");assertEquals(1,affected.size());
+  assertEquals(other.toString(),((Map<?,?>)affected.getFirst()).get("tenantId"));
+  assertEquals(4L,((Number)((Map<?,?>)affected.getFirst()).get("referenceCount")).longValue());
+  assertEquals(List.of(),preview.get("blockers"));assertEquals(audits,jdbc.queryForObject("SELECT count(*) FROM audit_log",Long.class));
+  assertEquals(204,status(request(admin,post(root(k)+"/merge"),body)));
+  for(UUID id:List.of(liveProduct,deletedProduct))assertEquals(target,jdbc.queryForObject("SELECT manufacturer_id FROM product WHERE id=?",UUID.class,id));
+  for(UUID id:List.of(liveAsset.id(),deletedAsset.id()))assertEquals(target,jdbc.queryForObject("SELECT manufacturer_id FROM asset WHERE id=?",UUID.class,id));
+  assertEquals(liveEvents+1,events(liveAsset.id()));assertEquals(deletedEvents+1,events(deletedAsset.id()));
+  assertNotNull(jdbc.queryForObject("SELECT deleted_at FROM manufacturer WHERE id=?",java.sql.Timestamp.class,source));
+  assertNull(attribution("MANUFACTURER_MERGED",source));
+  assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE action='MANUFACTURER_MERGED' AND target_id=?",Integer.class,source));
+  assertEquals(audits+1,jdbc.queryForObject("SELECT count(*) FROM audit_log",Long.class));
+ }
+ @ParameterizedTest @ValueSource(strings={"PRODUCT","ASSET"}) void manufacturerCrossTenantMergeRejectsNewSourceTenantDependentAfterPreview(String dependent)throws Exception{
+  var k=CatalogLabel.Kind.MANUFACTURER;UUID source=create(k,tenant,"Private source"),target=create(k,other,"Foreign survivor");
+  var body=Map.of("sourceId",source,"targetId",target);var preview=data(request(admin,post(root(k)+"/merge-preview"),body));
+  assertEquals(List.of(),preview.get("blockers"));assertEquals(0L,((Number)preview.get("productCount")).longValue());assertEquals(0L,((Number)preview.get("assetCount")).longValue());
+  UUID productId=null,assetId=null;
+  if(dependent.equals("PRODUCT"))productId=catalog.createProduct(tenant,category,source,"New source dependent",null,actor);
+  else assetId=assets.register(tenant,new AssetService.Registration(new AssetService.DirectSelection(category,source),location,null,true,null,null,null),actor).id();
+  long audits=jdbc.queryForObject("SELECT count(*) FROM audit_log",Long.class),beforeEvents=assetId==null?0:events(assetId);
+  var updatedPreview=data(request(admin,post(root(k)+"/merge-preview"),body));
+  assertEquals(List.of("Target is not visible to every retained dependent"),updatedPreview.get("blockers"));
+  assertEquals(dependent.equals("PRODUCT")?1L:0L,((Number)updatedPreview.get("productCount")).longValue());
+  assertEquals(dependent.equals("ASSET")?1L:0L,((Number)updatedPreview.get("assetCount")).longValue());
+  assertEquals(audits,jdbc.queryForObject("SELECT count(*) FROM audit_log",Long.class));
+  var rejected=request(admin,post(root(k)+"/merge"),body);
+  assertEquals(409,status(rejected));assertEquals("MERGE_REQUIRES_GLOBAL_TARGET",data(rejected).get("code"));
+  if(productId!=null)assertEquals(source,jdbc.queryForObject("SELECT manufacturer_id FROM product WHERE id=?",UUID.class,productId));
+  if(assetId!=null){assertEquals(source,jdbc.queryForObject("SELECT manufacturer_id FROM asset WHERE id=?",UUID.class,assetId));assertEquals(beforeEvents,events(assetId));}
+  assertNull(jdbc.queryForObject("SELECT deleted_at FROM manufacturer WHERE id=?",java.sql.Timestamp.class,source));
+  assertEquals(audits,jdbc.queryForObject("SELECT count(*) FROM audit_log",Long.class));
+  assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE action='MANUFACTURER_MERGED' AND target_id=?",Integer.class,source));
+ }
+ @ParameterizedTest @CsvSource({"GLOBAL,PRODUCT","THIRD,PRODUCT","THIRD,ASSET"})
+ void manufacturerPrivateSurvivorRejectsEachForeignDependentIndependently(String ownerScope,String dependent)throws Exception{
+  var k=CatalogLabel.Kind.MANUFACTURER;UUID source=create(k,null,"Global source"),target=create(k,other,"Private survivor");
+  UUID dependentTenant=ownerScope.equals("GLOBAL")?null:tenant,productId=null,assetId=null;
+  if(dependent.equals("PRODUCT"))productId=catalog.createProduct(dependentTenant,category,source,"Foreign dependent",null,actor);
+  else assetId=assets.register(tenant,new AssetService.Registration(new AssetService.DirectSelection(category,source),location,null,true,null,null,null),actor).id();
+  var body=Map.of("sourceId",source,"targetId",target);long audits=jdbc.queryForObject("SELECT count(*) FROM audit_log",Long.class),beforeEvents=assetId==null?0:events(assetId);
+  var preview=data(request(admin,post(root(k)+"/merge-preview"),body));
+  assertEquals(List.of("Target is not visible to every retained dependent"),preview.get("blockers"));
+  assertEquals(dependent.equals("PRODUCT")?1L:0L,((Number)preview.get("productCount")).longValue());
+  assertEquals(dependent.equals("ASSET")?1L:0L,((Number)preview.get("assetCount")).longValue());
+  assertEquals(audits,jdbc.queryForObject("SELECT count(*) FROM audit_log",Long.class));
+  var rejected=request(admin,post(root(k)+"/merge"),body);
+  assertEquals(409,status(rejected));assertEquals("MERGE_REQUIRES_GLOBAL_TARGET",data(rejected).get("code"));
+  if(productId!=null)assertEquals(source,jdbc.queryForObject("SELECT manufacturer_id FROM product WHERE id=?",UUID.class,productId));
+  if(assetId!=null){assertEquals(source,jdbc.queryForObject("SELECT manufacturer_id FROM asset WHERE id=?",UUID.class,assetId));assertEquals(beforeEvents,events(assetId));}
+  assertNull(jdbc.queryForObject("SELECT deleted_at FROM manufacturer WHERE id=?",java.sql.Timestamp.class,source));
+  assertEquals(audits,jdbc.queryForObject("SELECT count(*) FROM audit_log",Long.class));
+  assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE action='MANUFACTURER_MERGED' AND target_id=?",Integer.class,source));
  }
  @ParameterizedTest @EnumSource(CatalogLabel.Kind.class) void mergeRequiresPromotionForRetainedForeignAndGlobalProducts(CatalogLabel.Kind k)throws Exception{
   String column=k==CatalogLabel.Kind.CATEGORY?"category_id":"manufacturer_id";

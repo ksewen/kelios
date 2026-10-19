@@ -31,8 +31,8 @@ public class CatalogController {
   return ResponseEntity.created(URI.create("/api/v1/catalog/categories/"+id)).body(new CatalogLabelDtos.Created(id));
  }
  @PutMapping("/catalog/categories/{id}")
- public ResponseEntity<Void> editCategory(@PathVariable UUID id,@RequestBody CatalogLabelDtos.NameCommand command) {
-  labels.edit(CatalogLabel.Kind.CATEGORY,id,command.model());return ResponseEntity.noContent().build();
+ public ResponseEntity<Void> editCategory(@PathVariable UUID id,@RequestBody CatalogLabelDtos.EditCommand command) {
+  labels.edit(CatalogLabel.Kind.CATEGORY,id,command.model(),command.publishGlobally());return ResponseEntity.noContent().build();
  }
  @DeleteMapping("/catalog/categories/{id}")
  public ResponseEntity<Void> deleteCategory(@PathVariable UUID id,@RequestBody(required=false) Map<String,Object> body) {
@@ -69,8 +69,8 @@ public class CatalogController {
   return ResponseEntity.created(URI.create("/api/v1/catalog/manufacturers/"+id)).body(new CatalogLabelDtos.Created(id));
  }
  @PutMapping("/catalog/manufacturers/{id}")
- public ResponseEntity<Void> editManufacturer(@PathVariable UUID id,@RequestBody CatalogLabelDtos.NameCommand command) {
-  labels.edit(CatalogLabel.Kind.MANUFACTURER,id,command.model());return ResponseEntity.noContent().build();
+ public ResponseEntity<Void> editManufacturer(@PathVariable UUID id,@RequestBody CatalogLabelDtos.EditCommand command) {
+  labels.edit(CatalogLabel.Kind.MANUFACTURER,id,command.model(),command.publishGlobally());return ResponseEntity.noContent().build();
  }
  @DeleteMapping("/catalog/manufacturers/{id}")
  public ResponseEntity<Void> deleteManufacturer(@PathVariable UUID id,@RequestBody(required=false) Map<String,Object> body) {
@@ -94,7 +94,7 @@ public class CatalogController {
  @PostMapping("/catalog/products") public ResponseEntity<ProductDtos.Created> createProduct(@RequestBody ProductDtos.Command command){return createProductIn(null,command);}
  @PostMapping("/tenants/{tenant}/catalog/products") public ResponseEntity<ProductDtos.Created> createProductTenant(@PathVariable UUID tenant,@RequestBody ProductDtos.Command command){return createProductIn(tenant,command);}
  private ResponseEntity<ProductDtos.Created> createProductIn(UUID tenant,ProductDtos.Command command){UUID id=products.create(tenant,command.model());return ResponseEntity.created(URI.create("/api/v1/catalog/products/"+id)).body(new ProductDtos.Created(id));}
- @PutMapping("/catalog/products/{id}") public ResponseEntity<Void> editProduct(@PathVariable UUID id,@RequestBody ProductDtos.Command command){products.edit(id,command.model());return ResponseEntity.noContent().build();}
+ @PutMapping("/catalog/products/{id}") public ResponseEntity<Void> editProduct(@PathVariable UUID id,@RequestBody ProductDtos.EditCommand command){products.edit(id,command.model(),command.publishGlobally());return ResponseEntity.noContent().build();}
  @DeleteMapping("/catalog/products/{id}") public ResponseEntity<Void> deleteProduct(@PathVariable UUID id,@RequestBody(required=false) Map<String,Object> body){new CommandInput(body==null?Map.of():body);products.delete(id);return ResponseEntity.noContent().build();}
  @PostMapping("/catalog/products/{id}/publish") public ResponseEntity<Void> publishProduct(@PathVariable UUID id,@RequestBody(required=false) Map<String,Object> body){new CommandInput(body==null?Map.of():body);products.publish(id);return ResponseEntity.noContent().build();}
 }

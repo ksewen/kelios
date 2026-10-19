@@ -433,7 +433,7 @@ paths:
   /users/global:
     post:
       operationId: postUsersGlobal
-      summary: Create GLOBAL USER ACTIVE (GLOBAL ADMIN)
+      summary: Create ACTIVE GLOBAL USER or ADMIN (GLOBAL ADMIN)
       security: *id003
       responses:
         '200':
@@ -449,8 +449,32 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/GlobalInput'
-      description: Null Tenant, explicit GLOBAL/USER/ACTIVE. ADMIN grant is separate; initial provided password
-        is actual credential.
+      description: Null Tenant, ACTIVE; optional role defaults to USER. GLOBAL ADMIN may create ADMIN atomically under the recovery guard. Initial provided password is the actual credential.
+  /users/{id}/administration:
+    put:
+      operationId: putUserAdministration
+      summary: Edit changed GLOBAL Email and/or User role atomically (GLOBAL ADMIN)
+      security: *id003
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id006
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserAdministrationInput'
+      responses:
+        '200':
+          description: Updated safe User identity state. Both changed fields and their sanitized audit events commit together or neither does.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Identity'
+        default: *id001
+      description: GLOBAL ADMIN only. Omitted fields are unchanged; at least one actual change is required. Email is GLOBAL-only and pre-delivery verified. Role and self-protection rules match the existing guarded commands. No displayName, identity, scope, Tenant, status or OIDC changes.
   /users/{id}/approve:
     post:
       operationId: postUsersIdApprove
@@ -566,6 +590,27 @@ paths:
           <<: *id001
         '409':
           <<: *id001
+  /oidc-configurations:
+    get:
+      operationId: listOidcConfigurations
+      summary: List existing IServ configurations (ACTIVE GLOBAL ADMIN only)
+      description: Bounded administrative read of enabled and disabled configurations, ordered by case-insensitive Tenant name then Tenant UUID. No secrets, groups, claims, credentials or mutation authority. Separate from anonymous enabled-organization login routing and signed-own Tenant singleton administration.
+      security: *id003
+      parameters:
+      - in: query
+        name: page
+        schema: {type: integer, minimum: 0, default: 0}
+      - in: query
+        name: size
+        schema: {type: integer, minimum: 1, maximum: 100, default: 20}
+      responses:
+        '200':
+          description: Existing configurations and total count; Cache-Control no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OidcConfigurationPage'
+        default: *id001
   /tenants/{id}/oidc:
     get:
       operationId: getTenantsIdOidc
@@ -1460,6 +1505,9 @@ paths:
         are server-owned. ADMIN required. GLOBAL creates GLOBAL at root or TENANT at supplied context; TENANT ADMIN
         always creates in signed own Tenant, including root. Edits authorize loaded ownership and preserve retained-reference/UNKNOWN
         guards.
+        Optional publishGlobally=true applies publication in the same transaction as changed ordinary fields;
+        unchanged ordinary fields skip the ordinary edit guard and EDITED audit for publication-only Save.
+        GLOBAL ADMIN authorization, dependency visibility, guards, locks and audit still apply.
       security:
       - AccessBearer: []
       responses:
@@ -1485,7 +1533,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CatalogLabelNameCommand'
+              $ref: '#/components/schemas/CatalogLabelEditCommand'
     delete:
       operationId: deleteCatalogCategoriesId
       summary: Soft-delete guarded categories
@@ -1907,6 +1955,9 @@ paths:
         are server-owned. ADMIN required. GLOBAL creates GLOBAL at root or TENANT at supplied context; TENANT ADMIN
         always creates in signed own Tenant, including root. Edits authorize loaded ownership and preserve retained-reference/UNKNOWN
         guards.
+        Optional publishGlobally=true applies publication in the same transaction as changed ordinary fields;
+        unchanged ordinary fields skip the ordinary edit guard and EDITED audit for publication-only Save.
+        GLOBAL ADMIN authorization, dependency visibility, guards, locks and audit still apply.
       security:
       - AccessBearer: []
       responses:
@@ -1932,7 +1983,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CatalogLabelNameCommand'
+              $ref: '#/components/schemas/CatalogLabelEditCommand'
     delete:
       operationId: deleteCatalogManufacturersId
       summary: Soft-delete guarded manufacturers
@@ -2405,6 +2456,9 @@ paths:
         visibility/new-assignment guards. Ordinary edit permanently prohibited after historical Asset registration,
         even after reference reassignment. No Asset facts are implicitly rewritten. Optional manufacturerNumber omitted/null/blank
         clears it under replacement semantics. Mutation and administrative AuditLog atomic. Reference-race conflicts return HTTP 409 CONCURRENT_OPERATION; review current state before resubmitting, without automatic retry.
+        Optional publishGlobally=true applies publication in the same transaction as changed ordinary fields;
+        unchanged ordinary fields skip the ordinary edit guard and EDITED audit for publication-only Save.
+        GLOBAL ADMIN authorization, dependency visibility, guards, locks and audit still apply.
       security:
       - AccessBearer: []
       responses:
@@ -2430,7 +2484,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ProductCommand'
+              $ref: '#/components/schemas/ProductEditCommand'
     delete:
       operationId: deleteCatalogProductsId
       summary: Soft-delete guarded products
@@ -3075,7 +3129,7 @@ paths:
     get:
       operationId: getAudit-log
       summary: ADMIN only; GLOBAL all, TENANT own captured Tenant in SQL
-      description: Immutable captured target-Tenant scope. ADMIN only; TENANT ADMIN is forced to own signed Tenant. Combined exact criteria, inclusive independently optional UTC/offset bounds and server ordering apply before bounded paging/count. No text search or live User joins. Default occurredAt DESC; equal timestamps have no mandated secondary UUID order. Time bounds must align with PostgreSQL microsecond precision; reversed bounds rejected. Page0/size20/max100; beyond-end pages are empty with current metadata.
+      description: Immutable captured target-Tenant scope. ADMIN only; TENANT ADMIN is forced to own signed Tenant. For GLOBAL ADMIN, neither tenantId nor globalOnly means all authorized records; globalOnly=true selects captured Global attribution, and tenantId selects one captured Tenant. Those narrowing parameters are mutually exclusive. Combined exact criteria, inclusive independently optional UTC/offset instants and server ordering apply before bounded paging/count. Client date-time inputs convert local time to UTC; there is no date-only or whole-day query mode. No text search or live User joins. Default occurredAt DESC; equal timestamps have no mandated secondary UUID order. Time bounds must align with PostgreSQL microsecond precision; reversed bounds rejected. Page0/size20/max100; beyond-end pages are empty with current metadata.
       security: *id008
       responses:
         '200':
@@ -3353,6 +3407,21 @@ components:
           minLength: 1
           maxLength: 256
         password: *id027
+        role:
+          type: string
+          enum: [USER, ADMIN]
+          default: USER
+          description: Optional creation role; GLOBAL ADMIN may create ADMIN in the same guarded transaction.
+    UserAdministrationInput:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        email: *id026
+        role:
+          type: string
+          enum: [USER, ADMIN]
+      description: Omit unchanged fields. Explicit null and unknown fields are invalid. A Save with both fields is atomic; unchanged values alone conflict.
     RoleInput:
       type: object
       required:
@@ -3424,6 +3493,35 @@ components:
           uniqueItems: true
           maxItems: 256
           items: *id006
+    OidcConfigurationSummary:
+      type: object
+      additionalProperties: false
+      required: [tenantId, tenant, issuer, clientId, enabled, version]
+      properties:
+        tenantId: *id006
+        tenant:
+          type: object
+          additionalProperties: false
+          required: [id, name]
+          properties:
+            id: *id006
+            name: {type: string}
+        issuer: *id007
+        clientId: *id007
+        enabled: {type: boolean}
+        version: {type: integer, format: int64, minimum: 0}
+    OidcConfigurationPage:
+      type: object
+      additionalProperties: false
+      required: [items, page, size, totalElements]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OidcConfigurationSummary'
+        page: {type: integer, minimum: 0}
+        size: {type: integer, minimum: 1, maximum: 100}
+        totalElements: {type: integer, format: int64, minimum: 0}
     OidcConfiguration:
       type: object
       additionalProperties: false
@@ -3687,6 +3785,31 @@ components:
           minLength: 1
       required:
       - name
+    ProductEditCommand:
+      type: object
+      additionalProperties: false
+      required:
+      - name
+      - categoryId
+      - manufacturerId
+      properties:
+        name:
+          type: string
+          description: Nonblank readable Product label, surrounding whitespace stripped.
+        categoryId:
+          type: string
+          format: uuid
+        manufacturerId:
+          type: string
+          format: uuid
+        manufacturerNumber:
+          type:
+          - string
+          - 'null'
+          description: Optional nonunique Product number; blank normalized to null. Omitted/null clears on edit.
+        publishGlobally:
+          type: boolean
+          description: Optional false by default; true requires GLOBAL ADMIN and publishes atomically with changed ordinary fields.
     ProductCommand:
       type: object
       additionalProperties: false
@@ -3761,7 +3884,7 @@ components:
         createdByDisplayName:
           type: [string, "null"]
           readOnly: true
-          description: Optional stable system/seed label for reserved actor; null for human UUID without a live lookup.
+          description: Nullable trusted creation-time actor label; no historical name inferred from current User data.
         updatedByDisplayName:
           type: [string, "null"]
           readOnly: true
@@ -3852,8 +3975,7 @@ components:
           - string
           - 'null'
           readOnly: true
-          description: Optional stable system/seed label for reserved actor; null for
-            human UUID without a live lookup.
+          description: Nullable trusted creation-time actor label; no historical name inferred from current User data.
         updatedByDisplayName:
           type:
           - string
@@ -3954,8 +4076,7 @@ components:
           - string
           - 'null'
           readOnly: true
-          description: Optional stable system/seed label for reserved actor; null for
-            human UUID without a live lookup.
+          description: Nullable trusted creation-time actor label; no historical name inferred from current User data.
         updatedByDisplayName:
           type:
           - string
@@ -4116,11 +4237,11 @@ components:
         createdByDisplayName:
           type: [string, "null"]
           readOnly: true
-          description: Stable system/seed label for reserved actor; null for human UUID without a live lookup.
+          description: Nullable trusted creation-time actor label; no historical name inferred from current User data.
         updatedByDisplayName:
           type: [string, "null"]
           readOnly: true
-          description: Stable system/seed label for reserved actor; null for human UUID without a live lookup.
+          description: Nullable trusted creation-time actor label; no historical name inferred from current User data.
     PlaceRow:
       type: object
       additionalProperties: false
@@ -4344,6 +4465,7 @@ components:
         createdByDisplayName:
           type: [string, "null"]
           readOnly: true
+          description: Nullable trusted creation-time actor label; no historical name inferred from current User data.
         updatedByDisplayName:
           type: [string, "null"]
           readOnly: true
@@ -4485,6 +4607,18 @@ components:
           type: integer
           format: int64
           minimum: 0
+    CatalogLabelEditCommand:
+      type: object
+      additionalProperties: false
+      required:
+      - name
+      properties:
+        name:
+          type: string
+          description: Nonblank label; surrounding whitespace stripped.
+        publishGlobally:
+          type: boolean
+          description: Optional false by default; true requires GLOBAL ADMIN and publishes atomically with changed ordinary fields.
     CatalogLabelNameCommand:
       type: object
       additionalProperties: false
@@ -4700,15 +4834,13 @@ components:
           - string
           - 'null'
           readOnly: true
-          description: Reserved system/seed label when applicable; human names are not
-            guessed from live User rows.
+          description: Nullable trusted creation-time actor label; no historical name inferred from current User data.
         updatedByDisplayName:
           type:
           - string
           - 'null'
           readOnly: true
-          description: Reserved system/seed label when applicable; human names are not
-            guessed from live User rows.
+          description: Nullable trusted creation-time actor label; no historical name inferred from current User data.
       required:
       - createdBy
       - updatedBy
@@ -4746,6 +4878,10 @@ components:
           - DISABLED
         displayName:
           type: string
+        email:
+          type: [string, 'null']
+          format: email
+          description: Bounded administrative list projection of GLOBAL local Email; null for TENANT Users or a GLOBAL account without a credential. No secret or Email search/sort.
         tenant:
           anyOf:
           - $ref: '#/components/schemas/UserTenant'
@@ -4759,6 +4895,7 @@ components:
       - role
       - status
       - displayName
+      - email
       - tenant
       - metadata
     UserDetail:

@@ -17,8 +17,12 @@ public class IdentityStore {
     }
     @org.springframework.transaction.annotation.Transactional(propagation=org.springframework.transaction.annotation.Propagation.MANDATORY)
     public void insert(Identity u,com.github.ksewen.kelios.audit.Actor actor){
+        insert(u,actor,actor.displayName());
+    }
+    @org.springframework.transaction.annotation.Transactional(propagation=org.springframework.transaction.annotation.Propagation.MANDATORY)
+    public void insert(Identity u,com.github.ksewen.kelios.audit.Actor actor,String creationName){
         var now=java.sql.Timestamp.from(java.time.Instant.now(clock));
-        jdbc.update("INSERT INTO app_user(id,scope,tenant_id,role,status,display_name,created_by,created_at,updated_by,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",u.id(),u.scope().name(),u.tenantId(),u.role().name(),u.status().name(),u.displayName(),actor.id(),now,actor.id(),now);
+        jdbc.update("INSERT INTO app_user(id,scope,tenant_id,role,status,display_name,created_by,created_by_display_name,created_at,updated_by,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",u.id(),u.scope().name(),u.tenantId(),u.role().name(),u.status().name(),u.displayName(),actor.id(),creationName,now,actor.id(),now);
     }
     @org.springframework.transaction.annotation.Transactional(propagation=org.springframework.transaction.annotation.Propagation.MANDATORY)
     public void touch(UUID id,com.github.ksewen.kelios.audit.Actor actor){
@@ -31,19 +35,20 @@ public class IdentityStore {
         if(rows.isEmpty())throw new AuthFailure(404,"User not found in administrative scope");return rows.getFirst();
     }
     public void recoveryGuard(){jdbc.queryForObject("SELECT id FROM global_admin_recovery_guard WHERE id=1 FOR UPDATE",Integer.class);}
-    private static final String READ="SELECT u.id,u.scope,u.tenant_id,u.role,u.status,u.display_name,u.created_by,u.created_at,u.updated_by,u.updated_at,t.name AS tenant_name FROM app_user u LEFT JOIN tenant t ON t.id=u.tenant_id";
+    private static final String READ="SELECT u.id,u.scope,u.tenant_id,u.role,u.status,u.display_name,u.created_by,u.created_by_display_name,u.created_at,u.updated_by,u.updated_at,t.name AS tenant_name,c.email AS global_email FROM app_user u LEFT JOIN tenant t ON t.id=u.tenant_id LEFT JOIN local_global_credential c ON c.user_id=u.id";
     /** Persistence read row: raw storage values mapped explicitly into the application projection. */
     private record Row(UUID id,String scope,UUID tenantId,String role,String status,String displayName,String tenantName,
-            UUID createdBy,java.time.Instant createdAt,UUID updatedBy,java.time.Instant updatedAt) {
+            UUID createdBy,java.time.Instant createdAt,UUID updatedBy,java.time.Instant updatedAt,String createdByDisplayName) {
         com.github.ksewen.kelios.identity.UserModel model(){
             var tenant=tenantId==null?null:new com.github.ksewen.kelios.identity.UserModel.Tenant(tenantId,tenantName);
-            var metadata=new com.github.ksewen.kelios.identity.UserModel.Metadata(createdBy,createdAt,updatedBy,updatedAt);
+            var metadata=new com.github.ksewen.kelios.identity.UserModel.Metadata(createdBy,createdAt,updatedBy,updatedAt,createdByDisplayName);
             return new com.github.ksewen.kelios.identity.UserModel(id,Scope.valueOf(scope),Role.valueOf(role),Status.valueOf(status),displayName,tenant,metadata);
         }
     }
     private static com.github.ksewen.kelios.identity.UserModel row(java.sql.ResultSet r,int index)throws java.sql.SQLException{
-        return new Row(r.getObject("id",UUID.class),r.getString("scope"),r.getObject("tenant_id",UUID.class),r.getString("role"),r.getString("status"),r.getString("display_name"),r.getString("tenant_name"),
-            r.getObject("created_by",UUID.class),r.getTimestamp("created_at").toInstant(),r.getObject("updated_by",UUID.class),r.getTimestamp("updated_at").toInstant()).model();
+        var row=new Row(r.getObject("id",UUID.class),r.getString("scope"),r.getObject("tenant_id",UUID.class),r.getString("role"),r.getString("status"),r.getString("display_name"),r.getString("tenant_name"),
+            r.getObject("created_by",UUID.class),r.getTimestamp("created_at").toInstant(),r.getObject("updated_by",UUID.class),r.getTimestamp("updated_at").toInstant(),r.getString("created_by_display_name")).model();
+        String email=r.getString("global_email");return email==null?row:new com.github.ksewen.kelios.identity.UserModel(row.id(),row.scope(),row.role(),row.status(),row.displayName(),row.tenant(),row.metadata(),new com.github.ksewen.kelios.identity.UserModel.GlobalAccount(email,null));
     }
     public com.github.ksewen.kelios.identity.UserModel detail(UUID id,UUID forcedTenant){
         var args=new ArrayList<Object>(List.of(id));String scope="";

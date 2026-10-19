@@ -9,5 +9,7 @@ public record UserModel(UUID id,Scope scope,Role role,Status status,String displ
     public UserModel(UUID id,Scope scope,Role role,Status status,String displayName,Tenant tenant,Metadata metadata){this(id,scope,role,status,displayName,tenant,metadata,null);}
     public record GlobalAccount(String email,Instant emailVerifiedAt) {}
     public record Tenant(UUID id,String name) {}
-    public record Metadata(UUID createdBy,Instant createdAt,UUID updatedBy,Instant updatedAt) {}
+    public record Metadata(UUID createdBy,Instant createdAt,UUID updatedBy,Instant updatedAt,String createdByDisplayName) {
+        public Metadata(UUID createdBy,Instant createdAt,UUID updatedBy,Instant updatedAt){this(createdBy,createdAt,updatedBy,updatedAt,null);}
+    }
 }

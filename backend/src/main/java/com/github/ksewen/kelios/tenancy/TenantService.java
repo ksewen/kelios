@@ -14,7 +14,7 @@ public class TenantService {
     public TenantService(EntityManager em, AuditService audit, java.time.Clock clock) { this.em=em; this.audit=audit; this.clock=clock; }
     @Transactional public UUID create(String name, Actor actor) {
         if (name == null || name.isBlank()) throw new IllegalArgumentException("Tenant name required");
-        Tenant tenant=new Tenant(); tenant.id=UUID.randomUUID(); tenant.name=name.strip(); tenant.createdBy=actor.id(); tenant.updatedBy=actor.id(); tenant.createdAt=java.time.Instant.now(clock); tenant.updatedAt=tenant.createdAt; em.persist(tenant); em.flush();
+        Tenant tenant=new Tenant(); tenant.id=UUID.randomUUID(); tenant.name=name.strip(); tenant.createdBy=actor.id(); tenant.createdByDisplayName=actor.displayName(); tenant.updatedBy=actor.id(); tenant.createdAt=java.time.Instant.now(clock); tenant.updatedAt=tenant.createdAt; em.persist(tenant); em.flush();
         audit.record(actor,tenant.id,"TENANT_CREATED","TENANT",tenant.id,Map.of("name",tenant.name)); return tenant.id;
     }
     @Transactional(propagation=org.springframework.transaction.annotation.Propagation.MANDATORY)

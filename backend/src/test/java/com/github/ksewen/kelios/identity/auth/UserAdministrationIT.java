@@ -65,6 +65,11 @@ class UserAdministrationIT {
 
  Identity insert(Scope scope,UUID tenant,Role role,Status status,String name){var u=new Identity(UUID.randomUUID(),scope,tenant,role,status,name);new TransactionTemplate(tm).executeWithoutResult(s->identities.insert(u,actor));return u;}
  Identity own(String name){return insert(Scope.TENANT,tenant,Role.USER,Status.PENDING,name);}
+ @Test void userCreatorLabelIsHistoricalAndIndependentOfCurrentActorLookup()throws Exception{
+  var created=own("Snapshot target "+UUID.randomUUID());
+  assertEquals(actor.displayName(),((Map<?,?>)data(request(admin,get("/api/v1/users/"+created.id()),null)).get("metadata")).get("createdByDisplayName"));
+  assertEquals(actor.displayName(),((Map<?,?>)items(list(admin,Map.of("q",created.displayName()))).getFirst().get("metadata")).get("createdByDisplayName"));
+ }
  String prefix(){return "users-"+UUID.randomUUID()+"-";}
  @SuppressWarnings("unchecked") List<Map<String,Object>> items(MvcResult r){return (List<Map<String,Object>>)data(r).get("items");}
  long total(MvcResult r){return ((Number)data(r).get("totalElements")).longValue();}
@@ -136,8 +141,63 @@ class UserAdministrationIT {
   String login="audit-"+UUID.randomUUID()+"@example.org";
   jdbc.execute("CREATE FUNCTION step6_reject_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.action='USER_CREATED' THEN RAISE EXCEPTION 'isolated audit failure'; END IF; RETURN NEW; END; $$");
   jdbc.execute("CREATE TRIGGER step6_reject_audit BEFORE INSERT ON audit_log FOR EACH ROW EXECUTE FUNCTION step6_reject_audit()");
-  try{assertThrows(RuntimeException.class,()->auth.createGlobal(admin,login,"Rollback User","CorrectHorse25!Battery"));assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM local_global_credential WHERE email=?",Integer.class,login));assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM app_user WHERE display_name='Rollback User'",Integer.class));}
+  try{assertThrows(RuntimeException.class,()->auth.createGlobal(admin,login,"Rollback User","CorrectHorse25!Battery",Role.ADMIN));assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM local_global_credential WHERE email=?",Integer.class,login));assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM app_user WHERE display_name='Rollback User'",Integer.class));}
   finally{jdbc.execute("DROP TRIGGER step6_reject_audit ON audit_log");jdbc.execute("DROP FUNCTION step6_reject_audit()");}
+ }
+
+ @Test void userListEmailIsGlobalOnlyAndNeverExposesCredentials()throws Exception{
+  String p=prefix(),email=p+"global@example.org";
+  var global=auth.createGlobal(admin,email,p+"Global","CorrectHorse25!Battery");var local=own(p+"Tenant");
+  var rows=items(list(admin,Map.of("q",p)));assertEquals(2,rows.size());
+  var g=rows.stream().filter(r->global.id().toString().equals(r.get("id"))).findFirst().orElseThrow();
+  var t=rows.stream().filter(r->local.id().toString().equals(r.get("id"))).findFirst().orElseThrow();
+  assertEquals(email,g.get("email"));assertNull(t.get("email"));
+  assertEquals(Set.of("id","scope","tenantId","role","status","displayName","email","tenant","metadata"),g.keySet());
+  String serialized=json.writeValueAsString(rows);for(String secret:List.of("password","hash","verifiedAt","subject","claim"))assertFalse(serialized.contains(secret));
+  assertNull(items(list(principal(Scope.TENANT,Role.ADMIN,Status.ACTIVE),Map.of("q",p))).getFirst().get("email"));
+ }
+ @Test void atomicCreateRoleDefaultsAndAdminIsAudited()throws Exception{
+  String p=prefix();var basic=request(admin,post("/api/v1/users/global"),Map.of("email",p+"default@example.org","displayName",p+"Default","password","CorrectHorse25!Battery"));
+  assertEquals(200,status(basic));assertEquals("USER",data(basic).get("role"));
+  var elevated=request(admin,post("/api/v1/users/global"),Map.of("email",p+"admin@example.org","displayName",p+"Admin","password","CorrectHorse25!Battery","role","ADMIN"));
+  assertEquals(200,status(elevated));UUID id=UUID.fromString((String)data(elevated).get("id"));assertEquals("ADMIN",identities.load(id,"").role().name());
+  assertEquals("ADMIN",jdbc.queryForObject("SELECT data->>'role' FROM audit_log WHERE action='USER_CREATED' AND target_id=?",String.class,id));
+  assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM local_global_credential WHERE user_id=?",Integer.class,id));
+  for(Identity denied:List.of(principal(Scope.TENANT,Role.ADMIN,Status.ACTIVE),principal(Scope.GLOBAL,Role.USER,Status.ACTIVE)))assertEquals(403,status(request(denied,post("/api/v1/users/global"),Map.of("email",p+UUID.randomUUID()+"@example.org","displayName","Denied","password","CorrectHorse25!Battery","role","ADMIN"))));
+  for(Object role:List.of("ROOT",1,true))assertEquals(400,status(request(admin,post("/api/v1/users/global"),Map.of("email",p+UUID.randomUUID()+"@example.org","displayName","Invalid","password","CorrectHorse25!Battery","role",role))));
+ }
+ @Test void combinedAdministrationChangesOnlyRequestedFieldsAndPreservesGuards()throws Exception{
+  String p=prefix();var u=auth.createGlobal(admin,p+"before@example.org",p+"Target","CorrectHorse25!Battery");clock.now=clock.now.plusSeconds(1);
+  UUID id=u.id();var path="/api/v1/users/"+id+"/administration";
+  var changed=request(admin,put(path),Map.of("email",p+"after@example.org","role","ADMIN"));assertEquals(200,status(changed));
+  assertEquals("ADMIN",data(changed).get("role"));assertEquals(p+"after@example.org",auth.detail(admin,id).globalAccount().email());
+  assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE action='USER_ROLE_CHANGED' AND target_id=?",Integer.class,id));
+  assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE action='GLOBAL_EMAIL_CHANGED' AND target_id=?",Integer.class,id));
+  assertFalse(jdbc.queryForObject("SELECT data::text FROM audit_log WHERE action='GLOBAL_EMAIL_CHANGED' AND target_id=?",String.class,id).contains("@"));
+  var previous=jdbc.queryForMap("SELECT * FROM app_user WHERE id=?",id);
+  assertEquals(200,status(request(admin,put(path),Map.of("email",p+"last@example.org"))));assertEquals(previous.get("role"),jdbc.queryForMap("SELECT * FROM app_user WHERE id=?",id).get("role"));
+  assertEquals(409,status(request(admin,put(path),Map.of("role","ADMIN"))));
+  var local=own(p+"Local");assertEquals(403,status(request(admin,put("/api/v1/users/"+local.id()+"/administration"),Map.of("email",p+"tenant@example.org"))));
+  assertEquals(403,status(request(admin,put("/api/v1/users/"+admin.id()+"/administration"),Map.of("role","USER"))));
+  for(Identity denied:List.of(principal(Scope.TENANT,Role.ADMIN,Status.ACTIVE),principal(Scope.GLOBAL,Role.USER,Status.ACTIVE),principal(Scope.GLOBAL,Role.ADMIN,Status.PENDING)))assertEquals(403,status(request(denied,put(path),Map.of("role","USER"))));
+  for(Map<String,Object> body:List.of(Map.<String,Object>of(),Map.<String,Object>of("displayName","Forged"),Map.<String,Object>of("email",p+"forged@example.org","status","ACTIVE"),Map.<String,Object>of("role","ROOT")))assertEquals(400,status(request(admin,put(path),body)));
+ }
+ @Test void combinedAdministrationAuditFailureRollsBackBothFields()throws Exception{
+  String p=prefix();var u=auth.createGlobal(admin,p+"before@example.org",p+"Rollback","CorrectHorse25!Battery");
+  var beforeUser=jdbc.queryForMap("SELECT * FROM app_user WHERE id=?",u.id());var beforeCredential=jdbc.queryForMap("SELECT * FROM local_global_credential WHERE user_id=?",u.id());
+  jdbc.execute("CREATE FUNCTION g2_reject_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.action='GLOBAL_EMAIL_CHANGED' THEN RAISE EXCEPTION 'isolated audit failure'; END IF; RETURN NEW; END; $$");
+  jdbc.execute("CREATE TRIGGER g2_reject_audit BEFORE INSERT ON audit_log FOR EACH ROW EXECUTE FUNCTION g2_reject_audit()");
+  try{assertThrows(RuntimeException.class,()->auth.administration(admin,u.id(),p+"after@example.org",Role.ADMIN));assertEquals(beforeUser,jdbc.queryForMap("SELECT * FROM app_user WHERE id=?",u.id()));assertEquals(beforeCredential,jdbc.queryForMap("SELECT * FROM local_global_credential WHERE user_id=?",u.id()));assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE action IN ('USER_ROLE_CHANGED','GLOBAL_EMAIL_CHANGED') AND target_id=?",Integer.class,u.id()));}
+  finally{jdbc.execute("DROP TRIGGER g2_reject_audit ON audit_log");jdbc.execute("DROP FUNCTION g2_reject_audit()");}
+ }
+ @Test void concurrentCombinedEditsSerializeAndRejectStaleDuplicate()throws Exception{
+  String p=prefix();var u=auth.createGlobal(admin,p+"before@example.org",p+"Concurrent","CorrectHorse25!Battery");var start=new CountDownLatch(1);
+  try(var pool=Executors.newFixedThreadPool(2)){
+   var tasks=new ArrayList<Future<Integer>>();for(int i=0;i<2;i++)tasks.add(pool.submit(()->{start.await();try{auth.administration(admin,u.id(),p+"after@example.org",Role.ADMIN);return 200;}catch(AuthFailure e){return e.status();}}));start.countDown();
+   var outcomes=List.of(tasks.get(0).get(20,TimeUnit.SECONDS),tasks.get(1).get(20,TimeUnit.SECONDS));assertTrue(outcomes.containsAll(List.of(200,409)),outcomes.toString());
+  }
+  assertEquals(Role.ADMIN,identities.load(u.id(),"").role());assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE action='USER_ROLE_CHANGED' AND target_id=?",Integer.class,u.id()));
+  assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE action='GLOBAL_EMAIL_CHANGED' AND target_id=?",Integer.class,u.id()));
  }
 
 }

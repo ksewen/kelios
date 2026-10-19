@@ -1,6 +1,7 @@
 import {useEffect,useId,useLayoutEffect,useRef,useState,type KeyboardEvent} from 'react';
 import {useTranslation} from 'react-i18next';
 import {Button} from './button';
+import {ClearableControl} from './clearable-control';
 
 export type Candidate = {id:string;label:string;detail:string};
 /** Inline, non-modal listbox: the dialog keeps ownership of focus. */
@@ -33,10 +34,9 @@ export function SearchableCombobox({name,text,selected,options,pending,loadingMo
  }
  return <div ref={root} className="relative min-w-0" onBlur={event=>{if(!event.currentTarget.contains(event.relatedTarget)){setOpen(false);setActive('');}}}>
   <label className="block text-sm font-medium" htmlFor={id}>{name}{markRequired&&<span aria-hidden="true" className="text-destructive"> *</span>}</label>
-  <div className="relative"><input id={id} className="input" role="combobox" aria-autocomplete="list" aria-required={required} required={required} aria-expanded={open} aria-controls={`${id}-list`} aria-activedescendant={open&&activeOption?`${id}-${activeOption.id}`:undefined} autoComplete="off" maxLength={128} value={text}
+  <ClearableControl name={name} value={text||selected} onClear={clear}><input id={id} className="input pr-11" role="combobox" aria-autocomplete="list" aria-required={required} required={required} aria-expanded={open} aria-controls={`${id}-list`} aria-activedescendant={open&&activeOption?`${id}-${activeOption.id}`:undefined} autoComplete="off" maxLength={128} value={text}
    onFocus={event=>{openList();if(selected)event.currentTarget.select();}} onClick={openList} onKeyDown={key}
-   onChange={event=>{onQuery(event.target.value);setActive('');openList();}}/></div>
-  {clear&&(text||selected)&&<Button data-clear-selection type="button" variant="ghost" size="sm" onClick={clear}>{t('mergeCombobox.clearSelection')}</Button>}
+   onChange={event=>{onQuery(event.target.value);setActive('');openList();}}/></ClearableControl>
   {open&&<div data-combobox-popup className={`absolute left-0 z-20 w-full max-h-56 overflow-y-auto rounded-md border bg-popover p-1 text-popover-foreground shadow-md ${above?'bottom-full mb-1':'top-full mt-1'}`}>
    {initialLoading&&<p role="status" className="px-2 py-1 text-xs text-muted-foreground">{t('mergeCombobox.searching')}</p>}
    {error?<p role="alert" className="px-2 text-sm text-destructive">{error}</p>:null}

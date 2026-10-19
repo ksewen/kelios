@@ -67,7 +67,7 @@ class TenantResourceIT {
  @Test void independentUuidDetailSafeProjectionAndNoReadAudit()throws Exception{
   long before=jdbc.queryForObject("SELECT count(*) FROM audit_log",Long.class);
   var who=new Identity(UUID.randomUUID(),Scope.TENANT,tenant,Role.ADMIN,Status.ACTIVE,"Reader");
-  var r=request(who,get("/api/v1/tenants/"+tenant),null);assertEquals(200,status(r));var d=data(r);assertEquals(Set.of("id","name","metadata"),d.keySet());assertEquals(tenant.toString(),d.get("id"));assertEquals(actor.id().toString(),((Map<?,?>)d.get("metadata")).get("createdBy"));
+  var r=request(who,get("/api/v1/tenants/"+tenant),null);assertEquals(200,status(r));var d=data(r);assertEquals(Set.of("id","name","metadata"),d.keySet());assertEquals(tenant.toString(),d.get("id"));assertEquals(actor.id().toString(),((Map<?,?>)d.get("metadata")).get("createdBy"));assertEquals(actor.displayName(),((Map<?,?>)d.get("metadata")).get("createdByDisplayName"));
   assertEquals(403,status(request(who,get("/api/v1/tenants"),null)));
   var list=request(admin,get("/api/v1/tenants"),null);var items=json.readValue(list.getResponse().getContentAsString(),List.class);assertTrue(items.contains(d));
   assertEquals(before,jdbc.queryForObject("SELECT count(*) FROM audit_log",Long.class));

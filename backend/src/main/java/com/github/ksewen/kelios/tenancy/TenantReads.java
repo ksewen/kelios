@@ -13,8 +13,8 @@ public class TenantReads {
     public TenantReads(JdbcTemplate jdbc){this.jdbc=jdbc;}
     private record Row(UUID id,String name,Metadata metadata){TenantModel model(){return new TenantModel(id,name,metadata);}}
     private List<TenantModel> read(String suffix,Object... args){
-        return jdbc.query("SELECT id,name,created_by,created_at,updated_by,updated_at FROM tenant"+suffix,
-            (r,n)->new Row(r.getObject("id",UUID.class),r.getString("name"),new Metadata(r.getObject("created_by",UUID.class),r.getTimestamp("created_at").toInstant(),r.getObject("updated_by",UUID.class),r.getTimestamp("updated_at").toInstant())),args).stream().map(Row::model).toList();
+        return jdbc.query("SELECT id,name,created_by,created_by_display_name,created_at,updated_by,updated_at FROM tenant"+suffix,
+            (r,n)->new Row(r.getObject("id",UUID.class),r.getString("name"),new Metadata(r.getObject("created_by",UUID.class),r.getTimestamp("created_at").toInstant(),r.getObject("updated_by",UUID.class),r.getTimestamp("updated_at").toInstant(),r.getString("created_by_display_name"))),args).stream().map(Row::model).toList();
     }
     public List<TenantModel> list(UUID forcedTenant){return forcedTenant==null?read(" ORDER BY created_at DESC"):read(" WHERE id=? ORDER BY created_at DESC",forcedTenant);}
     public TenantModel detail(UUID id,UUID forcedTenant){

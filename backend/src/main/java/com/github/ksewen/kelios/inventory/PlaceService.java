@@ -43,7 +43,7 @@ public class PlaceService {
     }
     @Transactional public UUID create(Kind kind,UUID tenant,String name,Actor actor) {return create(kind,tenant,name,null,actor);}
     @Transactional public UUID create(Kind kind,UUID tenant,String name,String note,Actor actor) {
-        tenants.require(tenant);UUID id=UUID.randomUUID();var now=Timestamp.from(Instant.now(clock));jdbc.update("INSERT INTO "+table(kind)+"(id,tenant_id,name,note,created_by,created_at,updated_by,updated_at) VALUES(?,?,?,?,?,?,?,?)",id,tenant,required(name),optional(note),actor.id(),now,actor.id(),now);
+        tenants.require(tenant);UUID id=UUID.randomUUID();var now=Timestamp.from(Instant.now(clock));jdbc.update("INSERT INTO "+table(kind)+"(id,tenant_id,name,note,created_by,created_by_display_name,created_at,updated_by,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",id,tenant,required(name),optional(note),actor.id(),actor.displayName(),now,actor.id(),now);
         audit.record(actor,tenant,kind+"_CREATED",kind.name(),id,Map.of("after",read(kind,id).snapshot()));return id;
     }
     private boolean referenced(Kind kind,UUID id) {

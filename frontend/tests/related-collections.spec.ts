@@ -35,12 +35,18 @@ async function fixture(page:Page,kind:Kind,scope:'GLOBAL'|'TENANT'='GLOBAL',role
  return {requests,setFail(value:boolean){failing=value;}};
 }
 
+for(const language of ['en','de'] as const)for(const width of [1440,390])test(`${language}/${width} required Tenant Create stays blocked without Tenant options`,async({page})=>{
+ const t=language==='de'?de:en;await page.addInitScript(value=>localStorage.setItem('kelios.ui.language',value),language);const f=await fixture(page,'locations');await page.route('**/api/v1/tenants',route=>route.fulfill({json:[]}));await page.setViewportSize({width,height:900});await page.goto('/locations');
+ await page.getByRole('button',{name:t.actions.create,exact:true}).click();const dialog=page.getByRole('dialog'),owner=dialog.getByLabel(t.fields.tenantName),save=dialog.getByRole('button',{name:t.actions.create,exact:true});
+ await expect(owner).toHaveValue('');await expect(owner.locator('option')).toHaveCount(1);await expect(save).toBeDisabled();await expect(dialog.getByText(/Keine Mandanten verfügbar|No Tenants available/i)).toHaveCount(0);
+ await dialog.getByLabel(t.ui.name).fill('Cannot submit');await expect(save).toBeDisabled();expect(f.requests.filter(request=>request.method==='POST'&&request.url.pathname.endsWith('/locations'))).toHaveLength(0);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});
 for(const kind of ['locations','owners'] as const)for(const width of [1440,390])test(`${kind} Global collection and concrete Create at ${width}px`,async({page})=>{
  await page.addInitScript(()=>localStorage.setItem('kelios.ui.language','en'));
  const f=await fixture(page,kind);await page.setViewportSize({width,height:900});await page.goto(`/${kind}`);
  await expect(page.locator('tbody tr')).toHaveCount(2);
  await expect(page.locator('tbody')).toContainText('School North');await expect(page.locator('tbody')).toContainText('School South');
- await expect(page.getByLabel(en.ui.catalogRows)).toHaveCount(0);
+ await expect(page.getByLabel(en.ui.catalogRows,{exact:true})).toHaveCount(0);
  await page.getByRole('button',{name:en.actions.create,exact:true}).click();
  const dialog=page.getByRole('dialog'),owner=dialog.getByLabel(en.fields.tenantName),save=dialog.getByRole('button',{name:en.actions.create,exact:true});
  await expect(owner).toHaveValue('');await expect(save).toBeDisabled();await owner.selectOption(other);
@@ -71,7 +77,7 @@ for(const kind of ['manufacturers','locations','owners'] as const)for(const widt
  await expect(toolbar).toBeVisible();
  await expect(page.getByText(de.redesign.resourceHelp)).toHaveCount(0);
  const controls=await toolbar.locator('button,input,select').evaluateAll(nodes=>nodes.map(node=>node.tagName==='INPUT'?'search':node.tagName==='SELECT'?'visibility':node.getAttribute('aria-label')??node.textContent?.trim()));
- expect(controls).toEqual(kind==='manufacturers'?[de.actions.create,de.actions.merge,'search',de.actions.filter,'visibility']:[de.actions.create,'search',de.actions.filter]);
+ expect(controls).toEqual(kind==='manufacturers'?[de.actions.create,de.actions.merge,'search',de.actions.filter,'visibility',de.actions.resetFilters]:[de.actions.create,'search',de.actions.filter,de.actions.resetFilters]);
  const create=toolbar.getByRole('button',{name:de.actions.create,exact:true});await expect(create).toHaveClass(/bg-primary/);
  const search=toolbar.getByRole('textbox');await expect(search).toHaveAttribute('placeholder',de.ui[kind==='manufacturers'?'manufacturerSearchPlaceholder':kind==='locations'?'locationSearchPlaceholder':'ownerSearchPlaceholder']);
  const heights=await Promise.all([create,search,toolbar.getByRole('button',{name:de.actions.filter,exact:true})].map(async item=>(await item.boundingBox())?.height));expect(heights).toEqual([40,40,40]);
@@ -93,7 +99,7 @@ for(const kind of ['manufacturers','locations','owners'] as const)for(const widt
 test('Manufacturer visibility and Create ownership retain catalog-only semantics',async({page})=>{
  await page.addInitScript(()=>localStorage.setItem('kelios.ui.language','en'));
  const f=await fixture(page,'manufacturers');await page.goto(`/tenants/${tenant}/manufacturers`);
- const toolbar=page.getByRole('toolbar',{name:en.fields.manufacturers}),filter=toolbar.getByLabel(en.ui.catalogRows);
+ const toolbar=page.getByRole('toolbar',{name:en.fields.manufacturers}),filter=toolbar.getByLabel(en.ui.catalogRows,{exact:true});
  await expect(filter.locator('option')).toHaveText([en.ui.categoryRowsAll,en.ui.categoryRowsGlobal,en.ui.categoryRowsTenant]);
  await filter.selectOption('GLOBAL');await expect.poll(()=>f.requests.filter(item=>item.url.pathname.endsWith('/manufacturers')).at(-1)?.url.searchParams.get('visibility')).toBe('GLOBAL');
  await filter.selectOption('TENANT');await expect(page.locator('tbody')).toContainText('Readable entry');await expect(page.locator('tbody')).not.toContainText('Global entry');
@@ -104,7 +110,7 @@ test('Manufacturer visibility and Create ownership retain catalog-only semantics
  await expect.poll(()=>f.requests.findLast(item=>item.method==='POST')?.url.pathname).toBe(`/api/v1/tenants/${other}/catalog/manufacturers`);
  await expect(page).toHaveURL(new RegExp(`/tenants/${tenant}/manufacturers$`));
  await expect(page.getByRole('status').filter({hasText:'Manufacturer created for School South.'})).toBeVisible();
- await page.goto('/manufacturers');await expect(page.getByLabel(en.ui.catalogRows)).toHaveValue('');
+ await page.goto('/manufacturers');await expect(page.getByLabel(en.ui.catalogRows,{exact:true})).toHaveValue('');
  await expect(page.locator('tbody')).toContainText('Global entry');await expect(page.locator('tbody')).toContainText('Readable entry');
 });
 

@@ -16,9 +16,9 @@ public class CatalogLabelReads {
     private final JdbcTemplate jdbc;
     public CatalogLabelReads(JdbcTemplate jdbc) { this.jdbc = jdbc; }
     private static final String FIELDS = "l.id,l.name,l.visibility,l.tenant_id,t.name AS tenant_name,"
-        + "l.created_by,l.created_at,l.updated_by,l.updated_at,l.deleted_at,l.deleted_by";
-    private static final String ACTOR_FIELDS = ",cb.display_name AS created_by_display_name,ub.display_name AS updated_by_display_name";
-    private static final String ACTOR_JOINS = " LEFT JOIN app_user cb ON cb.id=l.created_by LEFT JOIN app_user ub ON ub.id=l.updated_by";
+        + "l.created_by,l.created_by_display_name,l.created_at,l.updated_by,l.updated_at,l.deleted_at,l.deleted_by";
+    private static final String ACTOR_FIELDS = ",ub.display_name AS updated_by_display_name";
+    private static final String ACTOR_JOINS = " LEFT JOIN app_user ub ON ub.id=l.updated_by";
 
     private record Row(UUID id, String name, String visibility, UUID tenantId, String tenantName,
             UUID createdBy, Instant createdAt, UUID updatedBy, Instant updatedAt, Instant deletedAt, UUID deletedBy,

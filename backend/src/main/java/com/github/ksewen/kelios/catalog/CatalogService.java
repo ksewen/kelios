@@ -88,14 +88,14 @@ public class CatalogService {
     @Transactional public UUID createManufacturer(UUID tenantId, String name, Actor actor) { return createLabel(Kind.MANUFACTURER,tenantId,name,actor); }
     private UUID createLabel(Kind kind, UUID tenantId, String name, Actor actor) {
         if(tenantId!=null)tenants.require(tenantId);UUID id=UUID.randomUUID();String clean=required(name);var now=Timestamp.from(Instant.now(clock));
-        jdbc.update("INSERT INTO "+kind.table+"(id,name,visibility,tenant_id,created_by,created_at,updated_by,updated_at) VALUES(?,?,?,?,?,?,?,?)",id,clean,tenantId==null?"GLOBAL":"TENANT",tenantId,actor.id(),now,actor.id(),now);
+        jdbc.update("INSERT INTO "+kind.table+"(id,name,visibility,tenant_id,created_by,created_by_display_name,created_at,updated_by,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",id,clean,tenantId==null?"GLOBAL":"TENANT",tenantId,actor.id(),actor.displayName(),now,actor.id(),now);
         audit.record(actor,tenantId,kind+"_CREATED",kind.name(),id,Map.of("after",load(kind,id,"").snapshot()));return id;
     }
     @Transactional public UUID createProduct(UUID tenantId, UUID categoryId, UUID manufacturerId, String name, String number, Actor actor) {
         if(tenantId!=null)tenants.require(tenantId);
         requireVisible(share(Kind.CATEGORY,categoryId),tenantId,true);requireVisible(share(Kind.MANUFACTURER,manufacturerId),tenantId,true);
-        UUID id=UUID.randomUUID();var now=Timestamp.from(Instant.now(clock));jdbc.update("INSERT INTO product(id,name,manufacturer_number,category_id,manufacturer_id,visibility,tenant_id,created_by,created_at,updated_by,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-            id,required(name),optional(number),categoryId,manufacturerId,tenantId==null?"GLOBAL":"TENANT",tenantId,actor.id(),now,actor.id(),now);
+        UUID id=UUID.randomUUID();var now=Timestamp.from(Instant.now(clock));jdbc.update("INSERT INTO product(id,name,manufacturer_number,category_id,manufacturer_id,visibility,tenant_id,created_by,created_by_display_name,created_at,updated_by,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+            id,required(name),optional(number),categoryId,manufacturerId,tenantId==null?"GLOBAL":"TENANT",tenantId,actor.id(),actor.displayName(),now,actor.id(),now);
         audit.record(actor,tenantId,"PRODUCT_CREATED","PRODUCT",id,Map.of("after",load(Kind.PRODUCT,id,"").snapshot()));return id;
     }
     @Transactional public void editLabel(Kind kind, UUID id, String name, Actor actor) {
@@ -104,6 +104,12 @@ public class CatalogService {
         if(references(kind,id))throw new BusinessFailure("REFERENCED","Resolve retained references first");
         jdbc.update("UPDATE "+kind.table+" SET name=?,updated_by=?,updated_at=? WHERE id=?",required(name),actor.id(),Timestamp.from(Instant.now(clock)),id);
         audit.record(actor,entry.tenantId(),kind+"_EDITED",kind.name(),id,Map.of("before",entry.snapshot(),"after",load(kind,id,"").snapshot()));
+    }
+    @Transactional public void editLabelAndPublish(Kind kind, UUID id, String name, boolean publishGlobally, Actor actor) {
+        Entry current=load(kind,id," FOR UPDATE");
+        String clean=required(name);
+        if(!publishGlobally||!current.name().equals(clean))editLabel(kind,id,clean,actor);
+        if(publishGlobally)publish(kind,id,actor);
     }
     /** Product writers follow Merge's label-before-Product order; never expand the label set after locking Product. */
     private Entry lockProduct(UUID id, UUID requestedCategory, UUID requestedManufacturer) {
@@ -130,6 +136,17 @@ public class CatalogService {
         requireVisible(load(Kind.CATEGORY,categoryId,""),entry.tenantId(),true);requireVisible(load(Kind.MANUFACTURER,manufacturerId,""),entry.tenantId(),true);
         jdbc.update("UPDATE product SET name=?,manufacturer_number=?,category_id=?,manufacturer_id=?,updated_by=?,updated_at=? WHERE id=?",required(name),optional(number),categoryId,manufacturerId,actor.id(),Timestamp.from(Instant.now(clock)),id);
         audit.record(actor,entry.tenantId(),"PRODUCT_EDITED","PRODUCT",id,Map.of("before",entry.snapshot(),"after",load(Kind.PRODUCT,id,"").snapshot()));
+    }
+    @Transactional public void editProductAndPublish(UUID id, UUID categoryId, UUID manufacturerId, String name, String number,
+            boolean publishGlobally, Actor actor, UUID onlyTenant) {
+        Entry current=lockProduct(id,categoryId,manufacturerId);
+        if(onlyTenant!=null && !Objects.equals(onlyTenant,current.tenantId()))
+            throw new BusinessFailure("FORBIDDEN","Product is no longer writable in the signed Tenant");
+        String clean=required(name),cleanNumber=optional(number);
+        if(!publishGlobally||!current.name().equals(clean)||!Objects.equals(current.manufacturerNumber(),cleanNumber)
+                ||!Objects.equals(current.categoryId(),categoryId)||!Objects.equals(current.manufacturerId(),manufacturerId))
+            editProduct(id,categoryId,manufacturerId,clean,cleanNumber,actor,onlyTenant);
+        if(publishGlobally)publish(Kind.PRODUCT,id,actor);
     }
     @Transactional public void delete(Kind kind, UUID id, Actor actor) {
         Entry entry=load(kind,id," FOR UPDATE");protect(kind,id);

@@ -548,7 +548,7 @@ class IdentityAuthenticationIT {
         assertEquals("legacy",jdbc.queryForObject("SELECT login_name FROM "+schema+".local_global_credential WHERE user_id=?",String.class,user));
         assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM information_schema.columns WHERE table_schema=? AND table_name='local_global_credential' AND column_name='email'",Integer.class,schema));
         assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='local_global_credential' AND column_name='login_name'",Integer.class));
-        assertEquals(8,jdbc.queryForObject("SELECT count(*) FROM public.flyway_schema_history WHERE success",Integer.class));
+        assertEquals(9,jdbc.queryForObject("SELECT count(*) FROM public.flyway_schema_history WHERE success",Integer.class));
     }
 
     @Test void emailEditWinsAgainstLoginUsingOldEmailEvenWhenPasswordIsUnchanged()throws Exception{

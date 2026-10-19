@@ -5,5 +5,7 @@ import java.util.UUID;
 
 /** Safe application resource, independent of HTTP and the persistence entity. */
 public record TenantModel(UUID id,String name,Metadata metadata) {
-    public record Metadata(UUID createdBy,Instant createdAt,UUID updatedBy,Instant updatedAt) {}
+    public record Metadata(UUID createdBy,Instant createdAt,UUID updatedBy,Instant updatedAt,String createdByDisplayName) {
+        public Metadata(UUID createdBy,Instant createdAt,UUID updatedBy,Instant updatedAt){this(createdBy,createdAt,updatedBy,updatedAt,null);}
+    }
 }

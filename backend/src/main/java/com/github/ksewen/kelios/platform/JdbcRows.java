@@ -17,7 +17,7 @@ public final class JdbcRows {
             if(name.equals("data") && value!=null)value=JSON.readValue(value.toString(),Map.class);
             row.put(key.toString(),value);
         }
-        if(row.containsKey("createdBy"))row.put("createdByDisplayName",com.github.ksewen.kelios.audit.SystemActor.displayName((UUID)row.get("createdBy")));
+        if(row.containsKey("createdBy") && row.get("createdByDisplayName")==null)row.put("createdByDisplayName",com.github.ksewen.kelios.audit.SystemActor.displayName((UUID)row.get("createdBy")));
         if(row.containsKey("updatedBy"))row.put("updatedByDisplayName",com.github.ksewen.kelios.audit.SystemActor.displayName((UUID)row.get("updatedBy")));
         return row;
     };

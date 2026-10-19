@@ -56,6 +56,12 @@ public class CatalogLabelOperations {
         var a = writable(kind, id); catalog.editLabel(kind.legacyKind(), id, name.value(), a.actor());
     }
     @Transactional
+    public void edit(CatalogLabel.Kind kind, UUID id, CatalogLabel.Name name, boolean publishGlobally) {
+        var a = writable(kind, id);
+        if(publishGlobally)Authorization.globalAdmin(a);
+        catalog.editLabelAndPublish(kind.legacyKind(), id, name.value(), publishGlobally, a.actor());
+    }
+    @Transactional
     public void delete(CatalogLabel.Kind kind, UUID id) {
         var a = writable(kind, id); catalog.delete(kind.legacyKind(), id, a.actor());
     }

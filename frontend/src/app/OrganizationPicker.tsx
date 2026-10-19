@@ -7,6 +7,7 @@ import {authSession} from '../auth';
 import type {RoutingOrganizations} from '../api-contracts';
 import {Modal} from '../components/ui/dialog';
 import {Button} from '../components/ui/button';
+import {ClearableControl} from '../components/ui/clearable-control';
 import {Skeleton} from '../components/ui/surfaces';
 function routingContext(): string {
  const user=authSession.current();
@@ -49,7 +50,7 @@ export function OrganizationPicker({open,onOpenChange,busy,select,failure}:{fail
   const token=JSON.stringify([key,data.page+1]);if(moreRequest.current===token)return;moreRequest.current=token;
   setCursor(old=>({key,page:data.page+1,attempt:old.attempt+1}));
  }
- return <Modal open={open} onOpenChange={onOpenChange} title={t('redesign.selectOrganization')} description={t('redesign.organizationHelp')}><div className="relative mb-4"><Search size={16} className="absolute left-3 top-3 text-muted-foreground"/><input className="input pl-9" aria-label={t('redesign.searchOrganizations')} placeholder={t('redesign.searchOrganizations')} value={q} onChange={e=>{const text=e.target.value;if(text.trim()!==query){setCursor({key:'',page:0,attempt:0});moreRequest.current='';}setQ(text);}} maxLength={128}/></div>
+ return <Modal open={open} onOpenChange={onOpenChange} title={t('redesign.selectOrganization')} description={t('redesign.organizationHelp')}><div className="relative mb-4"><Search size={16} className="absolute left-3 top-3 text-muted-foreground"/><ClearableControl name={t('redesign.searchOrganizations')} value={q} onClear={()=>{setQ('');setCursor({key:'',page:0,attempt:0});moreRequest.current='';}}><input className="input pl-9 pr-11" aria-label={t('redesign.searchOrganizations')} placeholder={t('redesign.searchOrganizations')} value={q} onChange={e=>{const text=e.target.value;if(text.trim()!==query){setCursor({key:'',page:0,attempt:0});moreRequest.current='';}setQ(text);}} maxLength={128}/></ClearableControl></div>
  {failed&&<p role="alert" className="error-box">{t('redesign.organizationsUnavailable')}</p>}
  {data?<><div ref={list} role="list" aria-label={t('redesign.selectOrganization')} aria-busy={pending} className="max-h-64 space-y-2 overflow-y-auto" onScroll={event=>{const node=event.currentTarget;if(node.scrollTop+node.clientHeight>=node.scrollHeight-16)loadMore();}}>
  {data.items.length===0?<p className="empty-state">{t('redesign.noOrganizations')}</p>:data.items.map((org,index)=><div role="listitem" key={org.routingId}><Button data-routing-id={org.routingId} aria-pressed={selected?.context===context&&selected.id===org.routingId} variant="outline" className="h-auto w-full justify-between gap-3 py-3 text-left" disabled={optionsDisabled} onKeyDown={event=>{if(event.key==='ArrowDown'&&index===data.items.length-1&&more){event.preventDefault();loadMore();}}} onClick={()=>{if(!optionsDisabled){setSelected({context,id:org.routingId});select(org.routingId);}}}><span className="flex min-w-0 items-center gap-3"><Building2 size={18} className="shrink-0"/><span className="min-w-0 break-words">{org.name}{data.items.filter(candidate=>candidate.name===org.name).length>1&&<span className="block break-all text-xs text-muted-foreground">{org.routingId}</span>}</span></span><ArrowRight size={16} className="shrink-0"/></Button></div>)}

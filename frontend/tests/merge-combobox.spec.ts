@@ -54,6 +54,13 @@ test('identical explicit UUIDs cannot preview/execute; source edit invalidates p
  await page.getByLabel(en.ui.mergeSourceIDExplicit,{exact:true}).fill(a);await page.getByLabel(en.ui.mergeTargetIDExplicit,{exact:true}).fill(a);await expect(page.getByRole('button',{name:en.ui.previewMerge,exact:true})).toBeDisabled();await expect(page.getByRole('button',{name:en.ui.confirmMerge,exact:true})).toHaveCount(0);expect(f.posts.length).toBe(0);
  await page.getByLabel(en.ui.mergeTargetIDExplicit,{exact:true}).fill(b);await page.getByRole('button',{name:en.ui.previewMerge,exact:true}).click();await expect(page.getByRole('button',{name:en.ui.confirmMerge,exact:true})).toBeVisible();await page.getByLabel(en.ui.mergeSourceIDExplicit,{exact:true}).fill(c);await expect(page.getByRole('button',{name:en.ui.confirmMerge,exact:true})).toHaveCount(0);
 });
+test('required Merge source X clears selection and blocks preview',async({page})=>{
+ const f=await setup(page,'categories');await page.getByRole('button',{name:en.actions.merge,exact:true}).click();await f.reply('');
+ const dialog=page.getByRole('dialog'),source=dialog.getByRole('combobox',{name:en.ui.mergeSource,exact:true}),target=dialog.getByRole('combobox',{name:en.ui.mergeTarget,exact:true});
+ await source.press('ArrowDown');await source.press('Enter');await target.press('ArrowDown');await target.press('Enter');
+ const clear=dialog.getByRole('button',{name:en.actions.clearField.replace('{{field}}',en.ui.mergeSource)});
+ await clear.focus();await clear.press('Enter');await expect(source).toBeFocused();await expect(source).toHaveValue('');await expect(dialog.getByRole('button',{name:en.ui.previewMerge,exact:true})).toBeDisabled();
+});
 for(const language of ['en','de'] as const)test(`${language}: merge rejection explains Promote-first and preserves the selected IDs`,async({page})=>{
  const t=language==='en'?en:de,f=await setup(page,'categories',language);
  await page.route('**/catalog/categories/merge',route=>route.fulfill({status:409,json:{code:'MERGE_REQUIRES_GLOBAL_TARGET',detail:'Promote the intended survivor to Global first'}}));

@@ -65,6 +65,42 @@ class OidcConfigurationResourceIT {
  @Autowired OidcConfigurationService configurations;@Autowired SecretEnvelope secrets;
  Map<String,Object> input(){return new LinkedHashMap<>(Map.of("issuer","https://fixture.example","clientId","client","clientSecret","isolated-secret","enabled",true,"allowedGroupIds",List.of(UUID.randomUUID().toString())));}
  OidcConfigurationService.View configure(){return configurations.put(admin,tenant,"https://fixture.example","client","isolated-secret",true,null,Set.of(UUID.randomUUID()));}
+ @Test void globalConfigurationCollectionIncludesDisabledAndOnlySafeFieldsInStablePages()throws Exception{
+  UUID alpha=tenants.create("A configuration "+UUID.randomUUID(),actor);
+  configurations.put(admin,alpha,"https://alpha.example","alpha-client","alpha-secret",true,null,Set.of(UUID.randomUUID()));
+  configurations.put(admin,other,"https://other.example","other-client","other-secret",false,null,Set.of(UUID.randomUUID()));
+  long count=jdbc.queryForObject("SELECT count(*) FROM tenant_oidc_config",Long.class);
+  assertEquals(20,data(request(admin,get("/api/v1/oidc-configurations"),null)).get("size"));
+  var expected=jdbc.queryForList("SELECT p.tenant_id FROM tenant_oidc_config p JOIN tenant t ON t.id=p.tenant_id ORDER BY lower(t.name),t.id",UUID.class).stream().map(UUID::toString).toList();
+  List<String> seen=new ArrayList<>();for(int page=0;page<count;page++){
+   var response=request(admin,get("/api/v1/oidc-configurations").param("page",String.valueOf(page)).param("size","1"),null);
+   assertEquals(200,status(response));assertEquals("no-store",response.getResponse().getHeader("Cache-Control"));var body=data(response);
+   assertEquals(Set.of("items","page","size","totalElements"),body.keySet());assertEquals(count,((Number)body.get("totalElements")).longValue());assertEquals(page,body.get("page"));assertEquals(1,body.get("size"));
+   var item=(Map<?,?>)((List<?>)body.get("items")).getFirst();assertEquals(Set.of("tenantId","tenant","issuer","clientId","enabled","version"),item.keySet());assertEquals(Set.of("id","name"),((Map<?,?>)item.get("tenant")).keySet());seen.add((String)item.get("tenantId"));
+   String serialized=response.getResponse().getContentAsString();for(String forbidden:List.of("alpha-secret","other-secret","encrypted","allowedGroup","claim","callbackUri","secretConfigured","metadata"))assertFalse(serialized.contains(forbidden));
+  }
+  assertEquals(expected,seen);assertTrue(seen.contains(other.toString()));assertEquals(false,((Map<?,?>)((List<?>)data(request(admin,get("/api/v1/oidc-configurations").param("page",String.valueOf(seen.indexOf(other.toString()))).param("size","1"),null)).get("items")).getFirst()).get("enabled"));
+  assertTrue(((List<?>)data(request(admin,get("/api/v1/oidc-configurations").param("page",String.valueOf(count)).param("size","1"),null)).get("items")).isEmpty());
+  assertEquals(400,status(request(admin,get("/api/v1/oidc-configurations").param("q","alpha"),null)));
+  assertEquals(400,status(request(admin,get("/api/v1/oidc-configurations").param("size","101"),null)));
+ }
+ @Test void configurationCollectionAuthorityDoesNotExpandSingletonOrMutation()throws Exception{
+  configure();configurations.put(admin,other,"https://other.example","other-client","other-secret",false,null,Set.of());
+  assertEquals(401,status(request(null,get("/api/v1/oidc-configurations"),null)));
+  for(Scope scope:Scope.values())for(Role role:Role.values())for(Status state:Status.values()){
+   var who=principal(scope,role,state);int expected=scope==Scope.GLOBAL&&role==Role.ADMIN&&state==Status.ACTIVE?200:403;
+   if(state!=Status.DISABLED)assertEquals(expected,status(request(who,get("/api/v1/oidc-configurations"),null)),scope+" "+role+" "+state);
+   if(expected==403)assertEquals(403,assertThrows(AuthFailure.class,()->configurations.configurations(who,0,20)).status());
+  }
+  var own=principal(Scope.TENANT,Role.ADMIN,Status.ACTIVE);
+  assertEquals(200,status(request(own,get("/api/v1/tenants/"+tenant+"/oidc"),null)));
+  assertEquals(404,status(request(own,get("/api/v1/tenants/"+other+"/oidc"),null)));
+  assertEquals(404,status(request(own,put("/api/v1/tenants/"+other+"/oidc"),input())));
+  assertEquals(404,status(request(own,delete("/api/v1/tenants/"+other+"/oidc").param("version","0"),null)));
+  assertEquals(403,status(request(principal(Scope.GLOBAL,Role.USER,Status.ACTIVE),put("/api/v1/tenants/"+tenant+"/oidc"),input())));
+  assertEquals(403,status(request(principal(Scope.GLOBAL,Role.USER,Status.ACTIVE),delete("/api/v1/tenants/"+tenant+"/oidc").param("version","0"),null)));
+  assertEquals(405,status(request(admin,put("/api/v1/oidc-configurations"),input())));
+ }
  @Test void independentSingletonDetailHasReadableTenantAndNoSecretProjection()throws Exception{
   assertEquals(404,status(request(admin,get("/api/v1/tenants/"+tenant+"/oidc"),null)));assertEquals(404,status(request(admin,get("/api/v1/tenants/"+UUID.randomUUID()+"/oidc"),null)));assertEquals(401,status(request(null,get("/api/v1/tenants/"+tenant+"/oidc"),null)));
   var created=request(admin,put("/api/v1/tenants/"+tenant+"/oidc"),input());assertEquals(200,status(created));long count=jdbc.queryForObject("SELECT count(*) FROM audit_log",Long.class);
@@ -87,7 +123,7 @@ class OidcConfigurationResourceIT {
  @Test void updatePreservesCreationAndRetainsReencryptsSecretWithVersionedGroups(){var initial=configure();var before=jdbc.queryForMap("SELECT * FROM tenant_oidc_config WHERE tenant_id=?",tenant);clock.now=clock.now.plusSeconds(1);var changed=configurations.put(admin,tenant,"https://other-fixture.example","changed-client",null,false,initial.version(),Set.of());assertEquals(1,changed.version());assertFalse(changed.enabled());assertTrue(changed.allowedGroupIds().isEmpty());var after=jdbc.queryForMap("SELECT * FROM tenant_oidc_config WHERE tenant_id=?",tenant);assertEquals(before.get("created_by"),after.get("created_by"));assertEquals(before.get("created_at"),after.get("created_at"));assertNotEquals(before.get("updated_at"),after.get("updated_at"));assertEquals(actor.id(),after.get("updated_by"));assertNotEquals(before.get("encrypted_client_secret"),after.get("encrypted_client_secret"));assertEquals("isolated-secret",secrets.decrypt((String)after.get("encrypted_client_secret"),OidcConfigurationService.context(tenant,"https://other-fixture.example","changed-client")));assertEquals(403,assertThrows(AuthFailure.class,()->configurations.provider(tenant)).status());assertEquals(409,assertThrows(AuthFailure.class,()->configurations.put(admin,tenant,"https://fixture.example","client",null,true,0L,Set.of())).status());assertEquals(tenant,attribution("OIDC_CONFIG_CHANGED",tenant));}
  @Test void auditFailureRollsBackSettingsSecretGroupsAndMetadata(){configure();var before=jdbc.queryForMap("SELECT * FROM tenant_oidc_config WHERE tenant_id=?",tenant);var groups=jdbc.queryForList("SELECT group_id FROM tenant_oidc_allowed_group WHERE tenant_id=? ORDER BY group_id",UUID.class,tenant);long count=jdbc.queryForObject("SELECT count(*) FROM audit_log",Long.class);jdbc.execute("CREATE FUNCTION step8_reject_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.action='OIDC_CONFIG_CHANGED' THEN RAISE EXCEPTION 'isolated audit failure'; END IF; RETURN NEW; END; $$");jdbc.execute("CREATE TRIGGER step8_reject_audit BEFORE INSERT ON audit_log FOR EACH ROW EXECUTE FUNCTION step8_reject_audit()");try{assertThrows(RuntimeException.class,()->configurations.put(admin,tenant,"https://other.example","other","new-secret",false,0L,Set.of()));assertEquals(before,jdbc.queryForMap("SELECT * FROM tenant_oidc_config WHERE tenant_id=?",tenant));assertEquals(groups,jdbc.queryForList("SELECT group_id FROM tenant_oidc_allowed_group WHERE tenant_id=? ORDER BY group_id",UUID.class,tenant));assertThrows(RuntimeException.class,()->configurations.put(admin,other,"https://fixture.example","client","secret",true,null,Set.of()));assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM tenant_oidc_config WHERE tenant_id=?",Integer.class,other));assertEquals(count,jdbc.queryForObject("SELECT count(*) FROM audit_log",Long.class));}finally{jdbc.execute("DROP TRIGGER step8_reject_audit ON audit_log");jdbc.execute("DROP FUNCTION step8_reject_audit()");}}
  @Test void concurrentFirstConfigurationHasOneWinner()throws Exception{var start=new CountDownLatch(1);try(var pool=Executors.newFixedThreadPool(2)){var tasks=new ArrayList<Future<Boolean>>();for(int i=0;i<2;i++)tasks.add(pool.submit(()->{start.await();try{configure();return true;}catch(AuthFailure ex){assertEquals(409,ex.status());return false;}}));start.countDown();int winners=0;for(var task:tasks)if(task.get(10,TimeUnit.SECONDS))winners++;assertEquals(1,winners);assertEquals(0,configurations.get(admin,tenant).version());assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE action='OIDC_CONFIG_CHANGED' AND target_id=?",Integer.class,tenant));}}
- @Test void physicalDeleteDoesNotIntroduceCollectionOrReset()throws Exception{configure();assertEquals(200,status(request(principal(Scope.TENANT,Role.ADMIN,Status.ACTIVE),get("/api/v1/tenants/"+tenant+"/oidc"),null)));assertEquals(403,status(request(principal(Scope.GLOBAL,Role.USER,Status.ACTIVE),put("/api/v1/tenants/"+tenant+"/oidc"),input())));assertEquals(200,status(request(admin,delete("/api/v1/tenants/"+tenant+"/oidc").param("version","0"),null)));assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM tenant_oidc_config WHERE tenant_id=?",Integer.class,tenant));}
+ @Test void physicalDeleteRemovesSingletonWithoutReset()throws Exception{configure();assertEquals(200,status(request(principal(Scope.TENANT,Role.ADMIN,Status.ACTIVE),get("/api/v1/tenants/"+tenant+"/oidc"),null)));assertEquals(403,status(request(principal(Scope.GLOBAL,Role.USER,Status.ACTIVE),put("/api/v1/tenants/"+tenant+"/oidc"),input())));assertEquals(200,status(request(admin,delete("/api/v1/tenants/"+tenant+"/oidc").param("version","0"),null)));assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM tenant_oidc_config WHERE tenant_id=?",Integer.class,tenant));}
 
  @Autowired OidcProvisioning provisioning;@Autowired org.springframework.transaction.PlatformTransactionManager tm;
  <T>T tx(java.util.function.Supplier<T> work){return new org.springframework.transaction.support.TransactionTemplate(tm).execute(t->work.get());}

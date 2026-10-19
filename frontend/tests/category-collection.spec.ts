@@ -48,11 +48,19 @@ async function filterFixture(page:Page,scope:'GLOBAL'|'TENANT'){
  });
  return requests;
 }
+for(const language of ['en','de'] as const)for(const width of [1440,390])test(`${language}/${width} Catalog Create with no Tenants has Global ownership and no empty helper`,async({page})=>{
+ const t=language==='de'?de:en;await page.addInitScript(value=>localStorage.setItem('kelios.ui.language',value),language);await setup(page);await page.route('**/api/v1/tenants',route=>route.fulfill({json:[]}));
+ const writes:string[]=[];await page.route('**/api/v1/catalog/categories',route=>{if(route.request().method()!=='POST')return route.fallback();writes.push(new URL(route.request().url()).pathname);return route.fulfill({status:201,json:{id:localId}});});
+ await page.setViewportSize({width,height:900});await page.goto('/categories');await page.getByRole('toolbar').getByRole('button',{name:t.actions.create,exact:true}).click();const dialog=page.getByRole('dialog');
+ await expect(dialog.getByLabel(t.fields.tenantName)).toHaveValue('');await expect(dialog.getByText(/Keine Mandanten verfügbar|No Tenants available/i)).toHaveCount(0);
+ await dialog.getByLabel(t.ui.name).fill('Global entry');await dialog.getByRole('button',{name:t.actions.create,exact:true}).click();await expect(dialog).toHaveCount(0);expect(writes).toEqual(['/api/v1/catalog/categories']);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});
 test('GLOBAL ADMIN sees all Categories at root and a bounded set in each Tenant context',async({page})=>{
  await page.addInitScript(()=>localStorage.setItem('kelios.ui.language','de'));
  await setup(page);const requests=await filterFixture(page,'GLOBAL');
  await page.goto('/categories');
- const toolbar=page.getByRole('toolbar',{name:de.fields.categories}),rows=toolbar.getByLabel(de.ui.categoryRows);
+ const toolbar=page.getByRole('toolbar',{name:de.fields.categories}),rows=toolbar.getByLabel(de.ui.categoryRows,{exact:true});
  await expect(rows).toHaveValue('');
  await expect(rows.locator('option')).toHaveText(['Alle','Nur Globale','Mit Mandant']);
  await expect(toolbar.getByRole('button',{name:de.actions.moreFilters})).toHaveCount(0);
@@ -112,7 +120,7 @@ test('TENANT ADMIN can narrow own Categories without seeing another Tenant',asyn
  await page.addInitScript(()=>localStorage.setItem('kelios.ui.language','en'));
  await setup(page,'ADMIN','TENANT');const requests=await filterFixture(page,'TENANT');
  await page.goto(`/tenants/${tenant}/categories`);
- const toolbar=page.getByRole('toolbar',{name:en.fields.categories}),rows=toolbar.getByLabel(en.ui.categoryRows);
+ const toolbar=page.getByRole('toolbar',{name:en.fields.categories}),rows=toolbar.getByLabel(en.ui.categoryRows,{exact:true});
  await expect(rows.locator('option')).toHaveText([en.ui.categoryRowsAll,en.ui.categoryRowsGlobal,en.ui.categoryRowsTenant]);
  await expect(page.locator('tbody')).toContainText('Global category');
  await expect(page.locator('tbody')).toContainText('North category');
@@ -200,9 +208,9 @@ for(const [lang,text] of [['en',en],['de',de]] as const)for(const width of [1440
  const requests=await setup(page);await page.setViewportSize({width,height:900});await page.goto(`/tenants/${tenant}/categories`);
  const toolbar=page.getByRole('toolbar',{name:text.fields.categories});await expect(toolbar).toBeVisible();
  const order=await toolbar.locator('button,input,select').evaluateAll(nodes=>nodes.map(node=>node.tagName==='INPUT'?'search':node.getAttribute('aria-label')??node.textContent?.trim()));
- expect(order).toEqual([text.actions.create,text.actions.merge,'search',text.actions.filter,text.ui.categoryRows]);
+ expect(order).toEqual([text.actions.create,text.actions.merge,'search',text.actions.filter,text.ui.categoryRows,text.actions.resetFilters]);
  const search=toolbar.getByRole('textbox',{name:text.ui.categorySearch});await expect(search).toHaveAttribute('placeholder',text.ui.categorySearchPlaceholder);
- const heights=await Promise.all([toolbar.getByRole('button',{name:text.actions.create}),toolbar.getByRole('button',{name:text.actions.merge}),search,toolbar.getByRole('button',{name:text.actions.filter,exact:true}),toolbar.getByLabel(text.ui.categoryRows)].map(async control=>(await control.boundingBox())?.height));
+ const heights=await Promise.all([toolbar.getByRole('button',{name:text.actions.create}),toolbar.getByRole('button',{name:text.actions.merge}),search,toolbar.getByRole('button',{name:text.actions.filter,exact:true}),toolbar.getByLabel(text.ui.categoryRows,{exact:true})].map(async control=>(await control.boundingBox())?.height));
  expect(heights.every(height=>height!==undefined&&Math.abs(height-40)<1)).toBe(true);
  await expect(page.getByRole('columnheader',{name:text.fields.tenantName})).toBeVisible();
  await expect(page.getByRole('columnheader',{name:text.fields.createdAt})).toBeVisible();
@@ -219,7 +227,7 @@ for(const [lang,text] of [['en',en],['de',de]] as const)for(const width of [1440
  const pageSize=page.getByLabel(text.ui.pageSize),previous=page.getByRole('button',{name:text.ui.previousPage}),next=page.getByRole('button',{name:text.ui.nextPage});
  const pagerHeights=await Promise.all([pageSize,previous,next].map(async control=>(await control.boundingBox())?.height));
  expect(pagerHeights).toEqual([40,40,40]);
- const selectStyle=await toolbar.getByLabel(text.ui.categoryRows).evaluate(node=>{const style=getComputedStyle(node);return {paddingEnd:Number.parseFloat(style.paddingInlineEnd),background:style.backgroundImage,position:style.backgroundPositionX};});
+ const selectStyle=await toolbar.getByLabel(text.ui.categoryRows,{exact:true}).evaluate(node=>{const style=getComputedStyle(node);return {paddingEnd:Number.parseFloat(style.paddingInlineEnd),background:style.backgroundImage,position:style.backgroundPositionX};});
  expect(selectStyle.paddingEnd).toBeGreaterThanOrEqual(40);expect(selectStyle.background).not.toBe('none');expect(selectStyle.position).not.toBe('100%');
  await expect(page.getByRole('columnheader',{name:text.fields.createdAt}).getByRole('button')).toHaveCount(0);
  await expect(page.getByRole('columnheader',{name:text.fields.createdByName}).getByRole('button')).toHaveCount(0);
@@ -276,18 +284,17 @@ test('Category actor fallback never exposes unresolved or system UUIDs',async({p
  await page.goto(`/categories/${localId}`);const detail=page.getByRole('article');
  await expect(detail.getByText(en.ui.unresolvedActor)).toBeVisible();await expect(detail.getByText('KELIOS system/seed')).toBeVisible();await expect(detail).not.toContainText(fixtureMetadata.createdBy);
 });
-test('Category read mode retains separate publish and delete commands without changing edit actions',async({page})=>{
+test('Category edit holds publication until Save and exposes explicit guarded Delete',async({page})=>{
  await page.addInitScript(()=>localStorage.setItem('kelios.ui.language','en'));await setup(page);
- let writes=0;await page.route(`**/api/v1/catalog/categories/${localId}/publish`,route=>{writes++;return route.fulfill({status:204,body:''});});
- await page.route(`**/api/v1/catalog/categories/${localId}`,route=>{if(route.request().method()==='DELETE'){writes++;return route.fulfill({status:204,body:''});}return route.fallback();});
+ const writes:{method:string;body:any}[]=[];
+ await page.route(`**/api/v1/catalog/categories/${localId}`,route=>{const method=route.request().method();if(method==='PUT'||method==='DELETE'){writes.push({method,body:route.request().postDataJSON()});return route.fulfill({status:204,body:''});}return route.fallback();});
  await page.goto(`/categories/${localId}`);const detail=page.getByRole('article');
  await expect(detail.getByRole('button',{name:en.ui.editCategory})).toBeVisible();await expect(detail.getByRole('button',{name:en.ui.exitDetail})).toBeVisible();
- await detail.getByRole('button',{name:en.ui.categoryActions}).click();await page.getByRole('menuitem',{name:en.ui.publishGlobally}).click();
- await page.getByRole('form',{name:en.ui.publishGlobally}).getByRole('button',{name:en.ui.publishGlobally}).click();
- await page.getByRole('alertdialog').getByRole('button',{name:en.redesign.cancel}).click();expect(writes).toBe(0);
- await page.getByRole('dialog').getByRole('button',{name:en.redesign.cancel}).click();
- await detail.getByRole('button',{name:en.ui.categoryActions}).click();await page.getByRole('menuitem',{name:en.ui.deleteEntry}).click();
- await page.getByRole('alertdialog').getByRole('button',{name:en.redesign.cancel}).click();expect(writes).toBe(0);
+ const deletion=detail.getByRole('button',{name:en.ui.deleteEntry});await expect(deletion).toBeVisible();await expect(deletion).toHaveClass(/bg-destructive/);
+ await detail.getByRole('button',{name:en.ui.editCategory}).click();const form=detail.getByRole('form',{name:en.ui.editCategory});await form.getByRole('checkbox',{name:en.ui.publishGlobally}).check();expect(writes).toHaveLength(0);
+ await form.getByRole('button',{name:en.redesign.cancel}).click();await page.getByRole('alertdialog').getByRole('button',{name:en.ui.discardChanges}).click();expect(writes).toHaveLength(0);
+ await detail.getByRole('button',{name:en.ui.editCategory}).click();await form.getByRole('checkbox',{name:en.ui.publishGlobally}).check();await form.getByRole('button',{name:en.ui.save}).click();await expect.poll(()=>writes.length).toBe(1);expect(writes[0]).toMatchObject({method:'PUT',body:{name:'Local category',publishGlobally:true}});
+ await deletion.click();await page.getByRole('alertdialog').getByRole('button',{name:en.redesign.cancel}).click();expect(writes).toHaveLength(1);
 });
 test('Category toolbar actions remain authorized and isolated',async({page})=>{
  await page.addInitScript(()=>localStorage.setItem('kelios.ui.language','en'));await setup(page);await page.goto(`/tenants/${tenant}/categories`);

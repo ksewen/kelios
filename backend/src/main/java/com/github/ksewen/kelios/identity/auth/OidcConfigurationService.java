@@ -20,6 +20,16 @@ public class OidcConfigurationService {
     /** Public routing directory: no identity facts, issuer, credentials or provider policy. */
     public record Organization(UUID routingId,String name) {}
     public record Organizations(List<Organization> items,long totalElements,int page,int size) {}
+    public record ConfigurationSummary(UUID tenantId,Tenant tenant,String issuer,String clientId,boolean enabled,long version) {}
+    public record ConfigurationPage(List<ConfigurationSummary> items,int page,int size,long totalElements) {}
+    @Transactional(readOnly=true) public ConfigurationPage configurations(Identity actor,int page,int size){
+        Authorization.globalAdmin(actor);
+        if(page<0 || size<1 || size>100)throw new AuthFailure(400,"Invalid configuration pagination");
+        long total=jdbc.queryForObject("SELECT count(*) FROM tenant_oidc_config",Long.class);
+        var rows=jdbc.query("SELECT p.tenant_id,t.name,p.issuer,p.client_id,p.enabled,p.version FROM tenant_oidc_config p JOIN tenant t ON t.id=p.tenant_id ORDER BY lower(t.name),t.id LIMIT ? OFFSET ?",
+            (r,n)->{UUID id=r.getObject("tenant_id",UUID.class);return new ConfigurationSummary(id,new Tenant(id,r.getString("name")),r.getString("issuer"),r.getString("client_id"),r.getBoolean("enabled"),r.getLong("version"));},size,(long)page*size);
+        return new ConfigurationPage(rows,page,size,total);
+    }
     @Transactional(readOnly=true) public Organizations organizations(int page,int size,String q){
         if(q==null)throw new AuthFailure(400,"Invalid organization query");
         q=q.strip();
@@ -95,7 +105,7 @@ public class OidcConfigurationService {
     @Transactional(readOnly=true) public Provider provider(UUID tenant){Provider p=load(tenant,"");if(!p.enabled())throw AuthFailure.denied();return p;}
     @Transactional(propagation=Propagation.MANDATORY) public Provider locked(UUID tenant){lockTenant(tenant);return load(tenant," FOR SHARE");}
     private Provider load(UUID tenant,String lock){
-        var rows=jdbc.query("SELECT * FROM tenant_oidc_config WHERE tenant_id=?"+lock,(rs,n)->new Provider(tenant,rs.getString("issuer"),rs.getString("client_id"),rs.getString("encrypted_client_secret"),rs.getBoolean("enabled"),rs.getLong("version"),Set.of(),com.github.ksewen.kelios.audit.BusinessMetadata.read(rs)),tenant);
+        var rows=jdbc.query("SELECT * FROM tenant_oidc_config WHERE tenant_id=?"+lock,(rs,n)->new Provider(tenant,rs.getString("issuer"),rs.getString("client_id"),rs.getString("encrypted_client_secret"),rs.getBoolean("enabled"),rs.getLong("version"),Set.of(),new com.github.ksewen.kelios.audit.BusinessMetadata(rs.getObject("created_by",UUID.class),rs.getTimestamp("created_at").toInstant(),rs.getObject("updated_by",UUID.class),rs.getTimestamp("updated_at").toInstant())),tenant);
         if(rows.isEmpty())throw new AuthFailure(404,"Tenant identity provider not configured");Provider p=rows.getFirst();
         var groups=Set.copyOf(jdbc.queryForList("SELECT group_id FROM tenant_oidc_allowed_group WHERE tenant_id=?",UUID.class,tenant));
         return new Provider(tenant,p.issuer(),p.clientId(),p.encryptedSecret(),p.enabled(),p.version(),groups,p.metadata());

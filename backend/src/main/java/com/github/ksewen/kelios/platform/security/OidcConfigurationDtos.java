@@ -13,6 +13,9 @@ final class OidcConfigurationDtos {
     record Tenant(UUID id,String name){}
     record Metadata(UUID createdBy,Instant createdAt,UUID updatedBy,Instant updatedAt,String createdByDisplayName,String updatedByDisplayName){}
     record Detail(UUID tenantId,String issuer,String clientId,boolean secretConfigured,boolean enabled,long version,Set<UUID> allowedGroupIds,String callbackUri,Metadata metadata,Tenant tenant){}
+    record Summary(UUID tenantId,Tenant tenant,String issuer,String clientId,boolean enabled,long version){}
+    static com.github.ksewen.kelios.platform.Page<Summary> page(OidcConfigurationService.ConfigurationPage page){return new com.github.ksewen.kelios.platform.Page<>(page.items().stream().map(v->new Summary(v.tenantId(),new Tenant(v.tenant().id(),v.tenant().name()),v.issuer(),v.clientId(),v.enabled(),v.version())).toList(),page.page(),page.size(),page.totalElements());}
+    static int[] query(Map<String,String> query){if(!Set.of("page","size").containsAll(query.keySet()))throw new IllegalArgumentException("Unsupported configuration query parameter");var values=new HashMap<>(query);values.putIfAbsent("size","20");return new int[]{ListInput.page(values),ListInput.size(values)};}
     static Detail detail(OidcConfigurationService.View v){var m=v.metadata();return new Detail(v.tenantId(),v.issuer(),v.clientId(),v.secretConfigured(),v.enabled(),v.version(),v.allowedGroupIds(),v.callbackUri(),new Metadata(m.createdBy(),m.createdAt(),m.updatedBy(),m.updatedAt(),SystemActor.displayName(m.createdBy()),SystemActor.displayName(m.updatedBy())),new Tenant(v.tenant().id(),v.tenant().name()));}
     static long deleteVersion(Map<String,String> query){
         if(!query.keySet().equals(Set.of("version")))throw new IllegalArgumentException("Provider version required");

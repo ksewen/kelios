@@ -56,6 +56,8 @@ public class Asset {
     Instant createdAt;
     @Column(name = "created_by")
     UUID createdBy;
+    @Column(name = "created_by_display_name", updatable = false, columnDefinition = "text")
+    String createdByDisplayName;
     @Column(name = "updated_at")
     Instant updatedAt;
     @Column(name = "updated_by")

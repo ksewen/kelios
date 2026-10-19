@@ -25,6 +25,16 @@ final class CatalogLabelDtos {
         public void reject(String key, Object value) { throw BusinessFailure.invalid("Unknown command field"); }
         CatalogLabel.Name model() { return new CatalogLabel.Name(name); }
     }
+    record EditCommand(CatalogLabel.Name model, boolean publishGlobally) {
+        @com.fasterxml.jackson.annotation.JsonCreator
+        public static EditCommand bind(@com.fasterxml.jackson.annotation.JsonProperty("name") Object name,
+                @com.fasterxml.jackson.annotation.JsonProperty("publishGlobally") Object publish) {
+            if(publish!=null && !(publish instanceof Boolean))throw BusinessFailure.invalid("Boolean publication intent required");
+            return new EditCommand(NameCommand.bind(name).model(),Boolean.TRUE.equals(publish));
+        }
+        @com.fasterxml.jackson.annotation.JsonAnySetter
+        public void reject(String key,Object value){throw BusinessFailure.invalid("Unknown command field");}
+    }
     record MergeCommand(UUID sourceId, UUID targetId) {
         @com.fasterxml.jackson.annotation.JsonCreator
         public static MergeCommand bind(@com.fasterxml.jackson.annotation.JsonProperty("sourceId") Object source,

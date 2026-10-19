@@ -98,7 +98,35 @@ class Phase4MetadataIT {
   for(String table:tables){String columns=String.join(",",jdbc.queryForList("SELECT column_name FROM information_schema.columns WHERE table_schema=? AND table_name=? ORDER BY ordinal_position",String.class,schema,table));jdbc.execute("INSERT INTO "+schema+"."+table+" SELECT "+(table.equals("local_global_credential")?columns.replace("login_name","split_part(email,'@',1)"):columns)+" FROM public."+table+" ON CONFLICT DO NOTHING");before.put(table,jdbc.queryForList("SELECT to_jsonb(t)::text FROM "+schema+"."+table+" t ORDER BY to_jsonb(t)::text",String.class));}
   var checksums=jdbc.queryForList("SELECT checksum FROM "+schema+".flyway_schema_history ORDER BY installed_rank",Integer.class);var latest=org.flywaydb.core.Flyway.configure().dataSource(PG.getJdbcUrl(),PG.getUsername(),PG.getPassword()).schemas(schema).defaultSchema(schema).target("6").load();latest.migrate();latest.validate();assertEquals(checksums,jdbc.queryForList("SELECT checksum FROM "+schema+".flyway_schema_history WHERE version IS NULL OR version<>'6' ORDER BY installed_rank",Integer.class));
   for(String table:tables)assertEquals(before.get(table),jdbc.queryForList("SELECT "+(table.equals("asset")?"(to_jsonb(t)-'local_identifier')":"to_jsonb(t)")+"::text FROM "+schema+"."+table+" t ORDER BY "+(table.equals("asset")?"(to_jsonb(t)-'local_identifier')":"to_jsonb(t)")+"::text",String.class),table);
-  assertNull(jdbc.queryForObject("SELECT local_identifier FROM "+schema+".asset WHERE id=?",String.class,a.id()));assertEquals(8,jdbc.queryForObject("SELECT count(*) FROM public.flyway_schema_history WHERE success",Integer.class));assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM pg_indexes WHERE schemaname='public' AND tablename='asset' AND indexdef LIKE '%local_identifier%'",Integer.class));
+  assertNull(jdbc.queryForObject("SELECT local_identifier FROM "+schema+".asset WHERE id=?",String.class,a.id()));assertEquals(9,jdbc.queryForObject("SELECT count(*) FROM public.flyway_schema_history WHERE success",Integer.class));assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM pg_indexes WHERE schemaname='public' AND tablename='asset' AND indexdef LIKE '%local_identifier%'",Integer.class));
+ }
+
+ @Test void creatorMigrationLeavesPreexistingRowsUnattributed(){
+  String schema="creator_"+UUID.randomUUID().toString().replace("-","");
+  var before=org.flywaydb.core.Flyway.configure().dataSource(PG.getJdbcUrl(),PG.getUsername(),PG.getPassword()).schemas(schema).defaultSchema(schema).target("8").load();before.migrate();
+  UUID legacy=UUID.randomUUID();jdbc.update("INSERT INTO "+schema+".tenant(id,name,created_by,created_at,updated_by,updated_at) VALUES(?,?,?,now(),?,now())",legacy,"Legacy",actor.id(),actor.id());
+  var after=org.flywaydb.core.Flyway.configure().dataSource(PG.getJdbcUrl(),PG.getUsername(),PG.getPassword()).schemas(schema).defaultSchema(schema).target("9").load();after.migrate();after.validate();
+  for(String table:List.of("tenant","app_user","category","manufacturer","product","asset","location","owner"))assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM "+schema+"."+table+" WHERE created_by_display_name IS NOT NULL",Integer.class),table);
+  assertNull(jdbc.queryForObject("SELECT created_by_display_name FROM "+schema+".tenant WHERE id=?",String.class,legacy));
+ }
+
+ @Test void creationSnapshotsCoverEightResourcesAndDoNotFollowLaterActorNames()throws Exception{
+  var a=asset();UUID systemUser=users.create(Scope.GLOBAL,null,Role.USER,Status.ACTIVE,"Internal user");
+  for(var entry:Map.of("tenant",tenant,"category",category,"manufacturer",manufacturer,"product",product,"asset",a.id(),"location",location,"owner",owner).entrySet()){
+   assertEquals(actor.displayName(),jdbc.queryForObject("SELECT created_by_display_name FROM "+entry.getKey()+" WHERE id=?",String.class,entry.getValue()),entry.getKey());
+  }
+  assertEquals(com.github.ksewen.kelios.audit.SystemActor.DISPLAY_NAME,jdbc.queryForObject("SELECT created_by_display_name FROM app_user WHERE id=?",String.class,systemUser));
+  assertEquals(actor.displayName(),data(request(admin,get("/api/v1/assets/"+a.id()),null)).get("createdByDisplayName"));
+  jdbc.update("UPDATE asset SET updated_by=?,updated_at=now() WHERE id=?",UUID.randomUUID(),a.id());
+  assertEquals(actor.displayName(),jdbc.queryForObject("SELECT created_by_display_name FROM asset WHERE id=?",String.class,a.id()));
+ }
+
+ @Test void oidcJitSnapshotsOnlyAnAvailableProviderDisplayLabel(){
+  UUID group=UUID.randomUUID();configs.put(admin,tenant,"https://jit.example","client","fixture secret",true,null,Set.of(group));
+  var named=provisioning.complete(tenant,0,"https://jit.example","client","named-subject","Provider Person",Set.of(group));
+  var unnamed=provisioning.complete(tenant,0,"https://jit.example","client","unnamed-subject",null,Set.of(group));
+  assertEquals("Provider Person",jdbc.queryForObject("SELECT created_by_display_name FROM app_user WHERE id=?",String.class,named.user().id()));
+  assertNull(jdbc.queryForObject("SELECT created_by_display_name FROM app_user WHERE id=?",String.class,unnamed.user().id()));
  }
 
  @Test void oldImmutableSnapshotAbsenceIsNotInferred() {

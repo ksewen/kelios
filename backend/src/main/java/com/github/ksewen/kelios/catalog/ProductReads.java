@@ -19,21 +19,21 @@ public class ProductReads {
         + " JOIN category c ON c.id=p.category_id JOIN manufacturer m ON m.id=p.manufacturer_id";
     private static final String FIELDS = "p.id,p.name,p.manufacturer_number,p.visibility,p.tenant_id,t.name AS tenant_name,"
         + "p.category_id,c.name AS category_name,p.manufacturer_id,m.name AS manufacturer_name,"
-        + "p.created_by,p.created_at,p.updated_by,p.updated_at,p.deleted_at,p.deleted_by";
+        + "p.created_by,p.created_by_display_name,p.created_at,p.updated_by,p.updated_at,p.deleted_at,p.deleted_by";
     private record Row(UUID id, String name, String number, String visibility, UUID tenantId, String tenantName,
             UUID categoryId, String categoryName, UUID manufacturerId, String manufacturerName,
-            UUID createdBy, Instant createdAt, UUID updatedBy, Instant updatedAt, Instant deletedAt, UUID deletedBy) {
+            UUID createdBy, Instant createdAt, UUID updatedBy, Instant updatedAt, Instant deletedAt, UUID deletedBy, String createdByDisplayName) {
         static Row read(ResultSet r) throws SQLException {
             return new Row(r.getObject("id",UUID.class),r.getString("name"),r.getString("manufacturer_number"),r.getString("visibility"),
                 r.getObject("tenant_id",UUID.class),r.getString("tenant_name"),r.getObject("category_id",UUID.class),r.getString("category_name"),
                 r.getObject("manufacturer_id",UUID.class),r.getString("manufacturer_name"),r.getObject("created_by",UUID.class),
                 r.getTimestamp("created_at").toInstant(),r.getObject("updated_by",UUID.class),r.getTimestamp("updated_at").toInstant(),
-                r.getTimestamp("deleted_at")==null?null:r.getTimestamp("deleted_at").toInstant(),r.getObject("deleted_by",UUID.class));
+                r.getTimestamp("deleted_at")==null?null:r.getTimestamp("deleted_at").toInstant(),r.getObject("deleted_by",UUID.class),r.getString("created_by_display_name"));
         }
         ProductModel model() {
             return new ProductModel(id,name,number,ProductModel.Visibility.valueOf(visibility),
                 tenantId==null?null:new ProductModel.Reference(tenantId,tenantName),new ProductModel.Reference(categoryId,categoryName),
-                new ProductModel.Reference(manufacturerId,manufacturerName),new ProductModel.Metadata(createdBy,createdAt,updatedBy,updatedAt),deletedAt,deletedBy);
+                new ProductModel.Reference(manufacturerId,manufacturerName),new ProductModel.Metadata(createdBy,createdAt,updatedBy,updatedAt,createdByDisplayName),deletedAt,deletedBy);
         }
     }
     ProductModel detail(UUID id, UUID onlyTenant) {

@@ -51,10 +51,15 @@ public class AuthenticationService {
         });
     }
     public Identity createGlobal(Identity actor,String email,String displayName,String password){
+        return createGlobal(actor,email,displayName,password,Role.USER);
+    }
+    public Identity createGlobal(Identity actor,String email,String displayName,String password,Role role){
         Authorization.globalAdmin(actor);String canonical=passwords.email(email),display=name(displayName),hash=passwords.hash(password);
+        Role requested=role==null?Role.USER:role;
         return tx.execute(s->{
-            var user=new Identity(UUID.randomUUID(),Scope.GLOBAL,null,Role.USER,Status.ACTIVE,display);users.insert(user,actor.actor());credential(user.id(),canonical,hash);
-            audit.record(actor.actor(),user.tenantId(),"USER_CREATED","USER",user.id(),Map.of("scope","GLOBAL","role","USER","status","ACTIVE"));return user;
+            if(requested==Role.ADMIN)users.recoveryGuard();
+            var user=new Identity(UUID.randomUUID(),Scope.GLOBAL,null,requested,Status.ACTIVE,display);users.insert(user,actor.actor());credential(user.id(),canonical,hash);
+            audit.record(actor.actor(),user.tenantId(),"USER_CREATED","USER",user.id(),Map.of("scope","GLOBAL","role",requested.name(),"status","ACTIVE"));return user;
         });
     }
     private UUID administrativeScope(Identity actor){
@@ -99,6 +104,30 @@ public class AuthenticationService {
             jdbc.update("UPDATE app_user SET role=? WHERE id=?",role.name(),target);
             users.touch(target,actor.actor());
             audit.record(actor.actor(),user.tenantId(),"USER_ROLE_CHANGED","USER",target,Map.of("before",user.role().name(),"after",role.name()));return users.load(target,"");
+        });
+    }
+    public Identity administration(Identity actor,UUID target,String email,Role role){
+        Authorization.globalAdmin(actor);
+        if(email==null&&role==null)throw new AuthFailure(400,"Changed Email or role required");
+        if(role==Role.USER)Authorization.destructiveSelf(actor,target);
+        String canonical=email==null?null:passwords.email(email);
+        return tx.execute(s->{
+            Identity initial=users.load(target,"");
+            boolean guarded=initial.scope()==Scope.GLOBAL && (role==Role.ADMIN || canonical!=null&&initial.role()==Role.ADMIN&&initial.status()==Status.ACTIVE);
+            if(guarded)users.recoveryGuard();
+            Identity user=users.load(target," FOR UPDATE");
+            if(canonical!=null&&user.scope()!=Scope.GLOBAL)throw AuthFailure.denied();
+            if(!guarded&&user.scope()==Scope.GLOBAL&&(role==Role.ADMIN||canonical!=null&&user.role()==Role.ADMIN&&user.status()==Status.ACTIVE))throw new AuthFailure(409,"User state changed concurrently");
+            String previousEmail=null;
+            if(canonical!=null){var current=jdbc.queryForList("SELECT email FROM local_global_credential WHERE user_id=? FOR UPDATE",String.class,target);if(current.isEmpty())throw new AuthFailure(404,"Credential not found");previousEmail=current.getFirst();}
+            boolean emailChanged=canonical!=null&&!canonical.equals(previousEmail),roleChanged=role!=null&&role!=user.role();
+            if(!emailChanged&&!roleChanged)throw new AuthFailure(409,"User administration unchanged");
+            if(roleChanged)jdbc.update("UPDATE app_user SET role=? WHERE id=?",role.name(),target);
+            if(emailChanged)jdbc.update("UPDATE local_global_credential SET email=?,email_verified_at=? WHERE user_id=?",canonical,java.sql.Timestamp.from(clock.instant()),target);
+            users.touch(target,actor.actor());
+            if(roleChanged)audit.record(actor.actor(),user.tenantId(),"USER_ROLE_CHANGED","USER",target,Map.of("before",user.role().name(),"after",role.name()));
+            if(emailChanged)audit.record(actor.actor(),null,"GLOBAL_EMAIL_CHANGED","USER",target,Map.of("operation","administrator-email-change"));
+            return users.load(target,"");
         });
     }
     public Identity disable(Identity actor,UUID target){

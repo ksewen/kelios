@@ -28,7 +28,7 @@ for(const language of ['en','de'] as const)test(`${language}: stable Asset table
  const t=language==='en'?en:de,fixture=await setup(page,language),path=`/api/v1/tenants/${tenant}/assets`;
  await page.goto(`/tenants/${tenant}/assets`);await fixture.request(path);
  await expect(page.locator('main .animate-pulse')).toBeVisible();await fixture.reply(path,'',[asset]);
- const input=page.getByLabel(t.ui.assetIdentifiers),table=page.locator('main table');await expect(table).toBeVisible();
+ const input=page.getByLabel(t.ui.assetIdentifiers,{exact:true}),table=page.locator('main table');await expect(table).toBeVisible();
  await table.evaluate(el=>(window as any).originalTable=el);
  await input.fill('a');await input.press('Enter');await fixture.request(path,'a');await expect(input).toBeFocused();
  await expect(page.locator('main .animate-pulse')).toHaveCount(0);await expect(page.getByText(t.redesign.updatingResults)).toHaveCount(0);
@@ -48,7 +48,7 @@ for(const kind of ['categories','manufacturers','products','locations','owners']
  const f=await setup(page),path=`/api/v1/tenants/${tenant}/${['locations','owners'].includes(kind)?'':'catalog/'}${kind}`;
  await page.goto(`/tenants/${tenant}/${kind}`);await f.reply(path,'',[row]);
  const table=page.locator('main table');await expect(table).toBeVisible();await table.evaluate(el=>(window as any).originalTable=el);
- const search=page.getByRole('toolbar').getByLabel(({categories:en.ui.categorySearch,manufacturers:en.ui.manufacturerSearch,products:en.ui.productSearch,locations:en.ui.locationSearch,owners:en.ui.ownerSearch} as Record<string,string>)[kind]);await search.fill('changed');await search.press('Enter');await f.request(path,'changed');
+ const search=page.getByRole('toolbar').getByLabel(({categories:en.ui.categorySearch,manufacturers:en.ui.manufacturerSearch,products:en.ui.productSearch,locations:en.ui.locationSearch,owners:en.ui.ownerSearch} as Record<string,string>)[kind],{exact:true});await search.fill('changed');await search.press('Enter');await f.request(path,'changed');
  await expect(page.locator('main .animate-pulse')).toHaveCount(0);expect(await table.evaluate(el=>el===(window as any).originalTable)).toBe(true);
  await f.reply(path,'changed',[row]);await expect(page.getByText(en.redesign.updatingResults)).toHaveCount(0);
 });
@@ -115,7 +115,7 @@ test('read hook discards resource/workspace/session changes while its consumer s
 test('Audit filter refresh keeps its table and paging mounted',async({page})=>{
  const f=await setup(page);await page.goto('/audit');await f.reply('/api/v1/audit-log','',[{...row,action:'TENANT_CREATED',actorDisplayName:'Fixture actor',targetType:'Tenant',occurredAt:'2026-10-11T00:00:00Z'}]);
  const table=page.locator('main table');await expect(table).toBeVisible();await table.evaluate(el=>(window as any).originalTable=el);
- await page.locator('main details summary').click();const count=f.held.length;await page.getByLabel(en.ui.auditAction).fill('USER_CREATED');await page.getByLabel(en.ui.auditAction).press('Tab');expect(f.held.length).toBe(count);await page.getByRole('button',{name:en.actions.filter,exact:true}).click();
+ await page.getByRole('button',{name:en.actions.moreFilters,exact:true}).click();const count=f.held.length;await page.getByLabel(en.ui.auditAction,{exact:true}).fill('USER_CREATED');await page.getByLabel(en.ui.auditAction,{exact:true}).press('Tab');expect(f.held.length).toBe(count);await page.getByRole('button',{name:en.actions.filter,exact:true}).click();
  await expect.poll(()=>f.held.some(r=>r.url.searchParams.get('action')==='USER_CREATED')).toBe(true);
  expect(await table.evaluate(el=>el===(window as any).originalTable)).toBe(true);await expect(page.locator('main .animate-pulse')).toHaveCount(0);
  await f.held.find(r=>r.url.searchParams.get('action')==='USER_CREATED')!.route.fulfill({json:collection([])});await expect(page.getByText(en.ui.noRecords)).toBeVisible();
@@ -141,7 +141,7 @@ test('equivalent responses preserve row identity, table scroll, selection and pa
  await page.setViewportSize({width:390,height:500});const f=await setup(page),path=`/api/v1/tenants/${tenant}/assets`;
  const rows=Array.from({length:20},(_,i)=>({...asset,id:`dddddddd-dddd-dddd-dddd-${String(i).padStart(12,'0')}`,assetTag:`20261011-${i}`,localIdentifier:'Long operational label '.repeat(8)}));
  await page.goto(`/tenants/${tenant}/assets`);await f.reply(path,'',rows);const table=page.locator('main table');await expect(table).toBeVisible();
- await page.getByLabel(en.ui.assetIdentifiers).fill('unchanged');await page.getByRole('toolbar').getByLabel(en.ui.assetIdentifiers).press('Enter');await f.request(path,'unchanged');
+ await page.getByLabel(en.ui.assetIdentifiers,{exact:true}).fill('unchanged');await page.getByRole('toolbar').getByLabel(en.ui.assetIdentifiers,{exact:true}).press('Enter');await f.request(path,'unchanged');
  const before=await table.evaluate(el=>{
   const frame=el.parentElement!;frame.scrollLeft=100;window.scrollTo(0,400);
   const first=el.querySelector('tbody tr')!;(window as any).retainedRow=first;

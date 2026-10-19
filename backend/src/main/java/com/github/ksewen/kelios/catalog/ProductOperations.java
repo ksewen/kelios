@@ -30,6 +30,7 @@ public class ProductOperations {
     }
     private Identity writable(UUID id,boolean lock){var a=actor();Authorization.administrator(a);var target=catalog.scoped(CatalogService.Kind.PRODUCT,id,a.scope()==Scope.TENANT?a.tenantId():null,lock);Authorization.writeCatalog(a,target.tenantId());return a;}
     @Transactional public void edit(UUID id,ProductModel.Command command){var a=writable(id,false);catalog.editProduct(id,command.categoryId(),command.manufacturerId(),command.name(),command.manufacturerNumber(),a.actor(),a.scope()==Scope.TENANT?a.tenantId():null);}
+    @Transactional public void edit(UUID id,ProductModel.Command command,boolean publishGlobally){var a=writable(id,false);if(publishGlobally)Authorization.globalAdmin(a);catalog.editProductAndPublish(id,command.categoryId(),command.manufacturerId(),command.name(),command.manufacturerNumber(),publishGlobally,a.actor(),a.scope()==Scope.TENANT?a.tenantId():null);}
     @Transactional public void delete(UUID id){var a=writable(id,true);catalog.delete(CatalogService.Kind.PRODUCT,id,a.actor());}
     @Transactional public void publish(UUID id){var a=actor();Authorization.globalAdmin(a);catalog.publish(CatalogService.Kind.PRODUCT,id,a.actor());}
 }

@@ -10,7 +10,9 @@ public record ProductModel(UUID id, String name, String manufacturerNumber, Visi
         Instant deletedAt, UUID deletedBy) {
     public enum Visibility { GLOBAL, TENANT }
     public record Reference(UUID id, String name) {}
-    public record Metadata(UUID createdBy, Instant createdAt, UUID updatedBy, Instant updatedAt) {}
+    public record Metadata(UUID createdBy, Instant createdAt, UUID updatedBy, Instant updatedAt, String createdByDisplayName) {
+        public Metadata(UUID createdBy, Instant createdAt, UUID updatedBy, Instant updatedAt) {this(createdBy,createdAt,updatedBy,updatedAt,null);}
+    }
     public record Command(String name, UUID categoryId, UUID manufacturerId, String manufacturerNumber) {
         public Command {
             if (name == null || name.isBlank()) throw BusinessFailure.invalid("Name required");

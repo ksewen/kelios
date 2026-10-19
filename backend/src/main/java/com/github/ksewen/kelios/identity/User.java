@@ -25,6 +25,8 @@ public class User {
     @Column(name = "created_by", nullable = false)
     UUID createdBy;
     public UUID createdBy() { return createdBy; }
+    @Column(name = "created_by_display_name", updatable = false, columnDefinition = "text")
+    String createdByDisplayName;
     @Column(name = "created_at", nullable = false)
     Instant createdAt;
     public Instant createdAt() { return createdAt; }

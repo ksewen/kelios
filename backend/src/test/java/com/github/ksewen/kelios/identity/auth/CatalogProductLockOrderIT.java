@@ -33,7 +33,7 @@ class CatalogProductLockOrderIT {
  @Autowired CatalogService catalog; @Autowired ProductOperations products; @Autowired CatalogLabelOperations labels;
  @Autowired TenantService tenants; @Autowired JdbcTemplate jdbc; @Autowired PlatformTransactionManager tm;
 
- @ParameterizedTest @CsvSource({"CATEGORY,edit,true","MANUFACTURER,edit,true","CATEGORY,publish,true","MANUFACTURER,publish,true","CATEGORY,edit,false","MANUFACTURER,edit,false","CATEGORY,publish,false","MANUFACTURER,publish,false"})
+ @ParameterizedTest @CsvSource({"CATEGORY,edit,true","MANUFACTURER,edit,true","CATEGORY,publish,true","MANUFACTURER,publish,true","CATEGORY,combined,true","MANUFACTURER,combined,true","CATEGORY,edit,false","MANUFACTURER,edit,false","CATEGORY,publish,false","MANUFACTURER,publish,false","CATEGORY,combined,false","MANUFACTURER,combined,false"})
  void supportedCommandsSerializeOrConflictWithoutDeadlock(String resource,String command,boolean mergeFirst)throws Exception {
   var kind=CatalogLabel.Kind.valueOf(resource);var legacy=CatalogService.MergeKind.valueOf(resource);
   var actor=new Actor(UUID.randomUUID(),"Lock investigation administrator");
@@ -42,10 +42,10 @@ class CatalogProductLockOrderIT {
   UUID category=catalog.createCategory(null,"Category",actor),manufacturer=catalog.createManufacturer(null,"Manufacturer",actor);
   UUID source=kind==CatalogLabel.Kind.CATEGORY?category:manufacturer;
   UUID target=kind==CatalogLabel.Kind.CATEGORY?catalog.createCategory(null,"Target",actor):catalog.createManufacturer(null,"Target",actor);
-  UUID product=catalog.createProduct(command.equals("publish")?tenant:null,category,manufacturer,"Product",null,actor);
+  UUID product=catalog.createProduct(command.equals("edit")?null:tenant,category,manufacturer,"Product",null,actor);
   var creation=jdbc.queryForMap("SELECT created_by,created_at FROM product WHERE id=?",product);
   var held=new CountDownLatch(1);var proceed=new CountDownLatch(1);var waitingPid=new CompletableFuture<Integer>();
-  Runnable productCommand=()->{if(command.equals("edit"))products.edit(product,new ProductModel.Command("Edited",category,manufacturer,null));else products.publish(product);};
+  Runnable productCommand=()->{if(command.equals("edit"))products.edit(product,new ProductModel.Command("Edited",category,manufacturer,null));else if(command.equals("combined"))products.edit(product,new ProductModel.Command("Edited",category,manufacturer,null),true);else products.publish(product);};
   Runnable mergeCommand=()->labels.merge(kind,source,target);
   try(var pool=Executors.newFixedThreadPool(2)) {
    var first=pool.submit(()->run(identity,()->{
@@ -68,13 +68,14 @@ class CatalogProductLockOrderIT {
    if(mergeFirst)assertInstanceOf(org.springframework.orm.ObjectOptimisticLockingFailureException.class,b);
    else assertNull(b,"Both serialize and commit when Product runs first");
    System.out.println("LOCK_ORDER_EVIDENCE "+resource+" "+command+"; mergeFirst="+mergeFirst+"; outcome="+(b==null?"both committed":"reference conflict, Merge committed"));
-   long edits=jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE target_id=? AND action=?",Long.class,product,command.equals("edit")?"PRODUCT_EDITED":"PRODUCT_PUBLISHED");
+   long edits=jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE target_id=? AND action='PRODUCT_EDITED'",Long.class,product);
+   long published=jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE target_id=? AND action='PRODUCT_PUBLISHED'",Long.class,product);
    long merged=jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE target_id=? AND action=?",Long.class,source,resource+"_MERGED");
-   assertEquals(mergeFirst?0:1,edits);assertEquals(1,merged);
+   assertEquals(mergeFirst?0:command.equals("publish")?0:1,edits);assertEquals(mergeFirst?0:command.equals("edit")?0:1,published);assertEquals(1,merged);
    assertEquals(creation,jdbc.queryForMap("SELECT created_by,created_at FROM product WHERE id=?",product));
    assertEquals(actor.id(),jdbc.queryForObject("SELECT updated_by FROM product WHERE id=?",UUID.class,product));
    assertEquals(target,jdbc.queryForObject("SELECT "+(resource.equals("CATEGORY")?"category_id":"manufacturer_id")+" FROM product WHERE id=?",UUID.class,product));
-   assertEquals(command.equals("publish") && !mergeFirst?"GLOBAL":command.equals("publish")?"TENANT":"GLOBAL",jdbc.queryForObject("SELECT visibility FROM product WHERE id=?",String.class,product));
+   assertEquals(command.equals("edit")||!mergeFirst?"GLOBAL":"TENANT",jdbc.queryForObject("SELECT visibility FROM product WHERE id=?",String.class,product));
   }finally{proceed.countDown();}
  }
  @Test void lockedProductOwnershipIsRevalidatedAfterPublication(){

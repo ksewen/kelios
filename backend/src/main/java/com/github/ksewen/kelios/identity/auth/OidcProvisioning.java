@@ -23,7 +23,7 @@ public class OidcProvisioning {
         var inserted=jdbc.query("INSERT INTO external_identity(issuer,subject,user_id,tenant_id) VALUES(?,?,?,?) ON CONFLICT(issuer,subject) DO NOTHING RETURNING user_id",(rs,n)->rs.getObject(1,UUID.class),issuer,subject,candidate,tenant);
         UUID id;
         if(!inserted.isEmpty()){
-            var created=new Identity(candidate,Scope.TENANT,tenant,Role.USER,Status.PENDING,display);users.insert(created,created.actor());
+            var created=new Identity(candidate,Scope.TENANT,tenant,Role.USER,Status.PENDING,display);users.insert(created,created.actor(),displayName==null||displayName.isBlank()?null:displayName);
             audit.record(created.actor(),created.tenantId(),"USER_CREATED","USER",created.id(),Map.of("scope","TENANT","role","USER","status","PENDING","origin","OIDC"));id=candidate;
         }else {
             var mapping=jdbc.queryForMap("SELECT user_id,tenant_id FROM external_identity WHERE issuer=? AND subject=?",issuer,subject);

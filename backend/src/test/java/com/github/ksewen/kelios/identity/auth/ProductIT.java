@@ -187,6 +187,25 @@ class ProductIT {
   assertEquals(204,status(request(admin,post(ROOT+"/"+id+"/publish"),Map.of())));assertEquals(tenant,attribution("PRODUCT_PUBLISHED",id));assertEquals("GLOBAL",data(request(admin,get(ROOT+"/"+id),null)).get("visibility"));assertEquals(1,events(a.id()));
   assertEquals("PRODUCT_EDIT_FROZEN",data(request(admin,put(ROOT+"/"+id),command("Frozen",category,manufacturer,null))).get("code"));
  }
+ @Test void combinedSavePublishesAtomicallyAndPublishOnlySkipsFrozenEdit()throws Exception{
+  UUID combined=create(tenant,"Before combined",null);var edit=command("After combined",category,manufacturer,"P-1");edit.put("publishGlobally",true);
+  assertEquals(204,status(request(admin,put(ROOT+"/"+combined),edit)));
+  var result=data(request(admin,get(ROOT+"/"+combined),null));assertEquals("After combined",result.get("name"));assertEquals("GLOBAL",result.get("visibility"));
+  assertEquals(tenant,attribution("PRODUCT_EDITED",combined));assertEquals(tenant,attribution("PRODUCT_PUBLISHED",combined));
+  UUID frozen=create(tenant,"Frozen publish only",null);var asset=assets.register(tenant,new AssetService.Registration(new AssetService.ProductSelection(frozen),location,owner,true,null,null,null),actor);
+  var publishOnly=command("Frozen publish only",category,manufacturer,null);publishOnly.put("publishGlobally",true);
+  assertEquals(204,status(request(admin,put(ROOT+"/"+frozen),publishOnly)));
+  assertEquals("GLOBAL",data(request(admin,get(ROOT+"/"+frozen),null)).get("visibility"));assertEquals(1,events(asset.id()));
+  assertEquals(0L,jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE action='PRODUCT_EDITED' AND target_id=?",Long.class,frozen));
+  assertEquals(tenant,attribution("PRODUCT_PUBLISHED",frozen));
+  UUID localCategory=catalog.createCategory(tenant,"Local category",actor),blocked=catalog.createProduct(tenant,localCategory,manufacturer,"Before rollback",null,actor);
+  var invalid=command("Changed but invalid Global references",localCategory,manufacturer,null);invalid.put("publishGlobally",true);
+  assertEquals(409,status(request(admin,put(ROOT+"/"+blocked),invalid)));
+  result=data(request(admin,get(ROOT+"/"+blocked),null));assertEquals("Before rollback",result.get("name"));assertEquals("TENANT",result.get("visibility"));
+  assertEquals(0L,jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE action IN ('PRODUCT_EDITED','PRODUCT_PUBLISHED') AND target_id=?",Long.class,blocked));
+  assertEquals(403,status(request(principal(Scope.TENANT,Role.ADMIN,Status.ACTIVE),put(ROOT+"/"+create(tenant,"Own",null)),publishOnly)));
+  var bad=command("Strict",category,manufacturer,null);bad.put("publishGlobally","true");assertEquals(400,status(request(admin,put(ROOT+"/"+create(tenant,"Strict",null)),bad)));
+ }
  @Test void authorizationAndNoMerge()throws Exception{
   for(Scope scope:Scope.values())for(Role role:Role.values()){
    var who=principal(scope,role,Status.ACTIVE);assertEquals(200,status(request(who,get(ROOT+"/"+product),null)));assertEquals(200,status(request(who,get(contextual(tenant)),null)));
@@ -201,13 +220,13 @@ class ProductIT {
   for(String route:List.of("merge","merge-preview"))assertEquals(404,status(request(admin,post(ROOT+"/"+route),Map.of("sourceId",product.toString(),"targetId",product.toString()))));
   assertEquals(before,jdbc.queryForObject("SELECT count(*) FROM audit_log",Long.class));assertEquals(count,jdbc.queryForObject("SELECT count(*) FROM product",Long.class));
  }
- @ParameterizedTest @ValueSource(strings={"create","edit","publish","delete"}) void auditFailureRollsBackMetadataAndMutation(String operation)throws Exception{
+ @ParameterizedTest @ValueSource(strings={"create","edit","publish","combined","delete"}) void auditFailureRollsBackMetadataAndMutation(String operation)throws Exception{
   UUID id=create(tenant,"Before",null);var before=data(request(admin,get(ROOT+"/"+id),null));long count=jdbc.queryForObject("SELECT count(*) FROM product",Long.class),audits=jdbc.queryForObject("SELECT count(*) FROM audit_log",Long.class);
-  String action=switch(operation){case "create"->"PRODUCT_CREATED";case "edit"->"PRODUCT_EDITED";case "publish"->"PRODUCT_PUBLISHED";default->"PRODUCT_DELETED";};
+  String action=switch(operation){case "create"->"PRODUCT_CREATED";case "edit"->"PRODUCT_EDITED";case "publish","combined"->"PRODUCT_PUBLISHED";default->"PRODUCT_DELETED";};
   jdbc.execute("CREATE FUNCTION step3_reject_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.action='"+action+"' THEN RAISE EXCEPTION 'isolated failure' USING ERRCODE='23514'; END IF; RETURN NEW; END; $$");jdbc.execute("CREATE TRIGGER step3_reject_audit BEFORE INSERT ON audit_log FOR EACH ROW EXECUTE FUNCTION step3_reject_audit()");
   clock.now=clock.now.plusSeconds(10);
   try{
-   var r=switch(operation){case "create"->request(admin,post(contextual(tenant)),command("Rollback",category,manufacturer,"N"));case "edit"->request(admin,put(ROOT+"/"+id),command("Rollback",category,manufacturer,"N"));case "publish"->request(admin,post(ROOT+"/"+id+"/publish"),Map.of());default->request(admin,delete(ROOT+"/"+id),null);};
+   var r=switch(operation){case "create"->request(admin,post(contextual(tenant)),command("Rollback",category,manufacturer,"N"));case "edit"->request(admin,put(ROOT+"/"+id),command("Rollback",category,manufacturer,"N"));case "publish"->request(admin,post(ROOT+"/"+id+"/publish"),Map.of());case "combined"->{var body=command("Rollback",category,manufacturer,"N");body.put("publishGlobally",true);yield request(admin,put(ROOT+"/"+id),body);}default->request(admin,delete(ROOT+"/"+id),null);};
    assertEquals(409,status(r));assertEquals(before,data(request(admin,get(ROOT+"/"+id),null)));assertEquals(count,jdbc.queryForObject("SELECT count(*) FROM product",Long.class));assertEquals(audits,jdbc.queryForObject("SELECT count(*) FROM audit_log",Long.class));
   }finally{jdbc.execute("DROP TRIGGER step3_reject_audit ON audit_log");jdbc.execute("DROP FUNCTION step3_reject_audit()");}
  }
