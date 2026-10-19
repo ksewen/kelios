@@ -74,6 +74,8 @@
     "changeOwner": "Change Owner",
     "changeUserRole": "Change User role",
     "changeLoanability": "Change loanability",
+    "confirmLoanabilityChange": "Change loanability from {{current}} to {{next}}?",
+    "notLoanable": "Not loanable",
     "changeOwnPassword": "Change own password",
     "conditionFilter": "Condition filter",
     "conditionTarget": "Condition target",
