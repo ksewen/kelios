@@ -3583,6 +3583,7 @@ components:
         - categoryId
         - manufacturerId
     AssetRegistration:
+      description: Optional initial condition defaults to UNKNOWN when omitted. Explicit null is invalid; lifecycle starts as REGISTERED.
       oneOf:
       - type: object
         additionalProperties: false
@@ -3596,6 +3597,7 @@ components:
             format: uuid
           loanable: &id030
             type: boolean
+          condition: *id033
           localIdentifier:
             type: [string, 'null']
             maxLength: 128
@@ -3620,6 +3622,7 @@ components:
           locationId: *id010
           ownerId: *id029
           loanable: *id030
+          condition: *id033
           localIdentifier:
             type: [string, 'null']
             maxLength: 128

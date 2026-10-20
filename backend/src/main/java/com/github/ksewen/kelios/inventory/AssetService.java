@@ -24,9 +24,10 @@ public class AssetService {
         public DirectSelection {Objects.requireNonNull(categoryId);Objects.requireNonNull(manufacturerId);}
     }
     public record Registration(CatalogSelection catalog,UUID locationId,UUID ownerId,Boolean loanable,
-        String serialNumber,String externalInventoryNumber,String note,String localIdentifier) {
+        String serialNumber,String externalInventoryNumber,String note,String localIdentifier,ConditionState condition) {
         public Registration(CatalogSelection catalog,UUID locationId,UUID ownerId,Boolean loanable,String serialNumber,String externalInventoryNumber,String note) { this(catalog,locationId,ownerId,loanable,serialNumber,externalInventoryNumber,note,null); }
-        public Registration {Objects.requireNonNull(catalog);Objects.requireNonNull(locationId);Objects.requireNonNull(loanable);}
+        public Registration(CatalogSelection catalog,UUID locationId,UUID ownerId,Boolean loanable,String serialNumber,String externalInventoryNumber,String note,String localIdentifier) { this(catalog,locationId,ownerId,loanable,serialNumber,externalInventoryNumber,note,localIdentifier,null); }
+        public Registration {Objects.requireNonNull(catalog);Objects.requireNonNull(locationId);Objects.requireNonNull(loanable);if(condition==null)condition=ConditionState.UNKNOWN;}
     }
     public record View(UUID id,UUID tenantId,String assetTag,UUID categoryId,UUID manufacturerId,UUID productId,
         UUID locationId,UUID ownerId,LifecycleState lifecycle,ConditionState condition,boolean loanable,
@@ -74,7 +75,7 @@ public class AssetService {
         if(command.ownerId()!=null)places.share(PlaceService.Kind.OWNER,tenant,command.ownerId(),true);
         Instant now=Instant.now(clock);Asset a=new Asset();a.id=UUID.randomUUID();a.tenantId=tenant;a.assetTag=tags.allocate(now);
         a.categoryId=refs.categoryId();a.manufacturerId=refs.manufacturerId();a.productId=refs.productId();a.locationId=command.locationId();a.ownerId=command.ownerId();
-        a.loanable=command.loanable();a.lifecycle=LifecycleState.REGISTERED;a.condition=ConditionState.UNKNOWN;
+        a.loanable=command.loanable();a.lifecycle=LifecycleState.REGISTERED;a.condition=command.condition();
         a.serialNumber=optional(command.serialNumber());a.externalInventoryNumber=optional(command.externalInventoryNumber());a.note=optional(command.note());a.localIdentifier=localIdentifier(command.localIdentifier());
         a.createdAt=now;a.updatedAt=now;a.createdBy=actor.id();a.createdByDisplayName=actor.displayName();a.updatedBy=actor.id();em.persist(a);em.flush();
         history.append(a,"REGISTERED",actor,null,snapshot(a));return view(a);

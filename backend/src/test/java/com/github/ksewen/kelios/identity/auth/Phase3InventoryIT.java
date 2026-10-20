@@ -69,6 +69,30 @@ class Phase3InventoryIT {
   UUID foreign=places.create(PlaceService.Kind.LOCATION,other,"Foreign",actor);b.put("locationId",foreign);assertEquals(404,status(request(admin,post("/api/v1/tenants/"+tenant+"/assets"),b)));b.put("locationId",location);b.put("ownerId",places.create(PlaceService.Kind.OWNER,other,"Foreign",actor));assertEquals(404,status(request(admin,post("/api/v1/tenants/"+tenant+"/assets"),b)));
   UUID deleted=catalog.createProduct(null,category,manufacturer,"Deleted",null,actor);catalog.delete(CatalogService.Kind.PRODUCT,deleted,actor);b.remove("ownerId");b.put("productId",deleted);var denied=request(admin,post("/api/v1/tenants/"+tenant+"/assets"),b);assertEquals(409,status(denied));assertEquals("DELETED_TARGET",data(denied).get("code"));
  }
+ @Test void registrationConditionIsInitialSnapshotForBothCatalogSelections()throws Exception{
+  for(boolean direct:List.of(false,true))for(ConditionState condition:ConditionState.values()){
+   var body=new LinkedHashMap<String,Object>();if(direct){body.put("categoryId",category);body.put("manufacturerId",manufacturer);}else body.put("productId",product);
+   body.put("locationId",location);body.put("loanable",false);body.put("condition",condition.name());
+   var response=request(admin,post("/api/v1/tenants/"+tenant+"/assets"),body);assertEquals(201,status(response));assertEquals("REGISTERED",data(response).get("lifecycle"));assertEquals(condition.name(),data(response).get("condition"));
+   UUID id=UUID.fromString((String)data(response).get("id"));assertEquals(condition.name(),jdbc.queryForObject("SELECT condition FROM asset WHERE id=?",String.class,id));
+   assertEquals(condition.name(),jdbc.queryForObject("SELECT data->'after'->>'condition' FROM asset_event WHERE asset_id=? AND type='REGISTERED'",String.class,id));
+   assertNull(jdbc.queryForObject("SELECT data->>'before' FROM asset_event WHERE asset_id=? AND type='REGISTERED'",String.class,id));
+   assertEquals(1,events(id));
+  }
+  var omitted=Map.<String,Object>of("productId",product,"locationId",location,"loanable",false);
+  assertEquals("UNKNOWN",data(request(admin,post("/api/v1/tenants/"+tenant+"/assets"),omitted)).get("condition"));
+  for(Object invalid:List.of("FUTURE",42)){
+   var body=new LinkedHashMap<>(omitted);body.put("condition",invalid);assertEquals(400,status(request(admin,post("/api/v1/tenants/"+tenant+"/assets"),body)));
+  }
+  var nullCondition=new LinkedHashMap<>(omitted);nullCondition.put("condition",null);assertEquals(400,status(request(admin,post("/api/v1/tenants/"+tenant+"/assets"),nullCondition)));
+  var forged=new LinkedHashMap<>(omitted);forged.put("lifecycle","DEPLOYED");assertEquals(400,status(request(admin,post("/api/v1/tenants/"+tenant+"/assets"),forged)));
+  var tenantAdmin=principal(Scope.TENANT,Role.ADMIN,Status.ACTIVE);var tenantUser=principal(Scope.TENANT,Role.USER,Status.ACTIVE);
+  assertEquals(403,status(request(tenantUser,post("/api/v1/tenants/"+tenant+"/assets"),omitted)));
+  assertEquals(201,status(request(tenantAdmin,post("/api/v1/tenants/"+tenant+"/assets"),omitted)));
+  UUID foreignLocation=places.create(PlaceService.Kind.LOCATION,other,"Foreign room",actor);
+  var foreign=Map.<String,Object>of("productId",product,"locationId",foreignLocation,"loanable",false,"condition","WORKING");
+  assertEquals(404,status(request(tenantAdmin,post("/api/v1/tenants/"+other+"/assets"),foreign)));
+ }
  @Test void exactLoanAndReturnGuardsWithTerminalStates()throws Exception{
   var a=asset();var noLoan=request(admin,post("/api/v1/assets/"+a.id()+"/return"),Map.of("expectedVersion",0));assertEquals("NO_CURRENT_LOAN",data(noLoan).get("code"));
   for(String update:List.of("loanable=false,lifecycle='DEPLOYED',condition='WORKING'","loanable=true,lifecycle='IN_STOCK',condition='WORKING'","loanable=true,lifecycle='DEPLOYED',condition='DEFECTIVE'")){jdbc.update("UPDATE asset SET "+update+" WHERE id=?",a.id());var r=request(admin,post("/api/v1/assets/"+a.id()+"/loan"),Map.of("expectedVersion",0,"borrower","Borrower"));assertEquals("LOAN_GUARD",data(r).get("code"));}

@@ -58,6 +58,12 @@ for(const kind of ['categories','manufacturers','products','locations','owners',
  if(kind!=='tenants')expect(f.requests.some(r=>r.url.pathname===endpoint.slice(0,endpoint.lastIndexOf('/')))).toBe(false);
  await page.reload();await expect(page.locator('main h2').first()).toBeVisible();await expect(page.getByRole('dialog')).toHaveCount(0);
 });
+for(const lang of ['de','en'] as const)for(const width of [390,1440])test(`${lang}/${width} Tenant detail follows the shared identity hierarchy in modal and direct routes`,async({page})=>{
+ await fixture(page,{lang});await page.setViewportSize({width,height:900});await page.goto('/tenants');await page.locator('tbody').getByText('Workspace',{exact:true}).click();
+ const dialog=page.getByRole('dialog'),article=dialog.locator('article');await expect(dialog).toBeVisible();await expect(article.locator('header p').first()).toHaveText(lang==='de'?'Mandant':'Tenant');await expect(article.locator('h2')).toHaveText('Workspace');await expect(article).toContainText(tenant);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ await page.reload();await expect(page.getByRole('dialog')).toHaveCount(0);await expect(page.locator('main article header p').first()).toHaveText(lang==='de'?'Mandant':'Tenant');await expect(page.locator('main article h2')).toHaveText('Workspace');
+});
 for(const lang of ['en','de'] as const)for(const width of [1440,390])test(`${lang}/${width} business detail hierarchy and explicit actions`,async({page})=>{
  await fixture(page,{lang});await page.setViewportSize({width,height:900});const text=lang==='en'?en:de;
  for(const kind of ['categories','manufacturers','products','locations','owners']){
@@ -125,9 +131,9 @@ for(const lang of ['de','en'] as const)for(const width of [390,1440])test(`${lan
  await page.route(`**/api/v1/assets/${id}`,route=>route.fulfill({json:assetDetailFixture({id,tenantId:tenant,assetTag:'Asset fixture',localIdentifier:'Local',externalInventoryNumber:'External',productId:other,product:association(product),manufacturer:association('Existing Manufacturer'),category:association('Existing Category'),location:association('Existing Location'),owner:null,ownerId:null,lifecycle:'DEPLOYED',condition:'WORKING',loanable:true,serialNumber:serial,note,loanedTo:'Borrower',loanedAt:'2026-10-12T12:00:00Z',expectedReturnAt:'2026-10-13T12:00:00Z',loanNote:'Retained loan note'})}));
  await page.goto(`/inventory/assets/${id}`);const overview=page.getByRole('tabpanel',{name:text.redesign.overview});await expect(overview).toBeVisible();
  const rows=overview.locator('dl');await expect(rows).toHaveCount(5);
- const labels=[[text.fields.localIdentifier,text.fields.externalInventoryNumber],[text.fields.productName,text.fields.manufacturerName,text.fields.categoryName,text.fields.serialNumber],[text.fields.locationName,text.fields.ownerName,text.fields.loanable],[text.fields.note],[text.fields.loanedTo,text.fields.loanedAt,text.fields.expectedReturnAt,text.fields.loanNote]];
+ const labels=[[text.fields.localIdentifier,text.fields.externalInventoryNumber,text.fields.serialNumber],[text.fields.productName,text.fields.manufacturerName,text.fields.categoryName],[text.fields.locationName,text.fields.ownerName,text.fields.loanable],[text.fields.note],[text.fields.loanedTo,text.fields.loanedAt,text.fields.expectedReturnAt,text.fields.loanNote]];
  for(let index=0;index<labels.length;index++)await expect(rows.nth(index).locator('dt')).toHaveText(labels[index]);
- await expect(rows.nth(1)).toContainText(product);await expect(rows.nth(1)).toContainText(serial);await expect(rows.nth(2).locator('dd').nth(1)).toHaveText('—');await expect(rows.nth(3)).toContainText('First line');await expect(rows.nth(4)).toContainText('Retained loan note');
+ await expect(rows.nth(1)).toContainText(product);await expect(rows.nth(0)).toContainText(serial);await expect(rows.nth(2).locator('dd').nth(1)).toHaveText('—');await expect(rows.nth(3)).toContainText('First line');await expect(rows.nth(4)).toContainText('Retained loan note');
  await expect(overview.locator('h2')).toHaveCount(0);await expect(page.getByRole('button',{name:/Aktuelles Asset neu laden|Reload current Asset/})).toHaveCount(0);
  const edit=page.getByRole('button',{name:text.ui.editCategory,exact:true}),exit=page.getByRole('button',{name:text.ui.exitDetail,exact:true});await expect(edit).toHaveCount(1);await expect(exit).toHaveCount(1);
  const noteBox=await rows.nth(3).boundingBox(),editBox=await edit.boundingBox();expect(editBox!.y).toBeGreaterThan(noteBox!.y);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);

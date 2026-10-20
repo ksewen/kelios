@@ -4,7 +4,7 @@ import en from '../src/locales/en.json' with {type:'json'};
 import de from '../src/locales/de.json' with {type:'json'};
 const a='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1',b='bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb2',c='cccccccc-cccc-cccc-cccc-ccccccccccc3';
 const rows=[labelFixture(a,'Same name',null),{...labelFixture(b,'Same name','eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'),tenant:{id:'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee',name:'Readable Tenant B'}}];
-async function setup(page:Page,kind:string,language='en',role='ADMIN',scope='GLOBAL'){
+async function setup(page:Page,kind:string,language='en',role='ADMIN',scope='GLOBAL',concrete=false){
  const held:{url:URL;route:Route}[]=[],posts:{path:string;body:any}[]=[];
  await page.addInitScript(lang=>localStorage.setItem('kelios.ui.language',lang),language);
  await page.route('**/api/v1/**',async route=>{
@@ -23,7 +23,12 @@ async function setup(page:Page,kind:string,language='en',role='ADMIN',scope='GLO
   await expect.poll(()=>held.some(r=>(r.url.searchParams.get('q')??'')===q&&Number(r.url.searchParams.get('page'))===n)).toBe(true);
   for(const r of held.filter(r=>(r.url.searchParams.get('q')??'')===q&&Number(r.url.searchParams.get('page'))===n)){held.splice(held.indexOf(r),1);await r.route.fulfill({status,json:status===200?{items,totalElements:total,size:20,page:n}:{code:'SERVICE_UNAVAILABLE'}});}
  };
- await page.goto(scope==='TENANT'?`/tenants/${a}/${kind}`:`/${kind}`);await reply('');return {reply,held,posts};
+ await page.goto(scope==='TENANT'||concrete?`/tenants/${a}/${kind}`:`/${kind}`);await reply('');return {reply,held,posts};
+}
+async function choose(page:Page,name:string,id:string){
+ const input=page.getByRole('dialog').getByRole('combobox',{name,exact:true});
+ await input.click();await page.getByRole('option').filter({hasText:id.slice(-8)}).click();
+ return input;
 }
 for(const kind of ['categories','manufacturers'])for(const language of ['en','de'] as const)test(`${kind} ${language}: participants, keyboard, paging, identity and payload`,async({page})=>{
  const t=language==='en'?en:de,f=await setup(page,kind,language);await page.getByRole('button',{name:t.actions.merge,exact:true}).click();await f.reply('');
@@ -42,6 +47,11 @@ for(const kind of ['categories','manufacturers'])for(const language of ['en','de
  await page.getByRole('alertdialog').getByRole('button').last().click();await expect.poll(()=>f.posts.some(post=>post.path.endsWith('/merge'))).toBe(true);expect(f.posts.at(-1)?.body).toEqual({sourceId:a,targetId:c});
  await expect(dialog).toHaveCount(0);
 });
+for(const kind of ['categories','manufacturers'])test(`${kind}: concrete-Tenant Merge picker reads authorized aggregate`,async({page})=>{
+ const f=await setup(page,kind,'en','ADMIN','GLOBAL',true);await page.getByRole('button',{name:en.actions.merge,exact:true}).click();
+ await expect.poll(()=>f.held.some(item=>item.url.pathname===`/api/v1/catalog/${kind}`)).toBe(true);await f.reply('');
+ const dialog=page.getByRole('dialog');await expect(dialog).toHaveAccessibleName(en.ui.mergeTitle.replace('{{resource}}',kind==='categories'?en.ui.category:en.ui.manufacturer));await dialog.getByRole('combobox',{name:en.ui.mergeTarget,exact:true}).click();await expect(page.getByRole('option').filter({hasText:'Readable Tenant B'})).toBeVisible();await expect(page.getByText('Advanced: select by identifier',{exact:true})).toHaveCount(0);
+});
 for(const kind of ['categories','manufacturers'])test(`${kind}: pending, late responses, empty/error and Tab focus`,async({page})=>{
  const f=await setup(page,kind);await page.getByRole('button',{name:en.actions.merge,exact:true}).click();const input=page.getByRole('combobox',{name:en.ui.mergeSource,exact:true});await input.click();await expect(page.getByRole('status').filter({hasText:'Searching'})).toBeVisible();await f.reply('');
  await input.evaluate(el=>(window as any).input=el);await page.getByRole('option').first().evaluate(el=>(window as any).option=el);await input.fill('a');await expect(page.getByRole('dialog').getByRole('status')).toHaveCount(0);await expect(page.getByRole('dialog').getByRole('button',{name:'Filter',exact:true})).toHaveCount(0);expect(await page.getByRole('option').first().evaluate(el=>el===(window as any).option)).toBe(true);await expect(page.getByRole('option').first()).toHaveAttribute('aria-disabled','true');await page.getByRole('option').first().click({force:true});await expect(input).toHaveValue('a');await input.fill('ab');await f.reply('ab',0,[{id:c,name:'Newest',tenantId:null}]);await f.reply('a');
@@ -49,10 +59,11 @@ for(const kind of ['categories','manufacturers'])test(`${kind}: pending, late re
  await input.fill('empty');await f.reply('empty',0,[],0);await expect(page.getByText(en.ui.noRecords,{exact:true}).last()).toBeVisible();await input.fill('error');await expect(page.getByText(en.ui.noRecords,{exact:true}).last()).toBeVisible();await expect(page.getByRole('dialog').getByRole('status')).toHaveCount(0);await f.reply('error',0,[],0,503);await expect(page.getByRole('dialog').getByRole('alert')).toBeVisible();await expect(page.getByRole('option')).toHaveCount(0);
  await input.press('Tab');await expect(input).toHaveAttribute('aria-expanded','false');await page.keyboard.press('Shift+Tab');await expect(input).toBeFocused();
 });
-test('identical explicit UUIDs cannot preview/execute; source edit invalidates preview',async({page})=>{
- const f=await setup(page,'categories');await page.getByRole('button',{name:en.actions.merge,exact:true}).click();await f.reply('');await page.getByText(en.redesign.advancedIdentifiers,{exact:true}).click();
- await page.getByLabel(en.ui.mergeSourceIDExplicit,{exact:true}).fill(a);await page.getByLabel(en.ui.mergeTargetIDExplicit,{exact:true}).fill(a);await expect(page.getByRole('button',{name:en.ui.previewMerge,exact:true})).toBeDisabled();await expect(page.getByRole('button',{name:en.ui.confirmMerge,exact:true})).toHaveCount(0);expect(f.posts.length).toBe(0);
- await page.getByLabel(en.ui.mergeTargetIDExplicit,{exact:true}).fill(b);await page.getByRole('button',{name:en.ui.previewMerge,exact:true}).click();await expect(page.getByRole('button',{name:en.ui.confirmMerge,exact:true})).toBeVisible();await page.getByLabel(en.ui.mergeSourceIDExplicit,{exact:true}).fill(c);await expect(page.getByRole('button',{name:en.ui.confirmMerge,exact:true})).toHaveCount(0);
+test('same Merge participant is excluded and source edit invalidates preview',async({page})=>{
+ const f=await setup(page,'categories');await page.getByRole('button',{name:en.actions.merge,exact:true}).click();await f.reply('');
+ const source=await choose(page,en.ui.mergeSource,a),target=page.getByRole('dialog').getByRole('combobox',{name:en.ui.mergeTarget,exact:true});
+ await target.click();await expect(page.getByRole('option').filter({hasText:a.slice(-8)})).toHaveAttribute('aria-disabled','true');await expect(page.getByRole('button',{name:en.ui.previewMerge,exact:true})).toBeDisabled();expect(f.posts.length).toBe(0);
+ await page.getByRole('option').filter({hasText:b.slice(-8)}).click();await page.getByRole('button',{name:en.ui.previewMerge,exact:true}).click();await expect(page.getByRole('button',{name:en.ui.confirmMerge,exact:true})).toBeVisible();await source.fill('changed');await expect(page.getByRole('button',{name:en.ui.confirmMerge,exact:true})).toHaveCount(0);
 });
 test('required Merge source X clears selection and blocks preview',async({page})=>{
  const f=await setup(page,'categories');await page.getByRole('button',{name:en.actions.merge,exact:true}).click();await f.reply('');
@@ -65,26 +76,25 @@ for(const language of ['en','de'] as const)test(`${language}: merge rejection ex
  const t=language==='en'?en:de,f=await setup(page,'categories',language);
  await page.route('**/catalog/categories/merge',route=>route.fulfill({status:409,json:{code:'MERGE_REQUIRES_GLOBAL_TARGET',detail:'Promote the intended survivor to Global first'}}));
  await page.getByRole('button',{name:t.actions.merge,exact:true}).click();await f.reply('');
- await page.getByText(t.redesign.advancedIdentifiers,{exact:true}).click();
- const source=page.getByLabel(t.ui.mergeSourceIDExplicit,{exact:true}),target=page.getByLabel(t.ui.mergeTargetIDExplicit,{exact:true});
- await source.fill(a);await target.fill(b);await page.getByRole('button',{name:t.ui.previewMerge,exact:true}).click();
+ const source=await choose(page,t.ui.mergeSource,a),target=await choose(page,t.ui.mergeTarget,b);
+ await page.getByRole('button',{name:t.ui.previewMerge,exact:true}).click();
  await page.getByRole('button',{name:t.ui.confirmMerge,exact:true}).click();
  await page.getByRole('alertdialog').getByRole('button').last().click();
  await expect(page.getByRole('dialog').getByRole('alert')).toContainText(t.errors.MERGE_REQUIRES_GLOBAL_TARGET);
- await expect(source).toHaveValue(a);await expect(target).toHaveValue(b);
+ await expect(source).toHaveValue('Same name');await expect(target).toHaveValue('Same name');
 });
 test('GLOBAL USER has no Merge controls',async({page})=>{await setup(page,'categories','en','USER');await expect(page.getByRole('button',{name:en.actions.merge,exact:true})).toHaveCount(0);});
 
 test('a late preview cannot restore an obsolete source/target pair',async({page})=>{
  const f=await setup(page,'categories');let previewRoute:Route|undefined;
  await page.route('**/merge-preview',route=>{previewRoute=route;});
- await page.getByRole('button',{name:en.actions.merge,exact:true}).click();await f.reply('');await page.getByText(en.redesign.advancedIdentifiers,{exact:true}).click();
- await page.getByLabel(en.ui.mergeSourceIDExplicit,{exact:true}).fill(a);await page.getByLabel(en.ui.mergeTargetIDExplicit,{exact:true}).fill(b);
+ await page.getByRole('button',{name:en.actions.merge,exact:true}).click();await f.reply('');
+ await choose(page,en.ui.mergeSource,a);const target=await choose(page,en.ui.mergeTarget,b);
  await page.getByRole('button',{name:en.ui.previewMerge,exact:true}).click();
  await expect.poll(()=>!!previewRoute).toBe(true);
- await page.getByLabel(en.ui.mergeTargetIDExplicit,{exact:true}).fill(c);
+ await target.fill('changed');
  await previewRoute!.fulfill({json:{productCount:0,assetCount:0,affectedTenants:[],blockers:[]}});
- await expect(page.getByRole('button',{name:en.ui.previewMerge,exact:true})).toBeEnabled();await expect(page.getByRole('button',{name:en.ui.confirmMerge,exact:true})).toHaveCount(0);
+ await expect(page.getByRole('button',{name:en.ui.previewMerge,exact:true})).toBeDisabled();await expect(page.getByRole('button',{name:en.ui.confirmMerge,exact:true})).toHaveCount(0);
 });
 
 for(const role of ['ADMIN','USER'])test(`TENANT ${role} has no explicit Merge controls`,async({page})=>{await setup(page,'manufacturers','en',role,'TENANT');await expect(page.getByRole('button',{name:en.actions.merge,exact:true})).toHaveCount(0);});
@@ -94,13 +104,13 @@ test('locale changes preserve combobox input and selected UUID',async({page})=>{
  const source=page.getByRole('combobox',{name:en.ui.mergeSource,exact:true});await source.focus();await source.press('ArrowDown');await source.press('Enter');await source.evaluate(el=>(window as any).input=el);
  await page.evaluate(async()=>{const {selectLanguage}=await import('/src/i18n.ts');await selectLanguage('de');});
  const translated=page.getByRole('combobox',{name:de.ui.mergeSource,exact:true});await expect(translated).toHaveValue('Same name');expect(await translated.evaluate(el=>el===(window as any).input)).toBe(true);
- await page.getByText(de.redesign.advancedIdentifiers,{exact:true}).click();await expect(page.getByLabel(de.ui.mergeSourceIDExplicit,{exact:true})).toHaveValue(a);
+ await expect(page.getByRole('dialog').getByRole('combobox',{name:de.ui.mergeSource,exact:true})).toHaveValue('Same name');
 });
 for(const kind of ['categories','manufacturers'])test(`${kind}: select a later-page candidate and reset paging when editing it`,async({page})=>{
  const f=await setup(page,kind);await page.getByRole('button',{name:en.actions.merge,exact:true}).click();await f.reply('');
  const source=page.getByRole('combobox',{name:en.ui.mergeSource,exact:true});await source.click();await page.getByRole('dialog').getByRole('button',{name:en.ui.loadMore,exact:true}).click();await f.reply('',1,[{id:c,name:'Later page',tenantId:null}]);
- await page.getByRole('option',{name:/Later page/}).click();await expect(source).toHaveValue('Later page');await page.getByText(en.redesign.advancedIdentifiers,{exact:true}).click();await expect(page.getByLabel(en.ui.mergeSourceIDExplicit,{exact:true})).toHaveValue(c);
- await source.fill('changed');await f.reply('changed',0,[{id:a,name:'Replacement',tenantId:null}]);await expect(page.getByLabel(en.ui.mergeSourceIDExplicit,{exact:true})).toHaveValue('');await expect(page.getByRole('option')).toContainText('Replacement');await expect(source).toBeFocused();
+ await page.getByRole('option',{name:/Later page/}).click();await expect(source).toHaveValue('Later page');
+ await source.fill('changed');await f.reply('changed',0,[{id:a,name:'Replacement',tenantId:null}]);await expect(page.getByRole('button',{name:en.ui.previewMerge,exact:true})).toBeDisabled();await expect(page.getByRole('option')).toContainText('Replacement');await expect(source).toBeFocused();
 });
 
 for(const kind of ['categories','manufacturers'])test(`${kind}: final confirmation Cancel is a silent pre-dispatch no-op`,async({page})=>{
@@ -109,7 +119,7 @@ for(const kind of ['categories','manufacturers'])test(`${kind}: final confirmati
  await d.getByRole('button',{name:en.ui.previewMerge,exact:true}).click();await d.getByRole('button',{name:en.ui.confirmMerge,exact:true}).click();await page.getByRole('alertdialog').getByRole('button',{name:en.redesign.cancel,exact:true}).click();await expect(page.getByRole('alertdialog')).toHaveCount(0);await expect(d).toBeVisible();expect(await d.evaluate(el=>el===(window as any).workflow)).toBe(true);await expect(source).toHaveValue('Same name');await expect(target).toHaveValue('Same name');expect(f.posts.filter(r=>r.path.endsWith('/merge'))).toHaveLength(0);await expect(d.getByRole('alert')).toHaveCount(0);await expect(d.getByText(en.ui.draftHelp)).toHaveCount(0);await expect(d.getByRole('button',{name:en.ui.confirmMerge,exact:true})).toBeEnabled();
 });
 test('Preview text/dimensions stay stable while pending and duplicate submissions are blocked',async({page})=>{
- const f=await setup(page,'categories');let held:Route|undefined,count=0;await page.route('**/merge-preview',r=>{held=r;count++;});await page.getByRole('button',{name:en.actions.merge,exact:true}).click();await f.reply('');await page.getByText(en.redesign.advancedIdentifiers,{exact:true}).click();await page.getByLabel(en.ui.mergeSourceIDExplicit).fill(a);await page.getByLabel(en.ui.mergeTargetIDExplicit).fill(b);
+ const f=await setup(page,'categories');let held:Route|undefined,count=0;await page.route('**/merge-preview',r=>{held=r;count++;});await page.getByRole('button',{name:en.actions.merge,exact:true}).click();await f.reply('');await choose(page,en.ui.mergeSource,a);await choose(page,en.ui.mergeTarget,b);
  const button=page.getByRole('button',{name:en.ui.previewMerge,exact:true}),before=await button.boundingBox();await button.click();await expect.poll(()=>!!held).toBe(true);await expect(button).toHaveText(en.ui.previewMerge);await expect(button).toHaveAttribute('aria-busy','true');await expect(button).toBeDisabled();expect((await button.boundingBox())!.width).toBe(before!.width);await button.evaluate(el=>el.closest('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));expect(count).toBe(1);await held!.fulfill({json:{productCount:0,assetCount:0,affectedTenants:[],blockers:[]}});await expect(button).toBeEnabled();held=undefined;await button.click();await expect.poll(()=>count).toBe(2);await held!.fulfill({status:503,json:{code:'SERVICE_UNAVAILABLE'}});await expect(page.getByRole('form',{name:en.ui.previewMerge,exact:true}).getByRole('alert')).toBeVisible();await expect(button).toHaveText(en.ui.previewMerge);await expect(button).toBeEnabled();
 });
 test('open candidate popup: first X enters discard; Escape closes only popup; rejection preserves session',async({page})=>{

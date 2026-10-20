@@ -218,7 +218,7 @@ Allowed Lifecycle transitions:
 - `DEPLOYED -> REGISTERED | IN_STOCK | DEREGISTERED`
 - No outgoing transition from `DEREGISTERED`.
 
-Condition initial `UNKNOWN`. `DEFECTIVE` means potentially repairable; `UNUSABLE` means irreparable/economically unjustifiable and is **terminal**.
+Registration may set any defined initial Condition. Omitted initial Condition defaults to `UNKNOWN` for existing clients; explicit null or an unknown value is invalid. The selected Condition is part of the initial `REGISTERED` AssetEvent snapshot, not a post-registration transition. `DEFECTIVE` means potentially repairable; `UNUSABLE` means irreparable/economically unjustifiable and is **terminal**.
 
 Allowed Condition transitions:
 
