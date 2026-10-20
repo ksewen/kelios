@@ -60,6 +60,8 @@
     "invalidReturnDate": "Gültiges Rückgabedatum eingeben.",
     "assets": "Assets",
     "assetType": "Asset",
+    "productInformation": "Produktinformationen",
+    "currentLoan": "Aktuelle Ausleihe",
     "by": "von",
     "auditTenantIDOptional": "Protokoll-Mandanten-UUID (optional)",
     "auditAction": "Protokollaktion",

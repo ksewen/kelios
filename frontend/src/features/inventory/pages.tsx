@@ -14,7 +14,7 @@ import { Modal } from '../../components/ui/dialog';
 import { Card, Skeleton, Badge } from '../../components/ui/surfaces';
 import { confirmAction } from '../../components/ui/confirmation';
 import { useToast } from '../../components/ui/toast';
-import { ArrowUpDown, ArrowUp, ArrowDown, Search, RotateCcw, ArrowUpRight, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react';
+import { ArrowUpDown, ArrowUp, ArrowDown, Search, RotateCcw, ArrowUpRight, ChevronLeft, ChevronRight, ChevronDown, Boxes, MapPin, UserRound, Handshake } from 'lucide-react';
 import { SearchableCombobox, type Candidate } from '../../components/ui/searchable-combobox';
 import { ClearableControl } from '../../components/ui/clearable-control';
 import { Button, type ButtonProps } from '../../components/ui/button';
@@ -198,23 +198,28 @@ export function AssetDetail({ id, admin, exit }: { id: string; admin: boolean; e
     const badge=<Badge className={assetStatusTone[state]}>{label(state)}</Badge>;
     return admin&&(kind==='lifecycle'?lifecycleTargets[state]:conditionTargets[state])?.length?<button type="button" className="rounded-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" aria-label={`${t(`ui.${change}`)}: ${label(state)}`} disabled={pending} onClick={()=>setAction(change)}>{badge}</button>:badge;
   };
-  const overviewFields = (keys: string[]) => keys.map(key => <div className="min-w-0" key={key}><dt className="text-sm text-muted-foreground">{label(key)}</dt><dd className="whitespace-pre-wrap break-words">{key==='loanable'&&a?(admin&&!a.loanedTo?<button type="button" className="rounded-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" aria-label={`${t('ui.changeLoanability')}: ${loanabilityLabel(a.loanable)}`} disabled={pending} onClick={()=>setAction('toggleLoanability')}><Badge>{loanabilityLabel(a.loanable)}</Badge></button>:<Badge>{loanabilityLabel(a.loanable)}</Badge>):admin&&(key==='locationName'||key==='ownerName')?<button id={key==='locationName'?'asset-location-entry':'asset-owner-entry'} type="button" className="rounded-sm text-left text-primary hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" aria-label={`${t(`ui.${key==='locationName'?'changeLocation':'changeOwner'}`)}: ${valueLabel(key,a?.[key])}`} disabled={pending} onClick={()=>setAction(key==='locationName'?'changeLocation':'changeOwner')}>{valueLabel(key,a?.[key])}</button>:valueLabel(key, a?.[key])}</dd></div>);
+  const overviewFields = (keys: string[], classForIndex?: (index:number)=>string) => keys.map((key,index) => <div className={`min-w-0 ${classForIndex?.(index)??''}`} key={key}><dt className="text-sm text-muted-foreground">{label(key)}</dt><dd className="whitespace-pre-wrap break-words">{key==='loanable'&&a?(admin&&!a.loanedTo?<button type="button" className="rounded-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" aria-label={`${t('ui.changeLoanability')}: ${loanabilityLabel(a.loanable)}`} disabled={pending} onClick={()=>setAction('toggleLoanability')}><Badge>{loanabilityLabel(a.loanable)}</Badge></button>:<Badge>{loanabilityLabel(a.loanable)}</Badge>):admin&&(key==='locationName'||key==='ownerName')?<button id={key==='locationName'?'asset-location-entry':'asset-owner-entry'} type="button" className="rounded-sm text-left text-primary hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" aria-label={`${t(`ui.${key==='locationName'?'changeLocation':'changeOwner'}`)}: ${valueLabel(key,a?.[key])}`} disabled={pending} onClick={()=>setAction(key==='locationName'?'changeLocation':'changeOwner')}>{valueLabel(key,a?.[key])}</button>:valueLabel(key, a?.[key])}</dd></div>);
   return <section><ReadError error={error} />{!a&&!error&&<Skeleton className="h-72"/>}{a && <>
-    <BusinessIdentity kind={t('ui.assetType')} name={a.assetTag} owner={display(a.tenantName)} id={a.id}/>
-    <div className="mb-4 flex flex-wrap gap-2">{statusIndicator('lifecycle')}{statusIndicator('condition')}{a.loanedTo?<Badge>{t('redesign.outstandingLoans')}</Badge>:null}</div>
     <Tabs.Root defaultValue="overview">
       <Tabs.List className="mb-5 inline-flex rounded-lg bg-muted p-1"><Tabs.Trigger className="tab-trigger" value="overview">{t('redesign.overview')}</Tabs.Trigger><Tabs.Trigger className="tab-trigger" value="history">{t('redesign.history')}</Tabs.Trigger></Tabs.List>
       <Tabs.Content value="overview">
-        <Card className="mb-5 p-5">
-          <div className="max-w-5xl divide-y">
-            {[
-              ['localIdentifier','externalInventoryNumber','serialNumber'],
-              ['productName','manufacturerName','categoryName'],
-              ['locationName','ownerName','loanable'],
-            ].map(fields=><dl key={fields[0]} className="grid min-w-0 gap-x-6 gap-y-4 py-5 first:pt-0 sm:grid-cols-2 xl:grid-cols-3">{overviewFields(fields)}</dl>)}
-            <dl className="min-w-0 pt-5">{overviewFields(['note'])}</dl>
+        <Card className="mb-5 min-w-0 p-4 sm:p-5">
+          <header className="flex min-w-0 flex-col gap-4 border-b pb-5 lg:flex-row lg:items-start lg:justify-between">
+            <div className="flex min-w-0 items-start gap-3">
+              <span className="rounded-lg bg-muted p-2 text-muted-foreground"><Boxes size={20} aria-hidden="true"/></span>
+              <div className="min-w-0"><p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{t('ui.assetType')}</p><h2 className="break-words text-xl font-semibold tracking-tight sm:text-2xl">{a.localIdentifier?valueLabel('localIdentifier',a.localIdentifier):a.assetTag}</h2><p className="text-sm text-muted-foreground">{a.localIdentifier?label('localIdentifier'):label('assetTag')}</p><p className="mt-2 break-words text-sm text-muted-foreground">{a.localIdentifier&&<>{a.assetTag} · </>}{display(a.tenantName)}</p><p className="break-all text-xs text-muted-foreground">{a.id}</p></div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">{statusIndicator('lifecycle')}{statusIndicator('condition')}<Badge>{loanabilityLabel(a.loanable)}</Badge>{a.loanedTo&&<Badge>{t('redesign.outstandingLoans')}</Badge>}</div>
+          </header>
+          <section className="min-w-0 py-5" aria-label={t('ui.productInformation')}>
+            <h3 className="mb-4 text-sm font-semibold">{t('ui.productInformation')}</h3>
+            <dl className="grid min-w-0 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">{overviewFields(['productName','manufacturerName','categoryName','serialNumber','externalInventoryNumber'],index=>index?'xl:border-l xl:pl-4':'')}</dl>
+          </section>
+          <div className="grid min-w-0 gap-3 border-t py-5 sm:grid-cols-2 xl:grid-cols-3">
+            {([['locationName',MapPin],['ownerName',UserRound],['loanable',Handshake]] as const).map(([key,Icon])=><section key={key} className="min-w-0 rounded-lg border p-4"><h3 className="mb-3 flex items-center gap-2 border-b pb-2 text-sm font-semibold"><Icon size={16} className="text-muted-foreground" aria-hidden="true"/>{key==='loanable'?t('redesign.loan'):label(key)}</h3><dl>{overviewFields([key])}</dl></section>)}
           </div>
-          {a.loanedTo&&<div className="mt-6 border-t pt-5"><dl className="grid max-w-5xl min-w-0 gap-x-6 gap-y-4 sm:grid-cols-2">{overviewFields(['loanedTo','loanedAt','expectedReturnAt','loanNote'])}</dl></div>}
+          {a.loanedTo&&<section className="min-w-0 border-t py-5" aria-label={t('ui.currentLoan')}><h3 className="mb-4 text-sm font-semibold">{t('ui.currentLoan')}</h3><dl className="grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-4">{overviewFields(['loanedTo','loanedAt','expectedReturnAt','loanNote'])}</dl></section>}
+          <section className="min-w-0 border-t pt-5" aria-label={label('note')}><h3 className="mb-2 text-sm font-semibold">{label('note')}</h3><p className="whitespace-pre-wrap break-words">{valueLabel('note',a.note)}</p></section>
         </Card>
 </Tabs.Content><Tabs.Content value="history"><ReadError error={history.error} />{history.data && <><ol>{history.data.items.map(event=><AssetHistoryEntry key={event.id} event={event}/>)}</ol><Pager data={history.data} set={paginate} requestedPage={page} pending={history.pending} /></>}</Tabs.Content></Tabs.Root>        <div className="mb-5 space-y-3">
           <div className="flex flex-wrap gap-2">

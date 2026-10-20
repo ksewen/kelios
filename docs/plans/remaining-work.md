@@ -1,5 +1,7 @@
 # Remaining work index
 
+The [Asset overview summary-card Plan](asset-overview-summary-card.md) is **HUMAN ACCEPTED / CLOSED** on 2026-10-20. Its frontend-only implementation and preserved-data local review installation were accepted with the documented evidence limits. Accepted earlier Asset gates and unrelated backlog items remain closed/open as previously recorded.
+
 The [Asset registration/detail/Merge/Tenant refinement Plan](asset-registration-detail-merge-tenant-refinement.md) is **HUMAN ACCEPTED / CLOSED** on 2026-10-20. It follows the closed Assets Gates A–F without reopening them; Product Merge exclusion and other backlog items remain under their existing owners. O3 closed later through its own diagnosis.
 
 The [Assets checkout and history refinement Plan](assets-checkout-history-refinement.md) is **HUMAN ACCEPTED / CLOSED** on 2026-10-20. It follows the closed Assets Gates A–E as a separate UI-only gate; other backlog items remain under their existing owners. O3 closed later through its own diagnosis.

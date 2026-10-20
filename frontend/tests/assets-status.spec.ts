@@ -26,7 +26,7 @@ for(const language of ['de','en'] as const)for(const width of [390,1440])test(`$
  const states=[['lifecycle','REGISTERED',true,'sky'],['lifecycle','IN_STOCK',true,'slate'],['lifecycle','DEPLOYED',true,'emerald'],['lifecycle','DEREGISTERED',false,'stone'],['condition','UNKNOWN',true,'slate'],['condition','WORKING',true,'emerald'],['condition','DEFECTIVE',true,'amber'],['condition','UNUSABLE',false,'rose']] as const;
  for(const [kind,state,actionable,tone] of states){f.set({[kind]:state});await page.reload();
   const label=text.enums[state],action=kind==='lifecycle'?text.ui.changeLifecycle:text.ui.changeCondition;
-  const indicator=page.locator('main section > div.mb-4.flex').first().getByText(label,{exact:true});await expect(indicator).toBeVisible();await expect(indicator).toHaveClass(new RegExp(`bg-${tone}-50`));
+  const indicator=page.getByRole('tabpanel',{name:text.redesign.overview}).getByText(label,{exact:true});await expect(indicator).toBeVisible();await expect(indicator).toHaveClass(new RegExp(`bg-${tone}-50`));
   const trigger=page.getByRole('button',{name:`${action}: ${label}`,exact:true});await expect(trigger).toHaveCount(actionable?1:0);
   if(actionable){await trigger.focus();await page.keyboard.press('Enter');await expect(page.getByRole('dialog',{name:action})).toBeVisible();await page.getByRole('dialog').getByRole('button',{name:text.redesign.cancel,exact:true}).click();await expect(trigger).toBeFocused();}
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);

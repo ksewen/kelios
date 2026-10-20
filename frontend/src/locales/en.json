@@ -60,6 +60,8 @@
     "invalidReturnDate": "Enter a valid return date.",
     "assets": "Assets",
     "assetType": "Asset",
+    "productInformation": "Product information",
+    "currentLoan": "Current loan",
     "by": "by",
     "auditTenantIDOptional": "Audit Tenant ID (optional)",
     "auditAction": "Audit action",
