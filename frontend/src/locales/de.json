@@ -57,6 +57,8 @@
     "allowedIServGroupUUIDs": "Zugelassene IServ-Gruppen-UUIDs",
     "approveUser": "Aktivieren",
     "assetHistory": "Asset-Verlauf",
+    "initialState": "Initialzustand",
+    "invalidReturnDate": "Gültiges Rückgabedatum eingeben.",
     "assets": "Assets",
     "assetType": "Asset",
     "by": "von",
@@ -103,7 +105,7 @@
     "inventoryWorkspace": "Inventarbereich",
     "lifecycleFilter": "Lebenszyklusfilter",
     "lifecycleTarget": "Ziel-Lebenszyklus",
-    "loanAsset": "Asset ausleihen",
+    "loanAsset": "Ausleihen",
     "loanNote": "Ausleihnotiz",
     "loanable": "Ausleihbar",
     "loaned": "Ausgeliehen",
@@ -491,8 +493,6 @@
   "actorId": "Akteur-UUID",
   "from": "Von",
   "until": "Bis",
-  "expectedReturnLocal": "Erwartete Rückgabe (lokale Zeit, optional)",
-  "localTimeHelp": "Zeitangaben verwenden die Zeitzone dieses Browsers und werden als UTC gesendet.",
   "invalidTime": "Gültigen lokalen Zeitraum eingeben. Von darf nicht nach Bis liegen."
 }
 }

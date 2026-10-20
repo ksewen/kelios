@@ -1,6 +1,6 @@
 import {describe,it,expect} from 'vitest';
 import {execFileSync} from 'node:child_process';
-import {localInstant,auditBounds,validLocalInput} from './local-time';
+import {localInstant,localEndOfDayInstant,localCalendarDate,validLocalDate,auditBounds,validLocalInput} from './local-time';
 const module=new URL('./local-time.ts',import.meta.url).href;
 function inZone(zone:string,expression:string){return JSON.parse(execFileSync(process.execPath,['--input-type=module','-e',`import * as t from ${JSON.stringify(module)};console.log(JSON.stringify(${expression}));`],{env:{...process.env,TZ:zone},encoding:'utf8'}));}
 describe('F5 absolute/local boundaries',()=>{
@@ -17,4 +17,14 @@ describe('F5 absolute/local boundaries',()=>{
  it('repeated hour uses the native earlier occurrence with an absolute offset',()=>expect(inZone('Europe/Berlin',"t.localInstant('2026-10-25T02:30')")).toBe('2026-10-25T00:30:00.000Z'));
  for(const language of ['de','en'])it(`${language} local display crosses calendar day and includes timezone`,()=>{const text=inZone('America/Los_Angeles',`t.localTimestamp('2026-10-12T00:30:00Z','${language}')`);expect(text).toMatch(/11/);expect(text).toMatch(/17:30|05:30/);expect(text).toMatch(/PDT|GMT-7/);});
  it('invalid display stays safe and blank input is valid',()=>{expect(validLocalInput('')).toBe(true);expect(inZone('UTC',"t.localTimestamp('bad','en')")).toBe('bad');});
+ for(const [zone,date,instant] of [
+  ['UTC','2026-07-01','2026-07-01T23:59:59.999Z'],
+  ['Europe/Berlin','2026-07-01','2026-07-01T21:59:59.999Z'],
+  ['Europe/Berlin','2026-03-29','2026-03-29T21:59:59.999Z'],
+  ['Europe/Berlin','2026-10-25','2026-10-25T22:59:59.999Z'],
+  ['America/New_York','2026-03-08','2026-03-09T03:59:59.999Z'],
+  ['America/New_York','2026-11-01','2026-11-02T04:59:59.999Z']
+ ] as const)it(`${zone} ${date} maps checkout to local end of day`,()=>expect(inZone(zone,`t.localEndOfDayInstant('${date}')`)).toBe(instant));
+ it.each(['','2026-02-30','2026-13-01','2026-01-01T12:00','not a date'])('rejects invalid checkout date %s',value=>{expect(validLocalDate(value)).toBe(false);expect(()=>localEndOfDayInstant(value)).toThrow();});
+ it('formats arbitrary stored instants as the local date without changing the instant',()=>{expect(inZone('America/New_York',"t.localCalendarDate('2026-10-12T00:30:00Z','en')")).toBe('10/11/2026');expect(localCalendarDate('bad','de')).toBe('bad');});
 });

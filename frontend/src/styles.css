@@ -22,8 +22,8 @@ body{margin:0;background:var(--background);color:var(--foreground);font-size:14p
  .data-table{@apply w-full text-sm;}
  .data-table th{@apply whitespace-nowrap bg-muted/50 px-4 py-3 text-center text-xs font-bold text-muted-foreground;border-block-end:1px solid var(--border);}
  .data-table td{@apply max-w-64 px-4 py-3 text-left align-middle;overflow-wrap:anywhere;}
- .data-table tbody tr+tr td{border-block-start:1px solid var(--border);}
- .data-table th+th,.data-table td+td{border-inline-start:1px solid var(--border);}
+ .data-table tbody tr+tr > *{border-block-start:1px solid var(--border);}
+ .data-table tr > *+*{border-inline-start:1px solid var(--border);}
  .product-management > .table-frame > .data-table{min-width:70rem;}
  .product-management > .table-frame > .data-table > tbody > tr > td:first-child{min-width:14rem;}
  .data-table tbody tr{@apply transition-colors hover:bg-muted/40;}

@@ -1,5 +1,7 @@
 # Remaining work index
 
+The [Assets checkout and history refinement Plan](assets-checkout-history-refinement.md) is **HUMAN ACCEPTED / CLOSED** on 2026-10-20. It follows the closed Assets Gates A–E as a separate UI-only gate; O3 and other backlog items remain open under their existing owners.
+
 The [Assets UI/UX consolidation Plan](assets-ui-ux-consolidation.md) is **HUMAN ACCEPTED / CLOSED** across Gates A–E on 2026-10-19. Gate A was committed as `25c832c5a7062a748f2bbe90acd691e3563207a8`; Gate B as `6ff1384bc592c38ac6bdf29d856c51717a6a61a3`; Gate C as `7b1765005b9451e288108231d7f18ad9a297ea87`; Gate D as `af378a330c28026f9a4620caaf55039817c03b5e`. HUMAN separately authorized the Gate E-only commit. The accepted frontend direction keeps separate Asset backend commands and excludes backend no-op/audit changes; any future same-value accepted-command policy needs a separate HUMAN decision.
 
 The [Administration UI feedback and User table consistency Plan](administration-ui-feedback-consistency.md) is **HUMAN ACCEPTED / CLOSED** on 2026-10-19: Gate 1 UX and Gate 2 notification consistency were separately accepted with their recorded intercepted/live-evidence limits. Prior Tenant/User Gate 2 evidence and its pending final Plan acceptance remain intact.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assetQuery, catalogInput, conditionTargets, display, historyChanges, lifecycleTargets, nullable, PAGE_SIZES, hasNextPage, normalizeSearch } from './inventory';
+import { assetQuery, catalogInput, conditionTargets, display, historyChanges, registrationValues, lifecycleTargets, nullable, PAGE_SIZES, hasNextPage, normalizeSearch } from './inventory';
 describe('explicit inventory UI commands', () => {
   it('sends Product ID without redundant dependency facts', () => expect(catalogInput({ productId: 'p', categoryId: 'c', manufacturerId: 'm' })).toEqual({ productId: 'p' }));
   it('sends direct references when Product is not selected', () => expect(catalogInput({ productId: '', categoryId: 'c', manufacturerId: 'm' })).toEqual({ categoryId: 'c', manufacturerId: 'm' }));
@@ -8,6 +8,7 @@ describe('explicit inventory UI commands', () => {
   it('preserves terminal graphs and no self targets', () => { for(const [from, targets] of Object.entries(lifecycleTargets))expect(targets).not.toContain(from);for(const [from, targets] of Object.entries(conditionTargets))expect(targets).not.toContain(from);expect(lifecycleTargets.DEREGISTERED).toEqual([]);expect(conditionTargets.UNUSABLE).toEqual([]); });
   it('renders history as data and missing old fields as unavailable', () => {expect(display(null)).toBe('—');expect(display({note:'<script>'})).toContain('<script>');});
   it('formats captured historical labels and never fabricates absent loan fields', () => {const changes=historyChanges({before:{location:{id:'old',name:'Original label'}},after:{location:{id:'new',name:'New label'}}});expect(changes).toEqual([{field:'location',before:'Original label · old',after:'New label · new'}]);expect(changes.some(c=>c.field==='loanedTo')).toBe(false);});
+  it('shows captured registration values, including false, but no absent or explicit null values',()=>{expect(registrationValues({before:null,after:{assetTag:'T1',loanable:false,location:{id:'l',name:'Room'},owner:null,loanedAt:null}})).toEqual([{field:'assetTag',value:'T1'},{field:'loanable',value:'false'},{field:'location',value:'Room · l'}]);expect(registrationValues({before:{loanable:false},after:{loanable:true}})).toBeNull();expect(registrationValues({before:null,after:null})).toBeNull();});
 
   it('uses exactly six supported sizes and current response page metadata',()=>{expect(PAGE_SIZES).toEqual([10,20,30,40,50,100]);expect(hasNextPage({items:[],page:0,size:20,totalElements:21})).toBe(true);expect(hasNextPage({items:[],page:1,size:20,totalElements:21})).toBe(false);expect(hasNextPage({items:[],page:9,size:20,totalElements:21})).toBe(false);});
   it('normalizes only outer search whitespace, preserving literal wildcard characters',()=>{expect(normalizeSearch(' %_\\ ')).toBe('%_\\');expect(normalizeSearch('  ')).toBe('');expect(normalizeSearch('a  b')).toBe('a  b');});

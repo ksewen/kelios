@@ -57,6 +57,8 @@
     "allowedIServGroupUUIDs": "Allowed IServ group UUIDs",
     "approveUser": "Activate",
     "assetHistory": "Asset history",
+    "initialState": "Initial state",
+    "invalidReturnDate": "Enter a valid return date.",
     "assets": "Assets",
     "assetType": "Asset",
     "by": "by",
@@ -103,7 +105,7 @@
     "inventoryWorkspace": "Inventory workspace",
     "lifecycleFilter": "Lifecycle filter",
     "lifecycleTarget": "Lifecycle target",
-    "loanAsset": "Loan Asset",
+    "loanAsset": "Loan",
     "loanNote": "Loan note",
     "loanable": "Loanable",
     "loaned": "On loan",
@@ -491,8 +493,6 @@
   "actorId": "Actor UUID",
   "from": "From",
   "until": "Until",
-  "expectedReturnLocal": "Expected return (local time, optional)",
-  "localTimeHelp": "Times use this browser’s timezone and are sent as UTC.",
   "invalidTime": "Enter a valid local time range. The From bound must not be after Until."
 }
 }

@@ -18,14 +18,21 @@ export function assetQuery(page: number, search: string, sort: string, direction
   for (const [key, value] of Object.entries(filters)) if (value) q.set(key, value);
   return q.toString();
 }
+const historyFields = ['assetTag','localIdentifier','lifecycle','condition','loanable','serialNumber','externalInventoryNumber','note','loanedTo','loanedAt','expectedReturnAt','loanNote','category','manufacturer','product','location','owner'];
+const historyValue = (value: unknown) => value && typeof value === 'object' && 'name' in value ? `${display(value.name)} · ${display('id' in value ? value.id : null)}` : display(value);
+export function registrationValues(data: unknown): {field:string;value:string}[]|null {
+ if(!data||typeof data!=='object')return null;
+ const record=data as Record<string,unknown>;
+ if(record.before!==null||!record.after||typeof record.after!=='object'||Array.isArray(record.after))return null;
+ const after=record.after as Record<string,unknown>;
+ return historyFields.filter(field=>Object.hasOwn(after,field)&&after[field]!=null).map(field=>({field,value:historyValue(after[field])}));
+}
 export function historyChanges(data: unknown): { field: string; before: string; after: string }[] {
   if (!data || typeof data !== 'object') return [];
   const record = data as Record<string, unknown>;
   const before = (record.before ?? {}) as Record<string, unknown>, after = (record.after ?? {}) as Record<string, unknown>;
-  const fields = ['assetTag','localIdentifier','lifecycle','condition','loanable','serialNumber','externalInventoryNumber','note','loanedTo','loanedAt','expectedReturnAt','loanNote','category','manufacturer','product','location','owner'];
-  const label = (value: unknown) => value && typeof value === 'object' && 'name' in value ? `${display(value.name)} · ${display('id' in value ? value.id : null)}` : display(value);
-  return fields.filter(field => field in before || field in after).filter(field => JSON.stringify(before[field]) !== JSON.stringify(after[field]))
-    .map(field => ({field,before:field in before ? label(before[field]) : String(i18n.t('ui.unavailable')),after:field in after ? label(after[field]) : String(i18n.t('ui.unavailable'))}));
+  return historyFields.filter(field => field in before || field in after).filter(field => JSON.stringify(before[field]) !== JSON.stringify(after[field]))
+    .map(field => ({field,before:field in before ? historyValue(before[field]) : String(i18n.t('ui.unavailable')),after:field in after ? historyValue(after[field]) : String(i18n.t('ui.unavailable'))}));
 }
 
 export type CatalogCriteria = {name:string;visibility:string;categoryId:string;manufacturerId:string;manufacturerNumber:string};
