@@ -130,9 +130,11 @@ for(const lang of ['de','en'] as const)for(const width of [390,1440])test(`${lan
  await fixture(page,{lang});await page.setViewportSize({width,height:900});
  await page.route(`**/api/v1/assets/${id}`,route=>route.fulfill({json:assetDetailFixture({id,tenantId:tenant,assetTag:'Asset fixture',localIdentifier:'Local',externalInventoryNumber:'External',productId:other,product:association(product),manufacturer:association('Existing Manufacturer'),category:association('Existing Category'),location:association('Existing Location'),owner:null,ownerId:null,lifecycle:'DEPLOYED',condition:'WORKING',loanable:true,serialNumber:serial,note,loanedTo:'Borrower',loanedAt:'2026-10-12T12:00:00Z',expectedReturnAt:'2026-10-13T12:00:00Z',loanNote:'Retained loan note'})}));
  await page.goto(`/inventory/assets/${id}`);const overview=page.getByRole('tabpanel',{name:text.redesign.overview});await expect(overview).toBeVisible();
- await expect(overview.getByRole('heading',{name:'Local'})).toBeVisible();await expect(overview.getByText('Asset fixture',{exact:false})).toBeVisible();
+ const header=overview.locator('header');await expect(header.getByRole('heading',{name:'Local · Fixture Tenant',exact:true})).toBeVisible();await expect(header).toContainText(`${text.ui.tag}: Asset fixture`);await expect(header).toContainText(id);await expect(header.getByText(text.fields.localIdentifier,{exact:true})).toHaveCount(0);await expect(header.locator('svg')).toHaveCount(0);
+ await expect(header.getByRole('button')).toHaveCount(2);for(const badge of await header.locator('button > span').all())await expect(badge).toHaveClass(/text-sm/);
  const productInfo=overview.getByRole('region',{name:text.ui.productInformation});await expect(productInfo.locator('dt')).toHaveText([text.fields.productName,text.fields.manufacturerName,text.fields.categoryName,text.fields.serialNumber,text.fields.externalInventoryNumber]);await expect(productInfo).toContainText(product);await expect(productInfo).toContainText(serial);
- for(const key of ['locationName','ownerName','loanable'] as const)await expect(overview.getByRole('heading',{name:key==='loanable'?text.redesign.loan:text.fields[key],exact:true})).toBeVisible();
+ for(const key of ['locationName','ownerName','loanable'] as const)await expect(overview.getByRole('heading',{name:text.fields[key],exact:true})).toBeVisible();
+ const loanable=overview.getByRole('heading',{name:text.fields.loanable,exact:true}).locator('..');await expect(loanable.getByText(text.fields.true,{exact:true})).toHaveClass(/bg-emerald-50/);await expect(loanable.locator('dt')).toHaveCount(0);await expect(loanable.getByRole('button')).toHaveCount(0);
  await expect(overview.getByRole('button',{name:`${text.ui.changeLocation}: Existing Location` })).toBeVisible();await expect(overview.getByRole('button',{name:`${text.ui.changeOwner}: —` })).toBeVisible();
  const currentLoan=overview.getByRole('region',{name:text.ui.currentLoan});await expect(currentLoan.locator('dt')).toHaveText([text.fields.loanedTo,text.fields.loanedAt,text.fields.expectedReturnAt,text.fields.loanNote]);await expect(currentLoan).toContainText('Retained loan note');
  const noteSection=overview.getByRole('region',{name:text.fields.note});await expect(noteSection).toContainText('First line');await expect(page.getByRole('button',{name:/Aktuelles Asset neu laden|Reload current Asset/})).toHaveCount(0);
@@ -144,7 +146,7 @@ for(const lang of ['de','en'] as const)for(const width of [390,1440])test(`${lan
 test('Asset overview falls back to Tag when local identifier is absent and leaves an empty Note readable',async({page})=>{
  await fixture(page);await page.route(`**/api/v1/assets/${id}`,route=>route.fulfill({json:assetDetailFixture({id,tenantId:tenant,assetTag:'Fallback tag',localIdentifier:null,note:null})}));
  await page.goto(`/inventory/assets/${id}`);const overview=page.getByRole('tabpanel',{name:en.redesign.overview});
- await expect(overview.getByRole('heading',{name:'Fallback tag'})).toBeVisible();await expect(overview.getByText(en.fields.assetTag,{exact:true})).toBeVisible();
+ await expect(overview.getByRole('heading',{name:`${en.ui.tag}: Fallback tag · Fixture Tenant`,exact:true})).toBeVisible();await expect(overview.getByText(en.fields.assetTag,{exact:true})).toHaveCount(0);
  await expect(overview.getByRole('region',{name:en.fields.note})).toContainText('—');
 });
 test('GLOBAL Email create and policy, rejected failed session, success and discard secret clearing',async({page})=>{

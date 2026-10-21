@@ -35,8 +35,8 @@ for(const language of ['de','en'] as const)for(const width of [390,1440])test(`$
 
 for(const [scope,role] of [['GLOBAL','ADMIN'],['TENANT','ADMIN'],['GLOBAL','USER'],['TENANT','USER']] as const)test(`${scope} ${role} Asset status authority and outstanding-loan guard`,async({page})=>{
  const f=await setup(page,{scope,role,state:{lifecycle:'DEPLOYED',condition:'WORKING',loanable:true}});await page.goto(`/inventory/assets/${id}`);
- for(const name of [`${en.ui.changeLifecycle}: ${en.enums.DEPLOYED}`,`${en.ui.changeCondition}: ${en.enums.WORKING}`,`${en.ui.changeLoanability}: ${en.ui.loanable}`])await expect(page.getByRole('button',{name,exact:true})).toHaveCount(role==='ADMIN'?1:0);
- f.set({loanedTo:'Borrower'});await page.reload();await expect(page.getByRole('button',{name:`${en.ui.changeLoanability}: ${en.ui.loanable}`,exact:true})).toHaveCount(0);
+ for(const name of [`${en.ui.changeLifecycle}: ${en.enums.DEPLOYED}`,`${en.ui.changeCondition}: ${en.enums.WORKING}`,`${en.ui.changeLoanability}: ${en.fields.true}`])await expect(page.getByRole('button',{name,exact:true})).toHaveCount(role==='ADMIN'?1:0);
+ f.set({loanedTo:'Borrower'});await page.reload();await expect(page.getByRole('button',{name:`${en.ui.changeLoanability}: ${en.fields.true}`,exact:true})).toHaveCount(0);
  await expect(page.getByRole('button',{name:`${en.ui.changeLifecycle}: ${en.enums.DEPLOYED}`,exact:true})).toHaveCount(role==='ADMIN'?1:0);
  await expect(page.getByRole('button',{name:`${en.ui.changeCondition}: ${en.enums.WORKING}`,exact:true})).toHaveCount(role==='ADMIN'?1:0);
  expect(f.writes).toHaveLength(0);
@@ -44,15 +44,16 @@ for(const [scope,role] of [['GLOBAL','ADMIN'],['TENANT','ADMIN'],['GLOBAL','USER
 
 for(const language of ['de','en'] as const)for(const width of [390,1440])test(`${language}/${width} Asset loanability confirmation, cancel, success and stale conflict`,async({page})=>{
  const text=language==='de'?de:en,f=await setup(page,{language,state:{loanable:false}});await page.setViewportSize({width,height:900});await page.goto(`/inventory/assets/${id}`);
+ await expect(page.getByRole('heading',{name:text.fields.loanable,exact:true}).locator('..').getByText(text.fields.false,{exact:true})).toHaveClass(/bg-rose-50/);
  const open=async(value:string)=>{const trigger=page.getByRole('button',{name:`${text.ui.changeLoanability}: ${value}`,exact:true});await trigger.focus();await page.keyboard.press('Enter');return page.getByRole('dialog',{name:text.ui.changeLoanability});};
- let dialog=await open(text.ui.notLoanable);await expect(dialog).toContainText(text.ui.notLoanable);await expect(dialog).toContainText(text.ui.loanable);expect(f.writes).toHaveLength(0);
- await dialog.getByRole('button',{name:text.redesign.cancel,exact:true}).click();expect(f.writes).toHaveLength(0);await expect(page.getByRole('dialog')).toHaveCount(0);await expect(page.getByRole('button',{name:`${text.ui.changeLoanability}: ${text.ui.notLoanable}`})).toBeFocused();
- dialog=await open(text.ui.notLoanable);await dialog.getByRole('button',{name:text.redesign.confirm,exact:true}).click();await expect(dialog).toHaveCount(0);
- await expect(page.getByRole('button',{name:`${text.ui.changeLoanability}: ${text.ui.loanable}`,exact:true})).toBeVisible();
+ let dialog=await open(text.fields.false);await expect(dialog).toContainText(text.ui.notLoanable);await expect(dialog).toContainText(text.ui.loanable);expect(f.writes).toHaveLength(0);
+ await dialog.getByRole('button',{name:text.redesign.cancel,exact:true}).click();expect(f.writes).toHaveLength(0);await expect(page.getByRole('dialog')).toHaveCount(0);await expect(page.getByRole('button',{name:`${text.ui.changeLoanability}: ${text.fields.false}`})).toBeFocused();
+ dialog=await open(text.fields.false);await dialog.getByRole('button',{name:text.redesign.confirm,exact:true}).click();await expect(dialog).toHaveCount(0);
+ await expect(page.getByRole('button',{name:`${text.ui.changeLoanability}: ${text.fields.true}`,exact:true})).toBeVisible();
  expect(f.writes).toEqual([{path:`/api/v1/assets/${id}/loanability`,method:'PUT',body:{expectedVersion:3,loanable:true}}]);
- f.fail('CONCURRENT_OPERATION');dialog=await open(text.ui.loanable);await expect(dialog).toContainText(text.ui.notLoanable);await dialog.getByRole('button',{name:text.redesign.confirm,exact:true}).click();
+ f.fail('CONCURRENT_OPERATION');dialog=await open(text.fields.true);await expect(dialog).toContainText(text.ui.notLoanable);await dialog.getByRole('button',{name:text.redesign.confirm,exact:true}).click();
  await expect(dialog.getByRole('alert')).toContainText(text.errors.CONCURRENT_OPERATION);await expect(dialog).toBeVisible();expect(f.writes[1].body).toEqual({expectedVersion:4,loanable:false});
- await dialog.getByRole('button',{name:text.redesign.cancel,exact:true}).click();expect(f.writes).toHaveLength(2);await expect(page.getByRole('button',{name:`${text.ui.changeLoanability}: ${text.ui.loanable}`,exact:true})).toBeVisible();
+ await dialog.getByRole('button',{name:text.redesign.cancel,exact:true}).click();expect(f.writes).toHaveLength(2);await expect(page.getByRole('button',{name:`${text.ui.changeLoanability}: ${text.fields.true}`,exact:true})).toBeVisible();
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
 });
 
@@ -80,7 +81,7 @@ for(const language of ['de','en'] as const)for(const width of [390,1440])test(`$
  const labels=[text.ui.editCategory,text.ui.reassignCatalog,text.ui.changeLifecycle,text.ui.changeCondition,text.ui.exitDetail];
  await expect(actions.getByRole('button')).toHaveText(labels);
  for(const key of ['changeLoanability','changeLocation','changeOwner'] as const)await expect(page.getByRole('button',{name:text.ui[key],exact:true})).toHaveCount(0);
- await expect(page.getByRole('button',{name:`${text.ui.changeLoanability}: ${text.ui.notLoanable}`,exact:true})).toBeVisible();
+ await expect(page.getByRole('button',{name:`${text.ui.changeLoanability}: ${text.fields.false}`,exact:true})).toBeVisible();
  await expect(page.getByRole('button',{name:`${text.ui.changeLocation}: Fixture Location`,exact:true})).toBeVisible();
  await expect(page.getByRole('button',{name:`${text.ui.changeOwner}: —`,exact:true})).toBeVisible();
  await page.getByRole('tab',{name:text.redesign.history}).click();await expect(actions.getByRole('button')).toHaveText(labels);await page.getByRole('tab',{name:text.redesign.overview}).click();
@@ -105,6 +106,6 @@ for(const loanedTo of [null,'Borrower'])for(const role of ['ADMIN','USER'] as co
  const expected=role==='ADMIN'?[en.ui.editCategory,en.ui.reassignCatalog,en.ui.changeLifecycle,en.ui.changeCondition,loanedTo?en.ui.returnAsset:en.ui.loanAsset,en.ui.exitDetail]:[en.ui.exitDetail];
  await expect(bottom.getByRole('button')).toHaveText(expected);
  for(const key of ['changeLoanability','changeLocation','changeOwner'] as const)await expect(page.getByRole('button',{name:en.ui[key],exact:true})).toHaveCount(0);
- await expect(page.getByRole('button',{name:`${en.ui.changeLoanability}: ${en.ui.loanable}`,exact:true})).toHaveCount(role==='ADMIN'&&!loanedTo?1:0);
+ await expect(page.getByRole('button',{name:`${en.ui.changeLoanability}: ${en.fields.true}`,exact:true})).toHaveCount(role==='ADMIN'&&!loanedTo?1:0);
  expect(f.writes).toHaveLength(0);
 });
