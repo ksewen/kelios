@@ -1,6 +1,6 @@
 # Asset overview, history and Product detail follow-up
 
-Status: **APPROVED; Round 1 HUMAN ACCEPTED / CLOSED 2026-10-21; Round 2 authorized 2026-10-21.** Baseline: clean HEAD `af153bd89b6ecf072c7517eddf2d24073a8e0825`. This follows the HUMAN ACCEPTED / CLOSED [Asset overview summary-card Plan](asset-overview-summary-card.md) without rewriting its evidence. Rounds 3–4 require their own authorization after review of the preceding round. HUMAN separately permitted the Round 1-only commit; no push, 8443 update or operator-data change is authorized by Round 1.
+Status: **APPROVED; Rounds 1–2 HUMAN ACCEPTED / CLOSED 2026-10-21; Round 3 IN PROGRESS — authorized 2026-10-21.** Round 1 baseline: clean HEAD `af153bd89b6ecf072c7517eddf2d24073a8e0825`; separate Round 1 commit `0db7210cd2d6b41dbbf383d6ccc63395a5cb828f`. This follows the HUMAN ACCEPTED / CLOSED [Asset overview summary-card Plan](asset-overview-summary-card.md) without rewriting its evidence. Round 4 requires its own authorization after review of Round 3. No push, 8443 update or operator-data change is authorized by Round 3.
 
 ## Ownership and decisions
 
@@ -24,7 +24,11 @@ Verification on this worktree:
 
 ## Round 2 — Asset History event presentation
 
-Apply a type-specific view mapping for LOANED-before and RETURNED-after, preserving event JSON and meaningful opposite values. Keep REGISTERED initial-state presentation and generic diffs elsewhere. Scope: history view mapping/renderer and unit/Chromium tests. Run frontend unit/build, focused History Chromium at 1440px/390px in both languages and `git diff --check`; stop for HUMAN history/UX review. No backend, migration or OpenAPI change.
+Apply a type-specific view mapping for LOANED-before and RETURNED-after, preserving event JSON and meaningful opposite values. Keep REGISTERED initial-state presentation and generic diffs elsewhere. Scope: history view mapping/renderer and unit/Chromium tests. Run frontend unit/build, focused History Chromium at 1440px/390px in both languages and `git diff --check`; stop for HUMAN history/UX review. No backend, migration or OpenAPI change. **HUMAN history/UX ACCEPTED / CLOSED 2026-10-21.** Separate permission was granted for the Round 2-only commit and continuation to Round 3.
+
+Execution checkpoint: Round 1's six-file commit established clean HEAD `0db7210cd2d6b41dbbf383d6ccc63395a5cb828f`. HUMAN accepted Round 1 and authorized continuation on 2026-10-21. The existing backend captures full immutable snapshots, with a null loan side required by the loan/return guards; no persisted event was altered. Round 2 passes the event type into the existing frontend diff formatter, which blanks only LOANED-before and RETURNED-after cells after selecting changed rows. The opposite values, registration initial-state view and unrelated diffs remain unchanged.
+
+Verification on Round 1 HEAD plus this seven-file worktree: `cd frontend && npm test` passed **11 files, 238/238 tests** (exit 0); `cd frontend && npm run build` passed TypeScript/Vite (**2,143 modules**, exit 0). An isolated Vite server at `http://127.0.0.1:13580/` served the permitted `PLAYWRIGHT_BROWSERS_PATH=../.cache/ms-playwright KELIOS_BASE_URL=http://127.0.0.1:13580 npx playwright test tests/assets-checkout-history.spec.ts --reporter=dot --retries=0`: **8/8 intercepted Chromium tests passed** (exit 0), including German/English 390px/1440px, checkout and both event sides. The server was stopped after testing. `git diff --check` passed. This evidence is frontend/intercepted, not authenticated live 8443, PostgreSQL or operator data. HUMAN accepted those limits on 2026-10-21; no staging, commit, push or deployment preceded acceptance.
 
 ## Round 3 — Product route-backed detail and inline edit
 

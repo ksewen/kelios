@@ -8,8 +8,9 @@ const instant='2026-10-13T12:34:56Z';
 const event=(type:string,data:object,index:number)=>({id:`${index.toString().padStart(8,'0')}-dddd-dddd-dddd-dddddddddddd`,assetId:id,tenantId:tenant,type,occurredAt:'2026-10-13T14:00:00Z',createdAt:'2026-10-13T14:00:00Z',actorId:actor,actorDisplayName:'Historical actor',data,note:null});
 const events=[
  event('REGISTERED',{before:null,after:{assetTag:'Asset fixture',lifecycle:'REGISTERED',condition:'UNKNOWN',loanable:false,category:{id:actor,name:'Category'},location:{id:actor,name:'Room'},owner:null,product:null,loanedAt:null,expectedReturnAt:null}},1),
- event('LOANED',{before:{loanedTo:null,expectedReturnAt:null},after:{loanedTo:'Borrower',expectedReturnAt:instant}},2),
- event('REGISTERED',{before:{note:'Prior imported note'},after:{note:'Recorded note'}},3)
+ event('LOANED',{before:{loanedTo:null},after:{loanedTo:'Borrower',expectedReturnAt:instant}},2),
+ event('REGISTERED',{before:{note:'Prior imported note'},after:{note:'Recorded note'}},3),
+ event('RETURNED',{before:{loanedTo:'Borrower',expectedReturnAt:instant},after:{loanedTo:null}},4)
 ];
 async function setup(page:Page,language:'de'|'en',loaned=false){
  const writes:{path:string;body:any}[]=[];
@@ -45,10 +46,11 @@ for(const language of ['de','en'] as const)for(const width of [390,1440])test(`$
 for(const language of ['de','en'] as const)for(const width of [390,1440])test(`${language}/${width} registration shows initial state and transition history keeps diffs and separators`,async({browser})=>{
  const context=await browser.newContext({timezoneId:'Europe/Berlin',viewport:{width,height:900}}),page=await context.newPage(),text=language==='de'?de:en;await setup(page,language,true);
  await page.goto(`/inventory/assets/${id}`);await page.getByRole('tab',{name:text.redesign.history}).click();await expect(page.getByRole('heading',{name:text.ui.assetHistory,exact:true})).toHaveCount(0);
- const cards=page.locator('main ol > li'),initial=cards.nth(0),loan=cards.nth(1),legacy=cards.nth(2);
+ const cards=page.locator('main ol > li'),initial=cards.nth(0),loan=cards.nth(1),legacy=cards.nth(2),returned=cards.nth(3);
  await expect(initial.locator('thead th')).toHaveText([text.ui.field,text.ui.initialState]);await expect(initial.locator('tbody')).toContainText(text.enums.REGISTERED);await expect(initial.locator('tbody')).toContainText(text.enums.UNKNOWN);await expect(initial.locator('tbody')).toContainText(text.fields.false);await expect(initial.locator('tbody')).not.toContainText(text.ui.unavailable);await expect(initial.locator('tbody')).not.toContainText(text.fields.expectedReturnAt);
- await expect(loan.locator('thead th')).toHaveText([text.ui.field,text.ui.before,text.ui.after]);await expect(loan.locator('tbody tr').filter({hasText:text.fields.expectedReturnAt}).locator('td').last()).toHaveText(new Intl.DateTimeFormat(language,{year:'numeric',month:'2-digit',day:'2-digit',timeZone:'Europe/Berlin'}).format(new Date(instant)));
+ await expect(loan.locator('thead th')).toHaveText([text.ui.field,text.ui.before,text.ui.after]);await expect(loan.locator('tbody tr').filter({hasText:text.fields.loanedTo}).locator('td')).toHaveText(['—','Borrower']);await expect(loan.locator('tbody tr').filter({hasText:text.fields.expectedReturnAt}).locator('td').first()).toHaveText('—');await expect(loan.locator('tbody tr').filter({hasText:text.fields.expectedReturnAt}).locator('td').last()).toHaveText(new Intl.DateTimeFormat(language,{year:'numeric',month:'2-digit',day:'2-digit',timeZone:'Europe/Berlin'}).format(new Date(instant)));
  await expect(legacy.locator('thead th')).toHaveText([text.ui.field,text.ui.before,text.ui.after]);await expect(legacy.locator('tbody')).toContainText('Prior imported note');
+ await expect(returned.locator('thead th')).toHaveText([text.ui.field,text.ui.before,text.ui.after]);await expect(returned.locator('tbody tr').filter({hasText:text.fields.loanedTo}).locator('td')).toHaveText(['Borrower','—']);await expect(returned.locator('tbody tr').filter({hasText:text.fields.expectedReturnAt}).locator('td').last()).toHaveText('—');await expect(returned.locator('tbody tr').filter({hasText:text.fields.expectedReturnAt}).locator('td').first()).toHaveText(new Intl.DateTimeFormat(language,{year:'numeric',month:'2-digit',day:'2-digit',timeZone:'Europe/Berlin'}).format(new Date(instant)));
  for(const card of [initial,loan])expect(await card.locator('tbody tr').first().locator('td').first().evaluate(cell=>getComputedStyle(cell).borderInlineStartStyle)).toBe('solid');
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
  await page.goto('/inventory/assets');await expect(page.locator('main .data-table tbody tr')).toHaveCount(1);

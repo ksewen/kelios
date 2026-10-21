@@ -27,12 +27,12 @@ export function registrationValues(data: unknown): {field:string;value:string}[]
  const after=record.after as Record<string,unknown>;
  return historyFields.filter(field=>Object.hasOwn(after,field)&&after[field]!=null).map(field=>({field,value:historyValue(after[field])}));
 }
-export function historyChanges(data: unknown): { field: string; before: string; after: string }[] {
+export function historyChanges(data: unknown, eventType?: string): { field: string; before: string; after: string }[] {
   if (!data || typeof data !== 'object') return [];
   const record = data as Record<string, unknown>;
   const before = (record.before ?? {}) as Record<string, unknown>, after = (record.after ?? {}) as Record<string, unknown>;
   return historyFields.filter(field => field in before || field in after).filter(field => JSON.stringify(before[field]) !== JSON.stringify(after[field]))
-    .map(field => ({field,before:field in before ? historyValue(before[field]) : String(i18n.t('ui.unavailable')),after:field in after ? historyValue(after[field]) : String(i18n.t('ui.unavailable'))}));
+    .map(field => ({field,before:eventType==='LOANED'?'—':field in before ? historyValue(before[field]) : String(i18n.t('ui.unavailable')),after:eventType==='RETURNED'?'—':field in after ? historyValue(after[field]) : String(i18n.t('ui.unavailable'))}));
 }
 
 export type CatalogCriteria = {name:string;visibility:string;categoryId:string;manufacturerId:string;manufacturerNumber:string};

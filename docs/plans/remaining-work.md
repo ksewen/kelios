@@ -1,6 +1,6 @@
 # Remaining work index
 
-The [Asset overview, history and Product detail follow-up](asset-overview-history-product-dialog.md) is **APPROVED; Round 1 HUMAN ACCEPTED / CLOSED; Round 2 authorized** on 2026-10-21. HUMAN separately permitted the Round 1-only commit. Rounds 3–4 await their own authorization and predecessor review. The accepted earlier Asset Plans remain closed; the pending User `displayName` decision and Product Merge exclusion are unchanged.
+The [Asset overview, history and Product detail follow-up](asset-overview-history-product-dialog.md) is **APPROVED; Rounds 1–2 HUMAN ACCEPTED / CLOSED; Round 3 authorized and IN PROGRESS** on 2026-10-21. Round 1 was separately committed as `0db7210`; HUMAN separately permitted the Round 2-only commit. Round 4 awaits authorization and Round 3 review. The accepted earlier Asset Plans remain closed; the pending User `displayName` decision and Product Merge exclusion are unchanged.
 
 The [Asset overview summary-card Plan](asset-overview-summary-card.md) is **HUMAN ACCEPTED / CLOSED** on 2026-10-20. Its frontend-only implementation and preserved-data local review installation were accepted with the documented evidence limits. Accepted earlier Asset gates and unrelated backlog items remain closed/open as previously recorded.
 
