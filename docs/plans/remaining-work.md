@@ -1,5 +1,7 @@
 # Remaining work index
 
+The [default brand, breadcrumb and Asset status palette Plan](default-brand-breadcrumb-status-palette.md) has Gate 1 HUMAN ACCEPTED / CLOSED with separate commit permission, and Gate 2 breadcrumbs explicitly authorized and in progress. Gate 3 requires later authorization. Its scope is distinct from the still-uncommitted Asset transition-loanability Gate 2; the current 8443 installation and operator data are excluded.
+
 The [Asset transition loanability Plan](asset-transition-loanability.md) owns the new prospective transition side effect. Gate 1 is HUMAN ACCEPTED / CLOSED and separately permitted for its own commit; Gate 2 is explicitly authorized and in progress. The 8443 installation and operator data remain untouched.
 
 The [Asset overview, history and Product detail follow-up](asset-overview-history-product-dialog.md) is **HUMAN ACCEPTED / CLOSED across Rounds 1–4** on 2026-10-21. Rounds 1–3 were separately committed as `0db7210`, `68309dc` and `7eeafc0`; HUMAN separately authorized the Round 4 closeout commit. The final corrected 8443 installation retains its managed database. Round 4's full intercepted Chromium run had one Owner focus failure that passed on isolated and affected-suite reruns; the accepted live/operator-data limits remain recorded in the Plan. The accepted Verlauf presentation stays unchanged. The pending User `displayName` decision and Product Merge exclusion are unchanged.

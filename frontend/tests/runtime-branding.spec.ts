@@ -24,8 +24,9 @@ for (const scenario of ['missing', 'malformed', 'unsupported', 'timeout'] as con
       return new Promise<void>(() => {});
     });
     await page.goto('/', { waitUntil: 'domcontentloaded' });
-    await expect(page.getByRole('button', { name: 'Sign in',exact:true })).toHaveCSS('background-color', 'rgb(36, 88, 211)');
+    await expect(page.getByRole('button', { name: 'Sign in',exact:true })).toHaveCSS('background-color', 'rgb(180, 83, 9)');
     await expect(page.getByText('KELIOS', { exact: true })).toBeVisible();
+    await expect(page.getByText('O', { exact: true })).toHaveCSS('color', 'rgb(180, 83, 9)');
   });
 }
 
@@ -34,4 +35,32 @@ test('broken logo falls back without hiding the application', async ({ page }) =
   await page.goto('/');
   await expect(page.getByText('KELIOS', { exact: true })).toBeVisible();
   await expect(page.getByRole('img', { name: 'KELIOS logo' })).toHaveCount(0);
+});
+
+test('organization logo keeps the themed live wordmark', async ({ page }) => {
+  await page.setViewportSize({width:390,height:844});
+  await page.route('**/runtime/config.json', route => route.fulfill({ json: {schemaVersion:1, logoUrl:'/runtime/logos/legacy.svg', organizationLogoUrl:'/runtime/logos/organization.svg', theme:{primary:'#087f5b'}} }));
+  await page.route('**/runtime/logos/organization.svg', route => route.fulfill({contentType:'image/svg+xml', body:'<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="black"/></svg>'}));
+  await page.goto('/');
+  await expect(page.getByRole('img', {name:'Organization logo'})).toBeVisible();
+  await expect(page.getByRole('img', {name:'KELIOS logo'})).toHaveCount(0);
+  await expect(page.getByText('KELIOS', {exact:true})).toBeVisible();
+  await expect(page.getByText('O', {exact:true})).toHaveCSS('color', 'rgb(8, 127, 91)');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test('broken organization logo falls back to neutral mark and live KELIOS', async ({page}) => {
+  await page.route('**/runtime/config.json', route => route.fulfill({json:{schemaVersion:1,organizationLogoUrl:'/runtime/logos/absent.svg'}}));
+  await page.goto('/');
+  await expect(page.getByRole('img',{name:'Organization logo'})).toHaveCount(0);
+  await expect(page.getByText('KELIOS',{exact:true})).toBeVisible();
+  await expect(page.getByText('O',{exact:true})).toHaveCSS('color','rgb(180, 83, 9)');
+});
+
+test('legacy full-wordmark logo keeps its original image treatment', async ({page}) => {
+  await page.route('**/runtime/config.json', route => route.fulfill({json:{schemaVersion:1,logoUrl:'/runtime/logos/legacy.svg'}}));
+  await page.route('**/runtime/logos/legacy.svg', route => route.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="160" height="40"><text x="0" y="30">KELIOS</text></svg>'}));
+  await page.goto('/');
+  await expect(page.getByRole('img',{name:'KELIOS logo'})).toBeVisible();
+  await expect(page.getByText('KELIOS',{exact:true})).toHaveCount(0);
 });

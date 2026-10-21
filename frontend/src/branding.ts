@@ -1,10 +1,10 @@
 export const defaultTheme = {
-  background: '#f6f7fb', foreground: '#172033', primary: '#2458d3',
-  primaryForeground: '#ffffff', accent: '#e7edff', accentForeground: '#243b75',
+  background: '#f7f7f5', foreground: '#18181b', primary: '#b45309',
+  primaryForeground: '#ffffff', accent: '#fff1e6', accentForeground: '#78350f',
 } as const;
 
 export type Theme = { -readonly [K in keyof typeof defaultTheme]: string };
-export type Branding = { schemaVersion: 1; logoUrl?: string; theme: Theme };
+export type Branding = { schemaVersion: 1; logoUrl?: string; organizationLogoUrl?: string; theme: Theme };
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -17,11 +17,13 @@ export function validateBranding(value: unknown, origin: string): Branding {
       if (typeof color === 'string' && /^#[0-9a-fA-F]{6}$/.test(color)) result.theme[key] = color;
     }
   }
-  if (typeof value.logoUrl === 'string' && value.logoUrl.length <= 2048) {
+  for (const key of ['logoUrl', 'organizationLogoUrl'] as const) {
+    const supplied = value[key];
+    if (typeof supplied !== 'string' || supplied.length > 2048) continue;
     try {
-      const logo = new URL(value.logoUrl, `${origin}/`);
+      const logo = new URL(supplied, `${origin}/`);
       if (['http:', 'https:'].includes(logo.protocol) && logo.origin === origin && !logo.username && !logo.password) {
-        result.logoUrl = logo.href;
+        result[key] = logo.href;
       }
     } catch { /* Invalid logo uses the text fallback. */ }
   }

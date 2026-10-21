@@ -38,6 +38,8 @@ A deployment must be able to supply a runtime configuration file (for example a 
 
 The React app must load and validate runtime branding **before or during initialization**, apply safe defaults if absent, and avoid build-time-only Vite variables for these settings. Ensure frontend assets and logo URLs work under the documented deployment path. Treat runtime configuration as public client-side data; **never put secrets in it**.
 
+The default light KELIOS palette uses restrained orange (`#b45309`) for the primary accent and charcoal (`#18181b`) for strong text; semantic status colors remain independent. Runtime theme overrides and legacy `logoUrl` remain supported. Optional `organizationLogoUrl` is a separate deployment mark beside the live-text KELIOS wordmark, whose O uses the runtime primary token. Existing saved branding is not rewritten by an image update. See [runtime branding](docs/operations/runtime-branding.md).
+
 The backend and frontend images must be independently versionable and deployable. Specify how frontend API requests are routed (e.g., configurable base URL or reverse proxy) and document CORS/cookie implications; do not assume one unexamined deployment topology.
 
 ## 3. Backend structure

@@ -162,7 +162,7 @@ with (root / 'docker-argv.jsonl').open('a') as out:
         subprocess.run(['openssl','genpkey','-algorithm','RSA','-pkeyopt','rsa_keygen_bits:3072','-out',str(keys/'main.private.pem')],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,check=True)
         subprocess.run(['openssl','pkey','-in',str(keys/'main.private.pem'),'-pubout','-out',str(keys/'main.public.pem')],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,check=True)
         aes=subprocess.check_output(['openssl','rand','-base64','32']); (keys/'main.aes').write_bytes(aes); (keys/'previous.aes').write_bytes(aes)
-        prompts += [('Database mode','managed'),('Runtime theme','green'),('Logo path',str(ROOT/'deploy/branding/green/logo.svg')),('Existing authentication key directory',str(keys)),('GLOBAL ADMIN Email',email),('Display name','Control fixture'),('Administrator password',password),('Confirm password',password)]
+        prompts += [('Database mode','managed'),('Runtime theme',''),('Organization logo path',''),('Existing authentication key directory',str(keys)),('GLOBAL ADMIN Email',email),('Display name','Control fixture'),('Administrator password',password),('Confirm password',password)]
         return prompts,aes
 
     def docker_calls(self):
@@ -206,6 +206,10 @@ with (root / 'docker-argv.jsonl').open('a') as out:
         self.assertEqual(rc,0); self.assertTrue('ControlFixture9!NotReal' not in out)
         self.assertEqual((self.root/'.kelios/secrets/auth/previous.aes').read_bytes(),aes)
         self.assertEqual((self.root/'.kelios').stat().st_mode & 0o777,0o700)
+        branding=json.loads((self.root/'.kelios/branding/config.json').read_text())
+        self.assertEqual(branding['theme']['primary'],'#b45309')
+        self.assertNotIn('logoUrl',branding)
+        self.assertNotIn('organizationLogoUrl',branding)
         self.assertFalse(list((self.root/'.kelios/temporary').glob('recovery.*')))
         self.assert_install_recovery('control-admin@example.org','ControlFixture9!NotReal',True)
         self.assertIn('KELIOS installation ready:',out)
@@ -370,6 +374,32 @@ with (root / 'docker-argv.jsonl').open('a') as out:
         self.assertNotEqual(self.run_cli('stop')[0],0)
     def test_config_cancel_preserves_manifest(self):
         d=self.state(); before=(d/'installation.conf').read_bytes(); rc,_=self.run_cli('config',[('Choice','2'),('HTTPS port','9443'),('Choice','0')]); self.assertEqual(rc,0); self.assertEqual(before,(d/'installation.conf').read_bytes())
+    def test_legacy_logo_survives_start_and_new_organization_logo_can_be_added(self):
+        self.test_supplied_versioned_keys_are_preserved()
+        d=self.root/'.kelios'
+        saved='\n'.join('LOGO=logo.svg' if line=='LOGO=' else 'PRIMARY=#087f5b' if line=='PRIMARY=#b45309' else line for line in (d/'installation.conf').read_text().splitlines() if not line.startswith('ORG_LOGO='))+'\n'
+        (d/'installation.conf').write_text(saved)
+        shutil.copy2(ROOT/'deploy/branding/green/logo.svg',d/'branding/logos/logo.svg')
+        original=(d/'installation.conf').read_bytes()
+        self.assertEqual(self.run_cli('start')[0],0)
+        self.assertEqual(original,(d/'installation.conf').read_bytes())
+        self.assertEqual(json.loads((d/'branding/config.json').read_text())['logoUrl'],'/runtime/logos/logo.svg')
+        source=self.root/'organization.svg'; source.write_text('<svg xmlns="http://www.w3.org/2000/svg"/>')
+        rc,_=self.run_cli('config',[('Choice','7'),('Organization logo path',str(source)),('Choice','8')]); self.assertEqual(rc,0)
+        self.assertTrue((d/'branding/logos/organization.svg').exists())
+        self.assertEqual(self.run_cli('start')[0],0)
+        branding=json.loads((d/'branding/config.json').read_text())
+        self.assertEqual(branding['logoUrl'],'/runtime/logos/logo.svg')
+        self.assertEqual(branding['organizationLogoUrl'],'/runtime/logos/organization.svg')
+        self.assertEqual(branding['theme']['primary'],'#087f5b')
+        rc,_=self.run_cli('config',[('Choice','7'),('Organization logo path',''),('Choice','8')]); self.assertEqual(rc,0)
+        self.assertEqual(self.run_cli('start')[0],0)
+        self.assertNotIn('organizationLogoUrl',json.loads((d/'branding/config.json').read_text()))
+    def test_missing_organization_logo_refuses_start(self):
+        self.state(ORG_LOGO='organization.svg')
+        rc,out=self.run_cli('start')
+        self.assertNotEqual(rc,0)
+        self.assertIn('Required logo file missing or unsafe',out)
     def test_default_uninstall_preserves_files(self):
         d=self.state(); rc,_=self.run_cli('uninstall',[('preserving database/configuration/keys','yes'),('Permanently delete','no')]); self.assertEqual(rc,0); self.assertTrue((d/'secrets/auth/main.aes').exists()); self.assertIn('initialized',(d/'installation.conf').read_text())
     def test_wrong_destructive_confirmation_preserves_state(self):

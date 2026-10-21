@@ -42,7 +42,7 @@ Enter these absolute paths at the install prompts. Use `localhost` as the browse
 
 ## First install
 
-Run `./kelios install` in an interactive terminal. Defaults are managed PostgreSQL, loopback bind, HTTP technical port 8080 and HTTPS application port 8443, browser hostname localhost and green branding. Supply an existing readable PEM certificate/chain and unencrypted private-key file covering your browser hostname. The CLI validates match/expiry/hostname, copies them into its private state and mounts the existing nginx HTTPS configuration. It does not issue certificates. Trust your local certificate through your normal browser/OS procedure; an untrusted operator certificate may produce a browser warning. HTTP is not an authentication fallback.
+Run `./kelios install` in an interactive terminal. Defaults are managed PostgreSQL, loopback bind, HTTP technical port 8080 and HTTPS application port 8443, browser hostname localhost and orange/charcoal branding with a neutral fallback mark. Supply an existing readable PEM certificate/chain and unencrypted private-key file covering your browser hostname. The CLI validates match/expiry/hostname, copies them into its private state and mounts the existing nginx HTTPS configuration. It does not issue certificates. Trust your local certificate through your normal browser/OS procedure; an untrusted operator certificate may produce a browser warning. HTTP is not an authentication fallback.
 
 From the fresh source directory, run:
 
@@ -58,7 +58,7 @@ From the fresh source directory, run:
 | Browser hostname | `localhost`, covered by your certificate |
 | TLS certificate / private-key paths | Absolute paths printed above |
 | Database mode | `managed` for a new isolated PostgreSQL volume |
-| Runtime theme / logo | Accept green/default logo, or supply supported choices |
+| Runtime theme / organization logo | Accept orange and no organization logo, or select blue/green and an optional local logo file |
 | Existing authentication key directory | Leave blank for a **new** database |
 | GLOBAL ADMIN Email | Explicit Email you choose; no default account identifier |
 | Display name | Default `KELIOS Administrator` or your chosen name |
@@ -80,7 +80,7 @@ Both `install` and `recover-admin` use the same protected Email recovery helper.
 | `./kelios start` | Reapply saved configuration and start healthy runtime without build, regenerated keys or bootstrap. Repeated start is safe. |
 | `./kelios stop` | Stop runtime, preserve all data/configuration/keys. |
 | `./kelios status` | Minimal service state/health, actual HTTPS URL and database mode. Health does not prove OIDC interoperability or login. |
-| `./kelios config` | Staged port/bind, theme/six existing color tokens and local logo menu. Save or cancel. Run start to apply; reload browser for branding. No image rebuild. |
+| `./kelios config` | Staged port/bind, theme/six existing color tokens, legacy-logo and organization-logo menus. Save or cancel. Run start to apply; reload browser for branding. No image rebuild. Existing saved palettes/logos are retained until changed explicitly. |
 | `./kelios uninstall` | Remove runtime only by default. Managed permanent deletion is an optional separate typed confirmation; external database is never removed. |
 | `./kelios recover-admin` | Ensure the saved runtime is available, prompt for explicit GLOBAL ADMIN Email (no default), display name and password/confirmation, then invoke the shared protected recovery. Refuses when any usable GLOBAL ADMIN exists. No force, Login fallback or automatic retry. |
 
@@ -133,7 +133,8 @@ secrets/auth/main.aes
 secrets/tls/certificate.pem
 secrets/tls/private.pem
 branding/config.json
-branding/logos/logo.<extension>
+branding/logos/organization.<extension>  # optional new organization mark
+branding/logos/logo.<extension>          # optional legacy full KELIOS logo
 temporary/                        # transient Compose env/recovery/build input
 ```
 

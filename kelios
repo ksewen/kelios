@@ -79,12 +79,13 @@ validate() {
   for color in "$BACKGROUND" "$FOREGROUND" "$PRIMARY" "$PRIMARY_FOREGROUND" "$ACCENT" "$ACCENT_FOREGROUND"; do
     printf '%s\n' "$color" | LC_ALL=C awk '!/^#[0-9a-fA-F]{6}$/ {exit 1}' || fail 'Theme colors must be six-digit hexadecimal values.'
   done
-  case "$LOGO" in logo.svg|logo.png|logo.jpg|logo.webp) ;; *) fail 'Invalid logo state.';; esac
+  case "$LOGO" in ''|logo.svg|logo.png|logo.jpg|logo.webp) ;; *) fail 'Invalid logo state.';; esac
+  case "$ORG_LOGO" in ''|organization.svg|organization.png|organization.jpg|organization.webp) ;; *) fail 'Invalid organization logo state.';; esac
 }
 load() {
   [ -f "$STATE/installation.conf" ] && [ ! -L "$STATE/installation.conf" ] || fail 'Installation is not initialized. Run ./kelios install.'
   [ -z "$(find "$STATE" -type l -print)" ] || fail 'Installation state contains unsafe symlinks.'
-  SEEN='|'
+  SEEN='|'; ORG_LOGO=
   while IFS='=' read -r key value; do
     case "$SEEN" in *"|$key|"*) fail 'Duplicate installation field.';; esac
     SEEN=$SEEN$key'|'
@@ -93,25 +94,29 @@ load() {
       BIND) BIND=$value;; HTTP_PORT) HTTP_PORT=$value;; HTTPS_PORT) HTTPS_PORT=$value;; BROWSER_HOST) BROWSER_HOST=$value;; ISSUER) ISSUER=$value;;
       DB_HOST) DB_HOST=$value;; DB_PORT) DB_PORT=$value;; DB_NAME) DB_NAME=$value;; DB_USER) DB_USER=$value;;
       BACKGROUND) BACKGROUND=$value;; FOREGROUND) FOREGROUND=$value;; PRIMARY) PRIMARY=$value;; PRIMARY_FOREGROUND) PRIMARY_FOREGROUND=$value;;
-      ACCENT) ACCENT=$value;; ACCENT_FOREGROUND) ACCENT_FOREGROUND=$value;; LOGO) LOGO=$value;; *) fail 'Unknown installation field.';;
+      ACCENT) ACCENT=$value;; ACCENT_FOREGROUND) ACCENT_FOREGROUND=$value;; LOGO) LOGO=$value;; ORG_LOGO) ORG_LOGO=$value;; *) fail 'Unknown installation field.';;
     esac
   done < "$STATE/installation.conf"
-  [ "$SEEN" = '|SCHEMA|PROJECT|MODE|PHASE|BIND|HTTP_PORT|HTTPS_PORT|BROWSER_HOST|ISSUER|DB_HOST|DB_PORT|DB_NAME|DB_USER|BACKGROUND|FOREGROUND|PRIMARY|PRIMARY_FOREGROUND|ACCENT|ACCENT_FOREGROUND|LOGO|' ] || fail 'Incomplete or reordered installation configuration.'
+  case "$SEEN" in '|SCHEMA|PROJECT|MODE|PHASE|BIND|HTTP_PORT|HTTPS_PORT|BROWSER_HOST|ISSUER|DB_HOST|DB_PORT|DB_NAME|DB_USER|BACKGROUND|FOREGROUND|PRIMARY|PRIMARY_FOREGROUND|ACCENT|ACCENT_FOREGROUND|LOGO|'|'|SCHEMA|PROJECT|MODE|PHASE|BIND|HTTP_PORT|HTTPS_PORT|BROWSER_HOST|ISSUER|DB_HOST|DB_PORT|DB_NAME|DB_USER|BACKGROUND|FOREGROUND|PRIMARY|PRIMARY_FOREGROUND|ACCENT|ACCENT_FOREGROUND|LOGO|ORG_LOGO|') ;; *) fail 'Incomplete or reordered installation configuration.';; esac
   validate
 }
 save() {
   validate
   MANIFEST_TEMP=$(mktemp "$STATE/installation.XXXXXXXX")
-  { for field in SCHEMA PROJECT MODE PHASE BIND HTTP_PORT HTTPS_PORT BROWSER_HOST ISSUER DB_HOST DB_PORT DB_NAME DB_USER BACKGROUND FOREGROUND PRIMARY PRIMARY_FOREGROUND ACCENT ACCENT_FOREGROUND LOGO; do
+  { for field in SCHEMA PROJECT MODE PHASE BIND HTTP_PORT HTTPS_PORT BROWSER_HOST ISSUER DB_HOST DB_PORT DB_NAME DB_USER BACKGROUND FOREGROUND PRIMARY PRIMARY_FOREGROUND ACCENT ACCENT_FOREGROUND LOGO ORG_LOGO; do
       # Explicit cases: no eval and never execute saved data.
-      case "$field" in SCHEMA) v=$SCHEMA;; PROJECT) v=$PROJECT;; MODE) v=$MODE;; PHASE) v=$PHASE;; BIND) v=$BIND;; HTTP_PORT) v=$HTTP_PORT;; HTTPS_PORT) v=$HTTPS_PORT;; BROWSER_HOST) v=$BROWSER_HOST;; ISSUER) v=$ISSUER;; DB_HOST) v=$DB_HOST;; DB_PORT) v=$DB_PORT;; DB_NAME) v=$DB_NAME;; DB_USER) v=$DB_USER;; BACKGROUND) v=$BACKGROUND;; FOREGROUND) v=$FOREGROUND;; PRIMARY) v=$PRIMARY;; PRIMARY_FOREGROUND) v=$PRIMARY_FOREGROUND;; ACCENT) v=$ACCENT;; ACCENT_FOREGROUND) v=$ACCENT_FOREGROUND;; LOGO) v=$LOGO;; esac
+      case "$field" in SCHEMA) v=$SCHEMA;; PROJECT) v=$PROJECT;; MODE) v=$MODE;; PHASE) v=$PHASE;; BIND) v=$BIND;; HTTP_PORT) v=$HTTP_PORT;; HTTPS_PORT) v=$HTTPS_PORT;; BROWSER_HOST) v=$BROWSER_HOST;; ISSUER) v=$ISSUER;; DB_HOST) v=$DB_HOST;; DB_PORT) v=$DB_PORT;; DB_NAME) v=$DB_NAME;; DB_USER) v=$DB_USER;; BACKGROUND) v=$BACKGROUND;; FOREGROUND) v=$FOREGROUND;; PRIMARY) v=$PRIMARY;; PRIMARY_FOREGROUND) v=$PRIMARY_FOREGROUND;; ACCENT) v=$ACCENT;; ACCENT_FOREGROUND) v=$ACCENT_FOREGROUND;; LOGO) v=$LOGO;; ORG_LOGO) v=$ORG_LOGO;; esac
       printf '%s=%s\n' "$field" "$v"
     done; } > "$MANIFEST_TEMP"
   mv -f "$MANIFEST_TEMP" "$STATE/installation.conf"
 }
 branding() {
   BRANDING_TEMP=$(mktemp "$STATE/branding/config.XXXXXXXX")
-  printf '{"schemaVersion":1,"logoUrl":"/runtime/logos/%s","theme":{"background":"%s","foreground":"%s","primary":"%s","primaryForeground":"%s","accent":"%s","accentForeground":"%s"}}\n' "$LOGO" "$BACKGROUND" "$FOREGROUND" "$PRIMARY" "$PRIMARY_FOREGROUND" "$ACCENT" "$ACCENT_FOREGROUND" > "$BRANDING_TEMP"
+  { printf '{"schemaVersion":1';
+    [ -z "$LOGO" ] || printf ',"logoUrl":"/runtime/logos/%s"' "$LOGO"
+    [ -z "$ORG_LOGO" ] || printf ',"organizationLogoUrl":"/runtime/logos/%s"' "$ORG_LOGO"
+    printf ',"theme":{"background":"%s","foreground":"%s","primary":"%s","primaryForeground":"%s","accent":"%s","accentForeground":"%s"}}\n' "$BACKGROUND" "$FOREGROUND" "$PRIMARY" "$PRIMARY_FOREGROUND" "$ACCENT" "$ACCENT_FOREGROUND"
+  } > "$BRANDING_TEMP"
   chmod 444 "$BRANDING_TEMP"
   mv -f "$BRANDING_TEMP" "$STATE/branding/config.json"
 }
@@ -151,9 +156,10 @@ owned() {
   done
 }
 files() {
-  for f in installation.conf secrets/db-password secrets/auth/main.private.pem secrets/auth/main.public.pem secrets/auth/main.aes secrets/tls/certificate.pem secrets/tls/private.pem branding/config.json "branding/logos/$LOGO"; do
+  for f in installation.conf secrets/db-password secrets/auth/main.private.pem secrets/auth/main.public.pem secrets/auth/main.aes secrets/tls/certificate.pem secrets/tls/private.pem branding/config.json; do
     [ -f "$STATE/$f" ] && [ ! -L "$STATE/$f" ] || fail "Required installation file missing or unsafe: $f"
   done
+  for f in "$LOGO" "$ORG_LOGO"; do [ -z "$f" ] || { [ -f "$STATE/branding/logos/$f" ] && [ ! -L "$STATE/branding/logos/$f" ]; } || fail 'Required logo file missing or unsafe.'; done
   for dir in secrets secrets/auth secrets/tls branding branding/logos temporary; do [ -d "$STATE/$dir" ] && [ ! -L "$STATE/$dir" ] || fail "Unsafe directory: $dir"; done
 }
 crypto() {
@@ -216,13 +222,15 @@ recovery() {
 logo_copy() {
   [ -f "$1" ] && [ -r "$1" ] || fail 'Logo file is unavailable.'
   [ "$(wc -c < "$1" | tr -d ' ')" -le 2097152 ] || fail 'Logo must be at most 2 MiB.'
-  case "$1" in *.svg) LOGO=logo.svg;; *.png) LOGO=logo.png;; *.jpg|*.jpeg) LOGO=logo.jpg;; *.webp) LOGO=logo.webp;; *) fail 'Logo must be SVG, PNG, JPG or WebP.';; esac
+  case "$1" in *.svg) extension=svg;; *.png) extension=png;; *.jpg|*.jpeg) extension=jpg;; *.webp) extension=webp;; *) fail 'Logo must be SVG, PNG, JPG or WebP.';; esac
+  if [ "$2" = organization ]; then ORG_LOGO=organization.$extension; filename=$ORG_LOGO; else LOGO=logo.$extension; filename=$LOGO; fi
   LOGO_TEMP=$(mktemp "$STATE/branding/logos/asset.XXXXXXXX")
-  cp "$1" "$LOGO_TEMP"; chmod 444 "$LOGO_TEMP"; mv -f "$LOGO_TEMP" "$STATE/branding/logos/$LOGO"
+  cp "$1" "$LOGO_TEMP"; chmod 444 "$LOGO_TEMP"; mv -f "$LOGO_TEMP" "$STATE/branding/logos/$filename"
 }
 theme() {
-  case "$1" in green) BACKGROUND='#f2faf5'; FOREGROUND='#16372b'; PRIMARY='#087f5b'; PRIMARY_FOREGROUND='#ffffff'; ACCENT='#d8f2e4'; ACCENT_FOREGROUND='#14543c';;
-    blue) BACKGROUND='#f4f7ff'; FOREGROUND='#172033'; PRIMARY='#2458d3'; PRIMARY_FOREGROUND='#ffffff'; ACCENT='#e1eaff'; ACCENT_FOREGROUND='#243b75';; *) fail 'Select blue or green.';; esac
+  case "$1" in orange) BACKGROUND='#f7f7f5'; FOREGROUND='#18181b'; PRIMARY='#b45309'; PRIMARY_FOREGROUND='#ffffff'; ACCENT='#fff1e6'; ACCENT_FOREGROUND='#78350f';;
+    green) BACKGROUND='#f2faf5'; FOREGROUND='#16372b'; PRIMARY='#087f5b'; PRIMARY_FOREGROUND='#ffffff'; ACCENT='#d8f2e4'; ACCENT_FOREGROUND='#14543c';;
+    blue) BACKGROUND='#f4f7ff'; FOREGROUND='#172033'; PRIMARY='#2458d3'; PRIMARY_FOREGROUND='#ffffff'; ACCENT='#e1eaff'; ACCENT_FOREGROUND='#243b75';; *) fail 'Select orange, blue or green.';; esac
 }
 install() {
   terminal
@@ -247,9 +255,9 @@ install() {
       prompt 'Database name' 'kelios'; DB_NAME=$ANSWER; identifier "$DB_NAME"
       prompt 'Database username' 'kelios'; DB_USER=$ANSWER; identifier "$DB_USER"
       password 'Database password'; DB_PASSWORD=$PASSWORD; unset PASSWORD;; *) fail 'Select managed or external.';; esac
-  prompt 'Runtime theme: blue or green' 'green'; BRAND=$ANSWER; theme "$BRAND"
-  prompt 'Logo path' "$ROOT/deploy/branding/$BRAND/logo.svg"; LOGO_SOURCE=$ANSWER
-  [ -f "$LOGO_SOURCE" ] || fail 'Logo is unavailable.'
+  prompt 'Runtime theme: orange, blue or green' 'orange'; BRAND=$ANSWER; theme "$BRAND"
+  prompt 'Organization logo path (empty for neutral mark)' ''; ORG_LOGO_SOURCE=$ANSWER
+  [ -z "$ORG_LOGO_SOURCE" ] || [ -f "$ORG_LOGO_SOURCE" ] || fail 'Organization logo is unavailable.'
   prompt 'Existing authentication key directory (empty for a new database)' ''; SUPPLIED_KEYS=$ANSWER
   if [ -n "$SUPPLIED_KEYS" ]; then
     for f in main.private.pem main.public.pem main.aes; do [ -f "$SUPPLIED_KEYS/$f" ] || fail 'Supplied key directory incomplete.'; done
@@ -274,7 +282,9 @@ install() {
     openssl rand -base64 32 > "$STATE/secrets/auth/main.aes"
   fi
   chmod 444 "$STATE/secrets/db-password" "$STATE/secrets/auth/"* "$STATE/secrets/tls/"*
-  logo_copy "$LOGO_SOURCE"; save; branding; compose_env; crypto; owned
+  LOGO=; ORG_LOGO=
+  [ -z "$ORG_LOGO_SOURCE" ] || logo_copy "$ORG_LOGO_SOURCE" organization
+  save; branding; compose_env; crypto; owned
   # Reserve the unique project before creating resources; refuse accidental collisions.
   [ -z "$(docker ps -aq --filter "label=com.docker.compose.project=$PROJECT")" ] || fail 'Project identity already exists.'
   [ -z "$(docker volume ls -q --filter "label=com.docker.compose.project=$PROJECT")" ] || fail 'Project volume identity already exists.'
@@ -305,19 +315,20 @@ status() {
 }
 configure() {
   terminal; files
-  NEW_LOGO=
+  NEW_LOGO=; NEW_ORG_LOGO=; CLEAR_ORG_LOGO=false
   printf 'Changes apply on next ./kelios start; branding then appears on page reload. TLS rotation is not supported here.\n'
   while :; do
-    printf '\nKELIOS Configuration\n1. HTTP port\n2. HTTPS port\n3. Listen address\n4. Theme\n5. Six theme colors\n6. Logo\n7. Save and exit\n0. Exit without changes\n'
+    printf '\nKELIOS Configuration\n1. HTTP port\n2. HTTPS port\n3. Listen address\n4. Theme\n5. Six theme colors\n6. Legacy logo\n7. Organization logo\n8. Save and exit\n0. Exit without changes\n'
     prompt 'Choice' '0'
     case "$ANSWER" in
       1) prompt 'HTTP port' "$HTTP_PORT"; port "$ANSWER"; HTTP_PORT=$ANSWER;;
       2) prompt 'HTTPS port' "$HTTPS_PORT"; port "$ANSWER"; HTTPS_PORT=$ANSWER; printf 'OIDC client redirect registration must match the new HTTPS origin. JWT issuer stays unchanged.\n';;
       3) prompt 'Listen address' "$BIND"; bind "$ANSWER"; BIND=$ANSWER; printf 'Changing bind does not change the configured browser hostname. Non-loopback exposure is operator-controlled.\n';;
-      4) prompt 'Theme' 'green'; theme "$ANSWER";;
+      4) prompt 'Theme' 'orange'; theme "$ANSWER";;
       5) prompt 'Background' "$BACKGROUND"; BACKGROUND=$ANSWER; prompt 'Foreground' "$FOREGROUND"; FOREGROUND=$ANSWER; prompt 'Primary' "$PRIMARY"; PRIMARY=$ANSWER; prompt 'Primary foreground' "$PRIMARY_FOREGROUND"; PRIMARY_FOREGROUND=$ANSWER; prompt 'Accent' "$ACCENT"; ACCENT=$ANSWER; prompt 'Accent foreground' "$ACCENT_FOREGROUND"; ACCENT_FOREGROUND=$ANSWER;;
-      6) prompt 'Logo path' ''; [ -f "$ANSWER" ] || fail 'Logo file unavailable.'; NEW_LOGO=$ANSWER;;
-      7) validate; if [ -n "$NEW_LOGO" ]; then logo_copy "$NEW_LOGO"; fi; save; printf 'Saved. Run ./kelios start to apply; no image rebuild is required.\n'; return;;
+      6) prompt 'Legacy logo path' ''; [ -f "$ANSWER" ] || fail 'Logo file unavailable.'; NEW_LOGO=$ANSWER;;
+      7) prompt 'Organization logo path (empty clears)' ''; if [ -n "$ANSWER" ]; then [ -f "$ANSWER" ] || fail 'Organization logo unavailable.'; NEW_ORG_LOGO=$ANSWER; else CLEAR_ORG_LOGO=true; NEW_ORG_LOGO=; fi;;
+      8) validate; if [ -n "$NEW_LOGO" ]; then logo_copy "$NEW_LOGO" legacy; fi; if [ "$CLEAR_ORG_LOGO" = true ]; then ORG_LOGO=; elif [ -n "$NEW_ORG_LOGO" ]; then logo_copy "$NEW_ORG_LOGO" organization; fi; save; printf 'Saved. Run ./kelios start to apply; no image rebuild is required.\n'; return;;
       0) printf 'No configuration changes saved.\n'; return;; *) printf 'Select a listed option.\n';;
     esac
   done
