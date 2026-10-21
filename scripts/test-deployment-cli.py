@@ -207,7 +207,9 @@ with (root / 'docker-argv.jsonl').open('a') as out:
         self.assertEqual((self.root/'.kelios/secrets/auth/previous.aes').read_bytes(),aes)
         self.assertEqual((self.root/'.kelios').stat().st_mode & 0o777,0o700)
         branding=json.loads((self.root/'.kelios/branding/config.json').read_text())
-        self.assertEqual(branding['theme']['primary'],'#b45309')
+        self.assertEqual(branding['theme']['primary'],'#cd3a06')
+        self.assertEqual(branding['theme']['accent'],'#fff0eb')
+        self.assertEqual(branding['theme']['accentForeground'],'#8f2904')
         self.assertNotIn('logoUrl',branding)
         self.assertNotIn('organizationLogoUrl',branding)
         self.assertFalse(list((self.root/'.kelios/temporary').glob('recovery.*')))
@@ -377,7 +379,7 @@ with (root / 'docker-argv.jsonl').open('a') as out:
     def test_legacy_logo_survives_start_and_new_organization_logo_can_be_added(self):
         self.test_supplied_versioned_keys_are_preserved()
         d=self.root/'.kelios'
-        saved='\n'.join('LOGO=logo.svg' if line=='LOGO=' else 'PRIMARY=#087f5b' if line=='PRIMARY=#b45309' else line for line in (d/'installation.conf').read_text().splitlines() if not line.startswith('ORG_LOGO='))+'\n'
+        saved='\n'.join('LOGO=logo.svg' if line=='LOGO=' else 'PRIMARY=#087f5b' if line=='PRIMARY=#cd3a06' else line for line in (d/'installation.conf').read_text().splitlines() if not line.startswith('ORG_LOGO='))+'\n'
         (d/'installation.conf').write_text(saved)
         shutil.copy2(ROOT/'deploy/branding/green/logo.svg',d/'branding/logos/logo.svg')
         original=(d/'installation.conf').read_bytes()
@@ -395,6 +397,12 @@ with (root / 'docker-argv.jsonl').open('a') as out:
         rc,_=self.run_cli('config',[('Choice','7'),('Organization logo path',''),('Choice','8')]); self.assertEqual(rc,0)
         self.assertEqual(self.run_cli('start')[0],0)
         self.assertNotIn('organizationLogoUrl',json.loads((d/'branding/config.json').read_text()))
+        rc,_=self.run_cli('config',[('Choice','6'),('Legacy logo path',''),('Choice','8')]); self.assertEqual(rc,0)
+        self.assertEqual(self.run_cli('start')[0],0)
+        branding=json.loads((d/'branding/config.json').read_text())
+        self.assertNotIn('logoUrl',branding)
+        self.assertEqual(branding['theme']['primary'],'#087f5b')
+        self.assertTrue((d/'branding/logos/logo.svg').exists())
     def test_missing_organization_logo_refuses_start(self):
         self.state(ORG_LOGO='organization.svg')
         rc,out=self.run_cli('start')

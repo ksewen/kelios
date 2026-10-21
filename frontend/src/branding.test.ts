@@ -13,7 +13,9 @@ describe('public runtime branding trust boundary', () => {
     const result = validateBranding({ schemaVersion: 1, logoUrl: '/runtime/logos/logo.svg', organizationLogoUrl: '/runtime/logos/organization.png' }, origin);
     expect(result.logoUrl).toBe(`${origin}/runtime/logos/logo.svg`);
     expect(result.organizationLogoUrl).toBe(`${origin}/runtime/logos/organization.png`);
-    expect(result.theme.primary).toBe('#b45309');
+    expect(result.theme.primary).toBe('#cd3a06');
+    expect(result.theme.accent).toBe('#fff0eb');
+    expect(result.theme.accentForeground).toBe('#8f2904');
   });
   it.each([null, [], {}, { schemaVersion: 2 }, 'invalid'])('defaults unsupported configuration %j', (value) => {
     expect(validateBranding(value, origin)).toEqual({ schemaVersion: 1, theme: defaultTheme });

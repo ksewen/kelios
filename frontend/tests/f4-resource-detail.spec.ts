@@ -58,6 +58,45 @@ for(const kind of ['categories','manufacturers','products','locations','owners',
  if(kind!=='tenants')expect(f.requests.some(r=>r.url.pathname===endpoint.slice(0,endpoint.lastIndexOf('/')))).toBe(false);
  await page.reload();await expect(page.locator('main h2').first()).toBeVisible();await expect(page.getByRole('dialog')).toHaveCount(0);
 });
+for(const lang of ['en','de'] as const)for(const width of [1440,390])test(`${lang}/${width} direct detail breadcrumbs use authoritative names and authorized ancestors`,async({page})=>{
+ await fixture(page,{lang});await page.setViewportSize({width,height:900});const t=lang==='en'?en:de;
+ for(const kind of ['categories','manufacturers','products','locations','owners','users','tenants']){
+  await page.goto(`/${kind}/${kind==='tenants'?tenant:id}`);
+  const crumb=page.getByRole('navigation',{name:t.redesign.breadcrumb});
+  const name=kind==='users'?'Authoritative User':kind==='tenants'?'Workspace':kind==='locations'||kind==='owners'?'Authoritative place':`Authoritative ${kind}`;
+  await expect(crumb.locator('[aria-current="page"]')).toHaveText(name);
+  const ancestor=crumb.getByRole('link',{name:kind==='tenants'?t.ui.tenants:t.fields[kind as keyof typeof t.fields],exact:true});
+  await expect(ancestor).toHaveAttribute('href',kind==='locations'||kind==='owners'?`/tenants/${tenant}/${kind}`:`/${kind}`);
+  await expect(crumb.getByRole('link',{name:t.redesign.home})).toHaveAttribute('href','/dashboard');
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ }
+ await page.goto(`/inventory/assets/${id}`);
+ const crumb=page.getByRole('navigation',{name:t.redesign.breadcrumb});await expect(crumb.locator('[aria-current="page"]')).toHaveText('Asset fixture');await expect(crumb.getByRole('link',{name:t.fields.assets})).toHaveAttribute('href','/assets');
+ await crumb.getByRole('link',{name:t.fields.assets}).focus();await crumb.getByRole('link',{name:t.fields.assets}).press('Enter');await expect(page).toHaveURL('/assets');
+});
+test('Asset breadcrumb uses local identifier, then UUID when Tag is absent',async({page})=>{
+ await fixture(page);await page.route(`**/api/v1/assets/${id}`,route=>route.fulfill({json:assetDetailFixture({id,tenantId:tenant,assetTag:'',localIdentifier:'Local locator'})}));
+ await page.goto(`/inventory/assets/${id}`);const current=page.getByRole('navigation',{name:en.redesign.breadcrumb}).locator('[aria-current="page"]');await expect(current).toHaveText('Local locator');
+ await page.route(`**/api/v1/assets/${id}`,route=>route.fulfill({json:assetDetailFixture({id,tenantId:tenant,assetTag:'',localIdentifier:null})}));await page.reload();await expect(current).toHaveText(id);
+});
+for(const kind of ['categories','manufacturers','products'])test(`${kind} detail dialog keeps collection breadcrumb`,async({page})=>{
+ await fixture(page);await page.goto(`/${kind}`);await page.locator('main tbody a').first().click();await expect(page.getByRole('dialog')).toBeVisible();
+ const crumb=page.locator('nav[aria-label="Breadcrumb"]');await expect(crumb.locator('[aria-current="page"]')).toHaveText(en.fields[kind as keyof typeof en.fields]);await expect(crumb.locator('a')).toHaveCount(1);
+});
+for(const lang of ['en','de'] as const)test(`${lang} primary routes and registration use compact collection hierarchy`,async({page})=>{
+ await fixture(page,{lang});const t=lang==='en'?en:de;
+ for(const kind of ['dashboard','assets','categories','manufacturers','products','locations','owners','users','tenants','audit','oidc']){
+  await page.goto(`/${kind}`);const crumb=page.getByRole('navigation',{name:t.redesign.breadcrumb});
+  await expect(crumb.locator('[aria-current="page"]')).toHaveText(kind==='dashboard'?t.redesign.dashboard:t.fields[kind as keyof typeof t.fields]);
+  await expect(crumb.getByRole('link',{name:t.redesign.home})).toHaveAttribute('href','/dashboard');
+ }
+ await page.goto('/inventory/assets/new');const crumb=page.getByRole('navigation',{name:t.redesign.breadcrumb});await expect(crumb.getByRole('link',{name:t.fields.assets})).toHaveAttribute('href','/assets');await expect(crumb.locator('[aria-current="page"]')).toHaveText(t.ui.registerAsset);
+ await page.goto('/account/password');await expect(page.getByRole('navigation',{name:t.redesign.breadcrumb}).locator('[aria-current="page"]')).toHaveText(t.ui.changeOwnPassword);
+});
+test('Tenant administrator direct Tenant detail omits unavailable collection ancestor',async({page})=>{
+ await fixture(page,{scope:'TENANT',role:'ADMIN'});await page.goto(`/tenants/${tenant}`);
+ const crumb=page.getByRole('navigation',{name:en.redesign.breadcrumb});await expect(crumb.locator('[aria-current="page"]')).toHaveText('Workspace');await expect(crumb.locator('a')).toHaveCount(1);await expect(crumb.getByRole('link',{name:en.redesign.home})).toHaveAttribute('href',`/tenants/${tenant}/dashboard`);
+});
 for(const lang of ['de','en'] as const)for(const width of [390,1440])test(`${lang}/${width} Tenant detail follows the shared identity hierarchy in modal and direct routes`,async({page})=>{
  await fixture(page,{lang});await page.setViewportSize({width,height:900});await page.goto('/tenants');await page.locator('tbody').getByText('Workspace',{exact:true}).click();
  const dialog=page.getByRole('dialog'),article=dialog.locator('article');await expect(dialog).toBeVisible();await expect(article.locator('header p').first()).toHaveText(lang==='de'?'Mandant':'Tenant');await expect(article.locator('h2')).toHaveText('Workspace');await expect(article).toContainText(tenant);

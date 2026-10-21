@@ -228,7 +228,7 @@ logo_copy() {
   cp "$1" "$LOGO_TEMP"; chmod 444 "$LOGO_TEMP"; mv -f "$LOGO_TEMP" "$STATE/branding/logos/$filename"
 }
 theme() {
-  case "$1" in orange) BACKGROUND='#f7f7f5'; FOREGROUND='#18181b'; PRIMARY='#b45309'; PRIMARY_FOREGROUND='#ffffff'; ACCENT='#fff1e6'; ACCENT_FOREGROUND='#78350f';;
+  case "$1" in orange) BACKGROUND='#f7f7f5'; FOREGROUND='#18181b'; PRIMARY='#cd3a06'; PRIMARY_FOREGROUND='#ffffff'; ACCENT='#fff0eb'; ACCENT_FOREGROUND='#8f2904';;
     green) BACKGROUND='#f2faf5'; FOREGROUND='#16372b'; PRIMARY='#087f5b'; PRIMARY_FOREGROUND='#ffffff'; ACCENT='#d8f2e4'; ACCENT_FOREGROUND='#14543c';;
     blue) BACKGROUND='#f4f7ff'; FOREGROUND='#172033'; PRIMARY='#2458d3'; PRIMARY_FOREGROUND='#ffffff'; ACCENT='#e1eaff'; ACCENT_FOREGROUND='#243b75';; *) fail 'Select orange, blue or green.';; esac
 }
@@ -315,7 +315,7 @@ status() {
 }
 configure() {
   terminal; files
-  NEW_LOGO=; NEW_ORG_LOGO=; CLEAR_ORG_LOGO=false
+  NEW_LOGO=; NEW_ORG_LOGO=; CLEAR_LOGO=false; CLEAR_ORG_LOGO=false
   printf 'Changes apply on next ./kelios start; branding then appears on page reload. TLS rotation is not supported here.\n'
   while :; do
     printf '\nKELIOS Configuration\n1. HTTP port\n2. HTTPS port\n3. Listen address\n4. Theme\n5. Six theme colors\n6. Legacy logo\n7. Organization logo\n8. Save and exit\n0. Exit without changes\n'
@@ -326,9 +326,9 @@ configure() {
       3) prompt 'Listen address' "$BIND"; bind "$ANSWER"; BIND=$ANSWER; printf 'Changing bind does not change the configured browser hostname. Non-loopback exposure is operator-controlled.\n';;
       4) prompt 'Theme' 'orange'; theme "$ANSWER";;
       5) prompt 'Background' "$BACKGROUND"; BACKGROUND=$ANSWER; prompt 'Foreground' "$FOREGROUND"; FOREGROUND=$ANSWER; prompt 'Primary' "$PRIMARY"; PRIMARY=$ANSWER; prompt 'Primary foreground' "$PRIMARY_FOREGROUND"; PRIMARY_FOREGROUND=$ANSWER; prompt 'Accent' "$ACCENT"; ACCENT=$ANSWER; prompt 'Accent foreground' "$ACCENT_FOREGROUND"; ACCENT_FOREGROUND=$ANSWER;;
-      6) prompt 'Legacy logo path' ''; [ -f "$ANSWER" ] || fail 'Logo file unavailable.'; NEW_LOGO=$ANSWER;;
+      6) prompt 'Legacy logo path (empty clears)' ''; if [ -n "$ANSWER" ]; then [ -f "$ANSWER" ] || fail 'Logo file unavailable.'; NEW_LOGO=$ANSWER; else CLEAR_LOGO=true; NEW_LOGO=; fi;;
       7) prompt 'Organization logo path (empty clears)' ''; if [ -n "$ANSWER" ]; then [ -f "$ANSWER" ] || fail 'Organization logo unavailable.'; NEW_ORG_LOGO=$ANSWER; else CLEAR_ORG_LOGO=true; NEW_ORG_LOGO=; fi;;
-      8) validate; if [ -n "$NEW_LOGO" ]; then logo_copy "$NEW_LOGO" legacy; fi; if [ "$CLEAR_ORG_LOGO" = true ]; then ORG_LOGO=; elif [ -n "$NEW_ORG_LOGO" ]; then logo_copy "$NEW_ORG_LOGO" organization; fi; save; printf 'Saved. Run ./kelios start to apply; no image rebuild is required.\n'; return;;
+      8) validate; if [ "$CLEAR_LOGO" = true ]; then LOGO=; elif [ -n "$NEW_LOGO" ]; then logo_copy "$NEW_LOGO" legacy; fi; if [ "$CLEAR_ORG_LOGO" = true ]; then ORG_LOGO=; elif [ -n "$NEW_ORG_LOGO" ]; then logo_copy "$NEW_ORG_LOGO" organization; fi; save; printf 'Saved. Run ./kelios start to apply; no image rebuild is required.\n'; return;;
       0) printf 'No configuration changes saved.\n'; return;; *) printf 'Select a listed option.\n';;
     esac
   done

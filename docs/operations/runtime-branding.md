@@ -1,5 +1,7 @@
 # Runtime branding
 
+For the supported operator steps to select or reset the theme and add or clear an organization logo, follow [Change the theme or organization logo](local-deployment.md#change-the-theme-or-organization-logo). Save through `./kelios config`, apply with `./kelios start`, then reload the browser; no image rebuild is needed. A saved theme survives restarts and upgrades until changed explicitly.
+
 The frontend serves root-path deployments. It fetches `/runtime/config.json` before rendering, without cache and with a three-second timeout. Branding is public client-side data: never include credentials or secrets.
 
 Set the frontend container environment variable `KELIOS_CONFIG_FILE` to an absolute path of a read-only mounted JSON file. Its default is the config shipped at `/usr/share/nginx/html/runtime/config.json`. At startup, the unprivileged entrypoint links the source to `/tmp/kelios/config.json`, which nginx serves at the stable URL. An unavailable source uses the orange/charcoal KELIOS defaults. Changes to a readable mounted file take effect on the next page load; switching source paths requires recreating the container, without rebuilding its image. Config and logo responses use `Cache-Control: no-store`.
@@ -11,10 +13,10 @@ Set the frontend container environment variable `KELIOS_CONFIG_FILE` to an absol
   "theme": {
     "background": "#f7f7f5",
     "foreground": "#18181b",
-    "primary": "#b45309",
+    "primary": "#cd3a06",
     "primaryForeground": "#ffffff",
-    "accent": "#fff1e6",
-    "accentForeground": "#78350f"
+    "accent": "#fff0eb",
+    "accentForeground": "#8f2904"
   }
 }
 ```

@@ -188,9 +188,10 @@ function AssetHistoryEntry({event}:{event:AssetEventDto}) { const {t}=useTransla
     <div className="table-frame mt-4"><table className="data-table"><thead><tr><th>{t('ui.field')}</th>{initial?<th>{t('ui.initialState')}</th>:<><th>{t('ui.before')}</th><th>{t('ui.after')}</th></>}</tr></thead><tbody>{initial?initial.map(item=><tr key={item.field}><th scope="row" className="p-2">{label(item.field)}</th><td className="whitespace-pre-wrap p-2">{valueLabel(item.field,item.value)}</td></tr>):historyChanges(event.data,event.type).map(change=><tr key={change.field}><th scope="row" className="p-2">{label(change.field)}</th><td className="whitespace-pre-wrap p-2">{valueLabel(change.field,change.before)}</td><td className="whitespace-pre-wrap p-2">{valueLabel(change.field,change.after)}</td></tr>)}</tbody></table></div>
   </li>;
 }
-export function AssetDetail({ id, admin, exit }: { id: string; admin: boolean; exit: () => void }) { const { t } = useTranslation();
+export function AssetDetail({ id, admin, exit, onTitle }: { id: string; admin: boolean; exit: () => void; onTitle?: (title: {id:string;name:string}) => void }) { const { t } = useTranslation();
   const [revision, refresh] = useState(0), [page, paginate] = useState(0); const reload = () => refresh(v => v + 1);
   const { data: detail, error,pending,accept } = useRead<AssetDetailDto>(`/api/v1/assets/${id}`, revision,true);const a:(AssetDetailDto&Row)|null=detail?assetView(detail):null; const history = useRead<Page<AssetEventDto>>(`/api/v1/assets/${id}/events?page=${page}&size=20`, revision);
+  useEffect(()=>{if(a)onTitle?.({id,name:String(a.assetTag||a.localIdentifier||id)});},[id,a?.assetTag,a?.localIdentifier,onTitle]);
   const [text, setText] = useState<Record<string, string>>({}), [catalog, setCatalog] = useState<Record<string, string>>({}), [location, setLocation] = useState(''), [owner, setOwner] = useState(''), [life, setLife] = useState(''), [condition, setCondition] = useState(''), [reason, setReason] = useState(''), [eventNote, setEventNote] = useState(''), [borrower, setBorrower] = useState(''), [returnAt, setReturnAt] = useState(''), [loanNote, setLoanNote] = useState('');
   const [action,setAction]=useState('');const [initialized, initialize] = useState(false); useEffect(() => { if (a && !initialized) { setText({ localIdentifier: String(a.localIdentifier ?? ''), serialNumber: String(a.serialNumber ?? ''), externalInventoryNumber: String(a.externalInventoryNumber ?? ''), note: String(a.note ?? '') }); setCatalog({ productId: String(a.productId ?? ''), categoryId: String(a.categoryId), manufacturerId: String(a.manufacturerId) }); setLocation(String(a.locationId)); setOwner(String(a.ownerId ?? '')); initialize(true); } }, [a, initialized]);
   const command = (suffix: string, method: string, b: object) => session.request<AssetState>(`/api/v1/assets/${id}/${suffix}`, method, { expectedVersion: a?.version, ...b });
@@ -245,7 +246,7 @@ function MergeImpact({ value }: { value: unknown }) { const { t } = useTranslati
   const codes:Record<string,string>={'Source and target must differ':'same','Deleted endpoint':'deleted','Protected UNKNOWN source':'unknown','Target is not visible to every retained dependent':'visibility'};
   return <dl><dt>{label('productCount')}</dt><dd>{numberLabel(p.productCount)}</dd><dt>{label('assetCount')}</dt><dd>{numberLabel(p.assetCount)}</dd><dt>{label('affectedTenants')}</dt><dd>{p.affectedTenants.map(item=><p key={item.tenantId??'global'}>{item.tenantId??t('common.globalInstallation')} · {numberLabel(item.referenceCount)}</p>)}</dd><dt>{label('blockers')}</dt><dd>{p.blockers.length?p.blockers.map(b=><p key={b}>{t(`preview.${codes[b]??'unknownBlocker'}`)}</p>):t('ui.none')}</dd></dl>;
 }
-export function Management({ tenant, tenantName, tenants, tenantsPending=false, tenantsError='', ownTenantPending=false, ownTenantError='', kind, user, detailId,detailModal=false }: {detailId?:string;detailModal?:boolean; tenant: string; tenantName?:string; tenants?:TenantItem[]|null; tenantsPending?:boolean;tenantsError?:FeedbackError;ownTenantPending?:boolean;ownTenantError?:FeedbackError; kind: string; user: Identity }) { const { t } = useTranslation();
+export function Management({ tenant, tenantName, tenants, tenantsPending=false, tenantsError='', ownTenantPending=false, ownTenantError='', kind, user, detailId,detailModal=false,onTitle }: {detailId?:string;detailModal?:boolean;onTitle?:(title:{id:string;name:string;tenantId?:string|null})=>void; tenant: string; tenantName?:string; tenants?:TenantItem[]|null; tenantsPending?:boolean;tenantsError?:FeedbackError;ownTenantPending?:boolean;ownTenantError?:FeedbackError; kind: string; user: Identity }) { const { t } = useTranslation();
   const notify=useToast();
   const catalog = ['categories', 'manufacturers', 'products'].includes(kind), product = kind === 'products', globalAdmin = user.scope === 'GLOBAL' && user.role === 'ADMIN';
   const canCreate = user.role === 'ADMIN' && (!!tenant || globalAdmin), collection = catalog ? tenant ? `/api/v1/tenants/${tenant}/catalog/${kind}` : `/api/v1/catalog/${kind}` : tenant ? `/api/v1/tenants/${tenant}/${kind}` : `/api/v1/${kind}`;
@@ -292,7 +293,7 @@ export function Management({ tenant, tenantName, tenants, tenantsPending=false, 
   return <section className={product ? 'product-management' : undefined}>
    <h1 className="page-title">{label(kind)}</h1>
    {!reviewed&&!product&&<p className="page-description">{t('redesign.resourceHelp')}</p>}
-   {detailId&&!detailModal?<BusinessDetail kind={kind} id={detailId} user={user} changed={reload} exit={closeDetail}/>:<>
+   {detailId&&!detailModal?<BusinessDetail kind={kind} id={detailId} user={user} changed={reload} exit={closeDetail} onTitle={onTitle}/>:<>
     <div role="toolbar" aria-label={label(kind)} className={`${collectionToolbarClass} ${product?'items-end':''}`}>
      {(reviewed||product)&&createAction}{reviewed&&mergeAction}{searchAction}
      {compactFilter&&<ClearableControl name={t(category?'ui.categoryRows':'ui.catalogRows')} value={appliedFilter.visibility} onClear={()=>clearCatalog('visibility')} select><select aria-label={t(category?'ui.categoryRows':'ui.catalogRows')} className="input mt-0 h-10 w-auto max-w-full shrink-0 pr-20" value={appliedFilter.visibility} onChange={event=>{const visibility=event.target.value;setPendingFilter(old=>({...old,visibility}));setAppliedFilter(old=>({...old,visibility}));paginate(0);}}><option value="">{t('ui.categoryRowsAll')}</option><option value="GLOBAL">{t('ui.categoryRowsGlobal')}</option><option value="TENANT">{t('ui.categoryRowsTenant')}</option></select></ClearableControl>}
@@ -334,7 +335,8 @@ export function TenantAdministration({ globalAdmin,detailId,closeDetail }: { glo
   const [revision, refresh] = useState(0), [name, setName] = useState('');const { data, error } = useRead<TenantItem[]>('/api/v1/tenants', revision);
   return <section><h2 className="page-title">{t('ui.tenants')}</h2><div role="toolbar" aria-label={t('ui.tenants')} className={collectionToolbarClass}>{globalAdmin && <Command triggerLabel={t('actions.create')} triggerVariant="default" triggerSize="control" triggerClassName="shrink-0" primaryLabel={t('actions.create')} discard={()=>setName('')} title={t('ui.createTenant')} successMessage={t('ui.tenantCreated')} success={() => {setName('');refresh(v => v + 1);}} run={() => session.request('/api/v1/tenants', 'POST', { name })}><Field name={t('ui.tenantName')} value={name} set={setName} required /></Command>}</div><ReadError error={error} />{!data&&!error&&<Skeleton className="h-48 my-5"/>}{data && <Rows rows={data.map(row=>({...row,createdAt:row.metadata.createdAt,createdByName:actorLabel(row.metadata.createdByDisplayName,t('ui.unresolvedActor'))}))} columns={['name','createdAt','createdByName']} open={row=>navigate(`/tenants/${row.id}`,{state:{background:location}})} />}{detailId&&<Modal open title={t('ui.tenants')} onOpenChange={open=>{if(!open)closeDetail?.();}}><TenantDetail id={detailId} modal/></Modal>}</section>;
 }
-export function TenantDetail({id,modal=false}:{id:string;modal?:boolean}) { const {t}=useTranslation();const {data,error}=useRead<TenantDetailDto>(`/api/v1/tenants/${id}`);
+export function TenantDetail({id,modal=false,onTitle}:{id:string;modal?:boolean;onTitle?:(title:{id:string;name:string})=>void}) { const {t}=useTranslation();const {data,error}=useRead<TenantDetailDto>(`/api/v1/tenants/${id}`);
+ useEffect(()=>{if(data?.name)onTitle?.({id,name:data.name});},[id,data?.name,onTitle]);
  return <section>{!modal&&<h1 className="page-title">{t('ui.tenants')}</h1>}<ReadError error={error}/>{!data&&!error&&<Skeleton className="h-48 my-5"/>}{data&&<article className="space-y-5"><BusinessIdentity kind={label('tenantName')} name={data.name} id={data.id}/><BusinessMetadata metadata={data.metadata}/></article>}</section>;
 }
 export function UserAdministration({ user }: { user: Identity }) { const { t } = useTranslation(),tenantFilterId=useId();const navigate=useNavigate();const [page,paginate]=useState(0),[size,setSize]=useState(20);
@@ -381,9 +383,10 @@ function BusinessMetadata({metadata}:{metadata:Metadata}) {
  const {t}=useTranslation(),who=(key:'createdBy'|'updatedBy')=>actorLabel(metadata[`${key}DisplayName`],t('ui.unresolvedActor'));
  return <footer className="space-y-1 border-t pt-3 text-xs text-muted-foreground"><p>{label('createdAt')} {valueLabel('createdAt',metadata.createdAt)} {t('ui.by')} {who('createdBy')}</p><p>{label('updatedAt')} {valueLabel('updatedAt',metadata.updatedAt)} {t('ui.by')} {who('updatedBy')}</p></footer>;
 }
-function CategoryDetail({id,user,changed,exit}:{id:string;user:Identity;changed:()=>void;exit:(tenantId?:string|null)=>void}) {
+function CategoryDetail({id,user,changed,exit,onTitle}:{id:string;user:Identity;changed:()=>void;exit:(tenantId?:string|null)=>void;onTitle?:(title:{id:string;name:string;tenantId?:string|null})=>void}) {
  const {t}=useTranslation();const [revision,refresh]=useState(0),[editing,setEditing]=useState(false),[draft,setDraft]=useState(''),[publish,setPublish]=useState(false),[saving,setSaving]=useState(false),[saveError,setSaveError]=useState<FeedbackError>(''),[deleteError,setDeleteError]=useState<FeedbackError>(''),[deleting,setDeleting]=useState(false);
  const path=`/api/v1/catalog/categories/${id}`;const {data,error,pending}=useRead<CatalogLabelDetail>(path,revision,true);
+ useEffect(()=>{if(data?.name)onTitle?.({id,name:data.name,tenantId:data.tenantId});},[id,data?.name,data?.tenantId,onTitle]);
  const reload=()=>refresh(value=>value+1);
  const canEdit=!!data&&!data.deleted&&user.status==='ACTIVE'&&user.role==='ADMIN'&&(user.scope==='GLOBAL'||data.tenantId===user.tenantId);
  const canPublish=canEdit&&user.scope==='GLOBAL'&&!!data?.tenantId;
@@ -413,16 +416,17 @@ function Association({name,reference,path}:{name:string;reference:Reference|null
  return <div><dt className="text-sm text-muted-foreground">{name}</dt><dd>{reference?path?<Link className="text-primary underline" title={reference.id} to={`${path}/${reference.id}`}>{reference.name}</Link>:<span title={reference.id}>{reference.name}</span>:'—'}</dd></div>;
 }
 /** These five resource commands stay explicit; detail is never obtained from a list row. */
-function BusinessDetail({kind,id,user,changed,exit,onBusyChange}:{kind:string;id:string;user:Identity;changed:()=>void;exit:(tenantId?:string|null)=>void;onBusyChange?:(busy:boolean)=>void}) {
- if(kind==='categories')return <CategoryDetail key={id} id={id} user={user} changed={changed} exit={exit}/>;
- if(['manufacturers','locations','owners'].includes(kind))return <RelatedDetail key={`${kind}:${id}`} kind={kind} id={id} user={user} changed={changed} exit={exit}/>;
- return <OtherBusinessDetail kind={kind} id={id} user={user} changed={changed} exit={exit} onBusyChange={onBusyChange}/>;
+function BusinessDetail({kind,id,user,changed,exit,onBusyChange,onTitle}:{kind:string;id:string;user:Identity;changed:()=>void;exit:(tenantId?:string|null)=>void;onBusyChange?:(busy:boolean)=>void;onTitle?:(title:{id:string;name:string;tenantId?:string|null})=>void}) {
+ if(kind==='categories')return <CategoryDetail key={id} id={id} user={user} changed={changed} exit={exit} onTitle={onTitle}/>;
+ if(['manufacturers','locations','owners'].includes(kind))return <RelatedDetail key={`${kind}:${id}`} kind={kind} id={id} user={user} changed={changed} exit={exit} onTitle={onTitle}/>;
+ return <OtherBusinessDetail kind={kind} id={id} user={user} changed={changed} exit={exit} onBusyChange={onBusyChange} onTitle={onTitle}/>;
 }
-function RelatedDetail({kind,id,user,changed,exit}:{kind:string;id:string;user:Identity;changed:()=>void;exit:(tenantId?:string|null)=>void}) {
+function RelatedDetail({kind,id,user,changed,exit,onTitle}:{kind:string;id:string;user:Identity;changed:()=>void;exit:(tenantId?:string|null)=>void;onTitle?:(title:{id:string;name:string;tenantId?:string|null})=>void}) {
  const {t}=useTranslation();const catalog=kind==='manufacturers';
  const [revision,refresh]=useState(0),[editing,setEditing]=useState(false),[draftName,setDraftName]=useState(''),[draftNote,setDraftNote]=useState(''),[publish,setPublish]=useState(false),[saving,setSaving]=useState(false),[saveError,setSaveError]=useState<FeedbackError>(''),[deleteError,setDeleteError]=useState<FeedbackError>(''),[deleting,setDeleting]=useState(false);
  const path=`/api/v1/${catalog?'catalog/':''}${kind}/${id}`;
  const {data,error,pending}=useRead<CatalogLabelDetail|PlaceDetail>(path,revision,true);
+ useEffect(()=>{if(data?.name)onTitle?.({id,name:data.name,tenantId:data.tenantId});},[id,data?.name,data?.tenantId,onTitle]);
  const reload=()=>refresh(value=>value+1);
  const canEdit=!!data&&!data.deleted&&user.status==='ACTIVE'&&user.role==='ADMIN'&&(user.scope==='GLOBAL'||data.tenantId===user.tenantId);
  const canPublish=catalog&&canEdit&&user.scope==='GLOBAL'&&!!data?.tenantId;
@@ -451,10 +455,11 @@ function RelatedDetail({kind,id,user,changed,exit}:{kind:string;id:string;user:I
   </>}
  </article>;
 }
-function OtherBusinessDetail({kind,id,user,changed,exit,onBusyChange}:{kind:string;id:string;user:Identity;changed:()=>void;exit:(tenantId?:string|null)=>void;onBusyChange?:(busy:boolean)=>void}) {
+function OtherBusinessDetail({kind,id,user,changed,exit,onBusyChange,onTitle}:{kind:string;id:string;user:Identity;changed:()=>void;exit:(tenantId?:string|null)=>void;onBusyChange?:(busy:boolean)=>void;onTitle?:(title:{id:string;name:string;tenantId?:string|null})=>void}) {
  const {t}=useTranslation(),editId=useId();const [revision,refresh]=useState(0);
  const path=`/api/v1/catalog/${kind}/${id}`;
  const {data,error,pending}=useRead<ProductDetail>(path,revision,true);
+ useEffect(()=>{if(data?.name)onTitle?.({id,name:data.name,tenantId:data.tenantId});},[id,data?.name,data?.tenantId,onTitle]);
  const [editing,setEditing]=useState(false),[name,setName]=useState(''),[number,setNumber]=useState(''),[category,setCategory]=useState(''),[manufacturer,setManufacturer]=useState(''),[publish,setPublish]=useState(false),[deleteError,setDeleteError]=useState<FeedbackError>(''),[deleting,setDeleting]=useState(false);
  const reload=()=>refresh(v=>v+1),success=()=>{setName('');setNumber('');setCategory('');setManufacturer('');setPublish(false);reload();changed();};
  const ga=user.status==='ACTIVE'&&user.scope==='GLOBAL'&&user.role==='ADMIN';

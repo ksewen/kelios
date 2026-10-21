@@ -1,6 +1,6 @@
 export const defaultTheme = {
-  background: '#f7f7f5', foreground: '#18181b', primary: '#b45309',
-  primaryForeground: '#ffffff', accent: '#fff1e6', accentForeground: '#78350f',
+  background: '#f7f7f5', foreground: '#18181b', primary: '#cd3a06',
+  primaryForeground: '#ffffff', accent: '#fff0eb', accentForeground: '#8f2904',
 } as const;
 
 export type Theme = { -readonly [K in keyof typeof defaultTheme]: string };

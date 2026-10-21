@@ -86,6 +86,28 @@ Both `install` and `recover-admin` use the same protected Email recovery helper.
 
 Changing HTTPS port changes the exact public origin/callback. Update your IServ client's registered redirect URI accordingly; old browser tabs must use the new URL. The JWT issuer stays installation-stable. Changing bind does not change browser hostname or certificate. Wider network binds are explicit operator decisions; this remains a local/test deployment tool, not production ingress configuration. Config does not change TLS material, database mode/connections, users, OIDC, authorization or business settings.
 
+## Change the theme or organization logo
+
+Run these commands from the **source directory of the installation you want to change** (the one containing its `.kelios/` state). Keep that directory and its saved configuration across upgrades. `config` saves a choice; `start` applies it to the running frontend. Neither command rebuilds an image or changes the database.
+
+To select or reset to the default orange/charcoal KELIOS theme (`primary #cd3a06`, `accent #fff0eb`, `accentForeground #8f2904`):
+
+```sh
+./kelios config
+# Choose 4 (Theme), then enter orange (or press Enter at Theme [orange]).
+# Choose 8 (Save and exit). Choosing 0 instead discards the change.
+./kelios start
+./kelios status
+```
+
+Reload the browser at the HTTPS URL shown by `status`. Menu 4 also offers `blue` and `green`; menu 5 allows the six documented individual color tokens. A theme explicitly saved by an operator remains selected across `start`, `stop` and source/image upgrades until the operator changes it. New installations default to orange; upgrading an existing blue/green installation does **not** overwrite its saved choice. See [runtime branding](runtime-branding.md) for the token and fallback contract.
+
+To display an optional **organization logo**, prepare an SVG, PNG, JPG or WebP file (at most 2 MiB) readable at an absolute local path, then run `./kelios config`, choose **7 (Organization logo)**, enter that path, choose **8 (Save and exit)** and run `./kelios start`. For example, an operator may supply `/Users/ksewen/Pictures/hohenlohekreis.svg`; the CLI copies it into this installation's persistent private `.kelios/branding/logos/organization.svg` state. Do not edit that managed copy directly. Reload the browser. To remove the selected organization logo, choose **7**, submit an empty path, save with **8**, run `./kelios start` and reload. The logo appears as a compact mark beside the live-text **KELIOS** product wordmark; the wordmark's **O** follows the active theme accent. The organization logo does not rename or replace the product.
+
+If no organization logo is selected, an existing **legacy logo** (menu 6) continues to render as its full-image KELIOS logo. To switch an existing installation to the live-text wordmark, choose **6 (Legacy logo)** in `./kelios config`, submit an empty path, save with **8**, run `./kelios start` and reload. This clears the legacy logo selection without deleting its saved file or changing the organization-logo selection. If neither logo is selected, a neutral mark appears beside the live-text KELIOS wordmark. Theme colors still apply to the rest of the interface when a legacy image is present, but the image itself does not change color. Theme and logo selection require `./kelios start` and a browser reload, **not** an image rebuild or a new installation.
+
+For an existing installation with a legacy logo, the complete switch to **organization mark + KELIOS wordmark + default orange O** takes one `./kelios config` session: choose **4 → orange**, **6 → empty path**, **7 → absolute organization-logo file path**, then **8 → save**. Run `./kelios start`, check `./kelios status` and reload the HTTPS page. Existing accounts and data remain in the same database.
+
 ## URL, start, stop and status
 
 After successful install, open the exact HTTPS URL printed by the CLI (normally `https://localhost:8443`). To rediscover it and check health, run `./kelios status` from the same source directory. Status may still print the configured URL when services are absent; require running/healthy services before expecting that URL to work.

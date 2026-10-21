@@ -24,9 +24,9 @@ for (const scenario of ['missing', 'malformed', 'unsupported', 'timeout'] as con
       return new Promise<void>(() => {});
     });
     await page.goto('/', { waitUntil: 'domcontentloaded' });
-    await expect(page.getByRole('button', { name: 'Sign in',exact:true })).toHaveCSS('background-color', 'rgb(180, 83, 9)');
+    await expect(page.getByRole('button', { name: 'Sign in',exact:true })).toHaveCSS('background-color', 'rgb(205, 58, 6)');
     await expect(page.getByText('KELIOS', { exact: true })).toBeVisible();
-    await expect(page.getByText('O', { exact: true })).toHaveCSS('color', 'rgb(180, 83, 9)');
+    await expect(page.getByText('O', { exact: true })).toHaveCSS('color', 'rgb(205, 58, 6)');
   });
 }
 
@@ -54,7 +54,7 @@ test('broken organization logo falls back to neutral mark and live KELIOS', asyn
   await page.goto('/');
   await expect(page.getByRole('img',{name:'Organization logo'})).toHaveCount(0);
   await expect(page.getByText('KELIOS',{exact:true})).toBeVisible();
-  await expect(page.getByText('O',{exact:true})).toHaveCSS('color','rgb(180, 83, 9)');
+  await expect(page.getByText('O',{exact:true})).toHaveCSS('color','rgb(205, 58, 6)');
 });
 
 test('legacy full-wordmark logo keeps its original image treatment', async ({page}) => {
