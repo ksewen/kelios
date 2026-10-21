@@ -1,0 +1,35 @@
+# Asset transition loanability
+
+**Baseline:** clean Round 4 commit `696bc2a9b1fa31b6069ada6371ca85cf2046a598` (2026-10-21).
+**Plan:** APPROVED by the HUMAN request to implement the reviewed follow-up.
+**Gate 1:** HUMAN ACCEPTED / CLOSED 2026-10-21, including the recorded isolated verification and live/frontend limitations; separate commit permission granted.
+**Gate 2:** IN PROGRESS; authorized 2026-10-21 by the HUMAN "accept and continue" instruction after Gate 1 acceptance. Review pending HUMAN UX/final acceptance.
+
+## Decision and boundaries
+
+Only a valid transition into Lifecycle `DEREGISTERED` or Condition `DEFECTIVE`/`UNUSABLE` automatically sets `loanable=false`. No recovery transition enables it. `DEREGISTERED` and `UNUSABLE` are terminal in the accepted graphs; the valid recovery example is `DEFECTIVE -> WORKING`, which preserves loanability. This side effect is prospective and is not a hard invariant on registration, stored rows, or the explicit manual loanability API. Existing historical Asset `0d9c1f90-51c6-47bf-8c68-48fc028d0145` is excluded from repair or special handling.
+
+`AssetService.lifecycle` and `.condition` are the supported authoritative mutation boundaries. They validate Tenant, authorization via their caller, expected version and transition graph, then persist and append one AssetEvent transactionally. The event's single before/after snapshot contains both the state and loanability changes. `loanable` gates future issuance; `loanedTo` tracks an outstanding loan. An existing loan remains intact and returnable after a blocking transition. The guarded manual loanability command remains separate and still rejects an outstanding loan. No API shape, migration, new event type, bulk reconciliation, history UI or state-graph change is authorized.
+
+## Gate 1 — backend transition and contract
+
+Set loanability false after successful graph validation and before the existing `finish` call for the three targets. Preserve all other targets, actor/version guards, one event and outstanding-loan fields. Update DOMAIN and the two existing OpenAPI operation descriptions. Add focused PostgreSQL tests for all target/one-way cases, event snapshots, rollback, stale version, authorization and outstanding-loan return. Existing manual loanability authority must remain unchanged.
+
+**Acceptance:** the focused isolated PostgreSQL integration suite passes; the OpenAPI document parses with local references resolved; `git diff --check` passes. Record exact commands, results, failures and limitations below. Stop for HUMAN domain/security review, without staging, committing, deploying or beginning Gate 2.
+
+## Gate 2 — detail interaction and integration
+
+The Overview loanability card offers no `Nein -> Ja` interaction while any blocking state is displayed; show a concise localized reason. An authorized historical/direct-API `Ja -> Nein` may still use the existing manual command when no loan is outstanding. Permission and outstanding-loan read-only behavior stay unchanged. Apply the authoritative lifecycle/condition response to the detail view before the existing refetch, so the state and `Nein` appear together without a stale intermediate `Ja` or a remount.
+
+Add German/English desktop/390px intercepted Chromium tests for immediate response/refetch timing, blocked/read-only controls, supported `DEFECTIVE -> WORKING` retaining false, permission guards, pointer/keyboard and focus. Run frontend unit tests, production build, affected intercepted Chromium, relevant backend regression, OpenAPI/document checks and `git diff --check`. Record exact evidence and stop for HUMAN UX/final review. The 8443 installation and operator data are outside both gates.
+
+## Gate 1 verification record — 2026-10-21
+
+Baseline: clean `696bc2a9b1fa31b6069ada6371ca85cf2046a598`, plus only the seven Gate 1 paths listed below. No live HTTPS, operator data, frontend behavior or historical Asset row was touched.
+
+- `cd backend && ./mvnw -B -Dit.test=Phase3InventoryIT verify` stopped before compilation because the sandbox denied creation of the wrapper distribution in the external user Maven cache. Apache Maven 3.9.1 was available locally.
+- `cd backend && mvn -B -Dit.test=Phase3InventoryIT verify` initially passed 75 unit tests and 99 isolated PostgreSQL integration tests, before the final authority/rollback test additions. A later sandbox rerun stopped on seven unrelated `BusinessProblemsTest` Mockito agent errors before integration tests. A focused sandbox rerun with `-Dtest=StateMachineTest` passed 34 unit tests but could not reach Docker, so Testcontainers did not run.
+- Approved Docker-access rerun: `cd backend && mvn -B -Dtest=StateMachineTest -Dit.test=Phase3InventoryIT verify` passed **34/34 state-machine unit tests and 101/101 isolated PostgreSQL integration tests**, zero failures/errors/skips, exit 0. This is the final post-change executable evidence. The tests cover both transition services, all graph targets, event snapshots and rollback, one-way behavior, outstanding loans, manual command independence, authorization and stale versions. Raw output is ignored scratch at `.cache/verification/asset-transition-g1-focused-escalated.log`.
+- OpenAPI YAML parsed as **3.1.0**, **60 paths**, **229 resolved local references**, zero missing. Five current owner documents have **81 local links**, zero missing targets. `git diff --check` passed. No schema or endpoint shape changed.
+
+Gate 1 manifest: `backend/src/main/java/com/github/ksewen/kelios/inventory/AssetService.java`, `backend/src/test/java/com/github/ksewen/kelios/identity/auth/Phase3InventoryIT.java`, `DOMAIN.md`, `docs/api/openapi.yaml`, this Plan, `IMPLEMENTATION_STATUS.md`, and `docs/plans/remaining-work.md`. These were the only dirty/untracked paths against the clean baseline before closeout; nothing was staged during verification. The existing 8443 installation and managed database are unchanged. Full frontend/Chromium regression is Gate 2 work; this gate makes no frontend verification claim. **HUMAN domain/security ACCEPTED / CLOSED 2026-10-21**, with the recorded evidence and limitations. Separate permission was granted for the Gate 1-only commit and continuation to Gate 2; no push or deployment was authorized.

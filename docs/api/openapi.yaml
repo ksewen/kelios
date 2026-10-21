@@ -1054,7 +1054,8 @@ paths:
       summary: ADMIN explicit lifecycle-transitions command; expectedVersion required
       description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
         operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
-        remains visible.
+        remains visible. A valid transition into DEREGISTERED also sets loanable=false in the same versioned operation and
+        AssetEvent; it does not return an outstanding loan. Other lifecycle transitions preserve loanability.
       security: *id008
       responses:
         '200':
@@ -1081,7 +1082,8 @@ paths:
       summary: ADMIN explicit condition-transitions command; expectedVersion required
       description: ACTIVE authorized principal; backend-loaded target facts and actors. Tenant path is validated
         operating context, never membership/session state. Public Asset reads exclude internal soft deletion; DEREGISTERED
-        remains visible.
+        remains visible. A valid transition into DEFECTIVE or UNUSABLE also sets loanable=false in the same versioned
+        operation and AssetEvent; it does not return an outstanding loan. Other condition transitions preserve loanability.
       security: *id008
       responses:
         '200':

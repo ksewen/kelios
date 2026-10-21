@@ -190,6 +190,8 @@ Ordinary text editing is a replacement command for `serialNumber`, `externalInve
 
 Loanability may be changed after registration through a separate explicit business command **only when no current outstanding loan exists**. If a loan exists, reject the loanability change. Do not include loanability in arbitrary Asset patching. Text editing, Catalog reassignment and loanability changes use optimistic locking and create `UPDATED` AssetEvent with before/after snapshots atomically. Lifecycle, Condition, Location, Owner and loan/return retain their dedicated operations.
 
+On a valid Lifecycle transition into `DEREGISTERED`, or Condition transition into `DEFECTIVE` or `UNUSABLE`, the same versioned mutation also sets `loanable=false`. This prospective side effect is one-way: other transitions preserve loanability, including repair from `DEFECTIVE` to `WORKING`. It is part of the triggering transition's single AssetEvent before/after snapshot, not a separate manual loanability command. It applies even with an outstanding loan; borrower and current-loan fields remain unchanged and Return remains possible. The manual command's outstanding-loan guard stays intact. This does not prohibit an otherwise authorized explicit `loanable=true` command while a blocking state is present, normalize existing rows, or change registration's initial Condition/loanability choice.
+
 ## 5. Location and Owner
 
 **Location:** Tenant-managed flat controlled list, generally rooms but may contain `IT-Lager`, `Ausgeliehen`, `Unbekannt`. `Asset.locationId` is required; if unknown, the Tenant explicitly creates/selects an `Unbekannt` Location. No special location enum, hierarchy, or automatic Lifecycle behavior. Validate same Tenant and active reference on new assignment.

@@ -148,12 +148,15 @@ public class AssetService {
         if(target==null || (target==LifecycleState.DEREGISTERED)!=(reason!=null))throw BusinessFailure.invalid("Deregistration requires a structured reason; other transitions must omit it");
         if(!InventoryGraphs.LIFECYCLE.permits(a.lifecycle,target))throw new BusinessFailure("INVALID_TRANSITION","Lifecycle transition forbidden");
         var before=snapshot(a);a.lifecycle=InventoryGraphs.LIFECYCLE.transition(a.lifecycle,target);
+        if(target==LifecycleState.DEREGISTERED)a.loanable=false;
         return finish(a,target==LifecycleState.DEREGISTERED?"DEREGISTERED":"LIFECYCLE_CHANGED",actor,before,reason==null?Map.of():Map.of("reason",reason.name()),note);
     }
     @Transactional public View condition(UUID tenant,UUID id,long version,ConditionState target,String note,Actor actor) {
         Asset a=expected(tenant,id,version);
         if(!InventoryGraphs.CONDITION.permits(a.condition,target))throw new BusinessFailure("INVALID_TRANSITION","Condition transition forbidden");
-        var before=snapshot(a);a.condition=InventoryGraphs.CONDITION.transition(a.condition,target);return finish(a,"CONDITION_CHANGED",actor,before,Map.of(),note);
+        var before=snapshot(a);a.condition=InventoryGraphs.CONDITION.transition(a.condition,target);
+        if(target==ConditionState.DEFECTIVE || target==ConditionState.UNUSABLE)a.loanable=false;
+        return finish(a,"CONDITION_CHANGED",actor,before,Map.of(),note);
     }
     @Transactional public View loan(UUID tenant,UUID id,long version,String borrower,Instant expectedReturnAt,String loanNote,Actor actor) {
         Asset a=expected(tenant,id,version);
