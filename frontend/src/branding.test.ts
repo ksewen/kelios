@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { defaultTheme, validateBranding } from './branding';
+import { defaultTheme, destructiveActionColor, validateBranding } from './branding';
 
 describe('public runtime branding trust boundary', () => {
   const origin = 'https://kelios.example';
@@ -28,4 +28,11 @@ describe('public runtime branding trust boundary', () => {
     const result = validateBranding({ schemaVersion: 1, theme: { primary: 'url(https://evil.example)', foreground: '#112233', background: 42, unknown: '#000000' } }, origin);
     expect(result.theme).toEqual({ ...defaultTheme, foreground: '#112233' });
   });
+});
+
+it.each([
+  ['#cd3a06', '#18181b'], ['#b45309', '#18181b'], ['#cc2800', '#18181b'], ['#cc0055', '#18181b'],
+  ['#2458d3', '#b42318'], ['#087f5b', '#b42318'], ['#777777', '#b42318'],
+])('derives destructive action color from validated primary %s', (primary, expected) => {
+  expect(destructiveActionColor(primary)).toBe(expected);
 });

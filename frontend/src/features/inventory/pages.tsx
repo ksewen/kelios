@@ -27,7 +27,7 @@ function Field({ name, value, set, type = 'text', required = false, maxLength, a
   return <div className="field"><label htmlFor={id}>{title}{required&&<span aria-hidden="true" className="text-destructive"> *</span>}</label>{[label('note'),t('ui.loanNote'),t('ui.transitionNote')].includes(name)?<textarea id={id} aria-label={title} className={inputClass+' min-h-24'} value={value} onChange={e=>set(e.target.value)} required={required}/>:<ClearableControl name={title} value={value} onClear={onClear} select={type==='date'||type==='datetime-local'}><input id={id} maxLength={maxLength} aria-label={title} className={inputClass+(onClear?(type==='date'||type==='datetime-local'?' pr-20':' pr-11'):'')} value={value} onChange={e => set(e.target.value)} type={type} required={required} autoComplete={autoComplete??(type === 'password' ? 'new-password' : 'off')} /></ClearableControl>}</div>;
 }
 function Choice({ name, value, set, values, optional = false, markRequired=false, onClear, placeholder=true }: { name: string; value: string; set: (v: string) => void; values: string[]; optional?: boolean;markRequired?:boolean;onClear?:()=>void;placeholder?:boolean }) { const { t } = useTranslation(),id=useId(),title=label(name);
-  return <div className="field"><label htmlFor={id}>{title}{markRequired&&!optional&&<span aria-hidden="true" className="text-destructive"> *</span>}</label><ClearableControl name={title} value={value} onClear={optional?(onClear??(()=>set(''))):undefined} select><select id={id} aria-label={title} className={inputClass+(optional?' pr-20':'')} value={value} onChange={e => set(e.target.value)} required={!optional}>{placeholder&&<option value="">{optional ? t('ui.none') : t('ui.select')}</option>}{values.map(v => <option key={v} value={v}>{label(v)}</option>)}</select></ClearableControl></div>;
+ return <div className="field"><label htmlFor={id}>{title}{markRequired&&!optional&&<span aria-hidden="true" className="text-destructive"> *</span>}</label><ClearableControl name={title} value={value} onClear={optional?(onClear??(()=>set(''))):undefined} select><select id={id} aria-label={title} className={inputClass+(optional?' pr-20':'')+(values.every(v=>v in assetStatusTone)&&value in assetStatusTone?` ${assetStatusTone[value]}`:'')} value={value} onChange={e => set(e.target.value)} required={!optional}>{placeholder&&<option value="">{optional ? t('ui.none') : t('ui.select')}</option>}{values.map(v => <option key={v} value={v}>{label(v)}</option>)}</select></ClearableControl></div>;
 }
 function readContext(): string {
   const user = session.current();
@@ -79,7 +79,7 @@ export function Rows({ rows, columns, open, sorting, nameLink, linkState }: { ro
   return <div className="table-frame"><table className="data-table"><thead><tr>{table.getHeaderGroups()[0]?.headers.map(h => <th className="p-2" key={h.id} aria-sort={sorting&&sorting.fields[h.id]===sorting.field?(sorting?.direction==='asc'?'ascending':'descending'):undefined}>{sorting?.fields[h.id]?<Button className="font-bold text-xs text-muted-foreground" type="button" variant="ghost" size="sm" onClick={()=>sorting.set(sorting.fields[h.id])}><table.FlexRender header={h}/><span aria-hidden="true" className="inline-flex size-4 shrink-0">{sorting.field===sorting.fields[h.id]?(sorting.direction==='asc'?<ArrowUp size={16}/>:<ArrowDown size={16}/>):<ArrowUpDown size={16} className="opacity-60"/>}</span></Button>:<table.FlexRender header={h} />}</th>)}</tr></thead><tbody>{table.getRowModel().rows.map(r => <tr key={r.id}>{r.getAllCells().map(c => {
     const text=valueLabel(c.column.id,c.getValue());
     const duplicate=c.column.id==='name'&&rows.some(other=>other.id!==r.id&&other.name===r.original.name);
-    return <td className={`p-2 ${c.column.id==='assetTag'?'font-semibold whitespace-nowrap':''}`} key={c.id}>{['lifecycle','condition','status','role','visibility'].includes(c.column.id)?<Badge>{text}</Badge>:c.column.id==='name'&&nameLink?<><Link className="rounded-sm font-medium text-primary underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" to={nameLink(r.original)} state={linkState}>{text}</Link>{duplicate&&<span className="mt-1 block text-xs text-muted-foreground">{r.id.slice(-8)}</span>}</>:c.column.id==='assetTag'?<Link className="rounded-sm text-primary underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" to={`/inventory/assets/${r.id}`}>{text}</Link>:c.column.id===columns[0]&&open&&!columns.includes('assetTag')?<><Button type="button" variant="ghost" className="h-auto p-0 text-left font-medium text-primary hover:underline" onClick={()=>open(r.original)}>{text}</Button>{duplicate&&<span className="mt-1 block text-xs text-muted-foreground">{r.id.slice(-8)}</span>}</>:duplicate?<><span>{text}</span><span className="mt-1 block text-xs text-muted-foreground">{r.id.slice(-8)}</span></>:text}</td>;
+    return <td className={`p-2 ${c.column.id==='assetTag'?'font-semibold whitespace-nowrap':''}`} key={c.id}>{['lifecycle','condition','status','role','visibility'].includes(c.column.id)?<Badge className={['lifecycle','condition'].includes(c.column.id)?assetStatusTone[String(c.getValue())]:columns.includes('role')?userBadgeTone(c.column.id,c.getValue(),r.original.scope):undefined}>{text}</Badge>:c.column.id==='name'&&nameLink?<><Link className="rounded-sm font-medium text-primary underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" to={nameLink(r.original)} state={linkState}>{text}</Link>{duplicate&&<span className="mt-1 block text-xs text-muted-foreground">{r.id.slice(-8)}</span>}</>:c.column.id==='assetTag'?<Link className="rounded-sm text-primary underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" to={`/inventory/assets/${r.id}`}>{text}</Link>:c.column.id===columns[0]&&open&&!columns.includes('assetTag')?<><Button type="button" variant="ghost" className="h-auto p-0 text-left font-medium text-primary hover:underline" onClick={()=>open(r.original)}>{text}</Button>{duplicate&&<span className="mt-1 block text-xs text-muted-foreground">{r.id.slice(-8)}</span>}</>:duplicate?<><span>{text}</span><span className="mt-1 block text-xs text-muted-foreground">{r.id.slice(-8)}</span></>:text}</td>;
   })}</tr>)}</tbody></table>{!rows.length && <div className="empty-state"><p className="font-medium">{t('ui.noRecords')}</p></div>}</div>;
 }
 const FormReset = createContext(0);
@@ -113,14 +113,23 @@ function Pick({name,path,value,set,optional=false,revision=0,excluded='',referen
 }
 const noSubmission = Symbol('confirmation cancelled before dispatch');
 const assetStatusTone: Record<string,string> = {
-  REGISTERED: 'border-sky-200 bg-sky-50 text-sky-900 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-100',
-  IN_STOCK: 'border-slate-200 bg-slate-50 text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100',
-  DEPLOYED: 'border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-100',
-  DEREGISTERED: 'border-stone-200 bg-stone-50 text-stone-900 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100',
-  UNKNOWN: 'border-slate-200 bg-slate-50 text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100',
-  WORKING: 'border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-100',
-  DEFECTIVE: 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100',
-  UNUSABLE: 'border-rose-200 bg-rose-50 text-rose-900 dark:border-rose-800 dark:bg-rose-950 dark:text-rose-100',
+  REGISTERED: 'border-gray-200 bg-[#f3f4f6] text-[#374151]',
+  IN_STOCK: 'border-blue-200 bg-[#dbeafe] text-[#1e40af]',
+  DEPLOYED: 'border-green-200 bg-[#dcfce7] text-[#166534]',
+  DEREGISTERED: 'border-orange-200 bg-[#ffedd5] text-[#9a3412]',
+  UNKNOWN: 'border-gray-200 bg-[#f3f4f6] text-[#374151]',
+  WORKING: 'border-green-200 bg-[#dcfce7] text-[#166534]',
+  DEFECTIVE: 'border-amber-200 bg-[#fef3c7] text-[#92400e]',
+  UNUSABLE: 'border-red-200 bg-[#fee2e2] text-[#991b1b]',
+};
+const userBadgeTone = (field:string,value:unknown,scope:unknown):string|undefined => {
+  if(field==='status')return value==='ACTIVE'?'border-green-200 bg-[#dcfce7] text-[#166534]':['DISABLED','PENDING'].includes(String(value))?'border-gray-200 bg-[#f3f4f6] text-[#374151]':undefined;
+  if(field==='role'){
+    if(value==='USER')return 'border-gray-200 bg-[#f3f4f6] text-[#374151]';
+    if(value==='ADMIN'&&scope==='GLOBAL')return 'border-violet-200 bg-[#f5f3ff] text-[#5b21b6]';
+    if(value==='ADMIN'&&scope==='TENANT')return 'border-blue-200 bg-[#eff6ff] text-[#1e40af]';
+  }
+  return undefined;
 };
 function Command({ title, run, children, success, successMessage, reload, inline=false,controlledOpen,onOpenChange,disabled=false,embedded=false,compactDialog=false,initialize,discard,triggerLabel,primaryLabel,quietRead=false,resource,sessionReset=0,onBusyChange,allowInlineCancel=false,submitDisabled=false,returnFocus,triggerClassName,triggerSize,triggerVariant='outline' }: {triggerVariant?:ButtonProps['variant'];triggerSize?:ButtonProps['size'];triggerClassName?:string;returnFocus?:string;submitDisabled?:boolean; resource?:MutationResource;sessionReset?:number;onBusyChange?:(busy:boolean)=>void;allowInlineCancel?:boolean;title: string; run: () => Promise<unknown>; children?: ReactNode; success?: (result:unknown) => void;successMessage?:string; reload?: () => void; inline?:boolean;controlledOpen?:boolean;onOpenChange?:(open:boolean)=>void;disabled?:boolean;embedded?:boolean;compactDialog?:boolean;initialize?:()=>void;discard?:()=>void;triggerLabel?:string;primaryLabel?:string;quietRead?:boolean }) {
  const {t}=useTranslation(),notify=useToast();const[open,setOpen]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState<FeedbackError>(''),[done,setDone]=useState(false),[dirty,setDirty]=useState(false),[reset,setReset]=useState(0);
@@ -198,7 +207,7 @@ export function AssetDetail({ id, admin, exit, onTitle }: { id: string; admin: b
   const transitionSuccess = (response: unknown) => { accept(current => ({...current,...response as AssetState})); reload(); };
   const loanabilityLabel = (value:boolean) => t(value?'ui.loanable':'ui.notLoanable');
   const loanabilityBlocked = a?.lifecycle==='DEREGISTERED'||a?.condition==='DEFECTIVE'||a?.condition==='UNUSABLE';
-  const loanabilityTone = a?.loanable?'border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-100':'border-rose-200 bg-rose-50 text-rose-900 dark:border-rose-800 dark:bg-rose-950 dark:text-rose-100';
+  const loanabilityTone = a?.loanable?'border-green-200 bg-[#dcfce7] text-[#166534]':'border-red-200 bg-[#fee2e2] text-[#991b1b]';
   const loanabilitySize = 'min-h-10 px-4 py-2 text-sm';
   const statusIndicator = (kind:'lifecycle'|'condition') => { const state=String(a?.[kind]??''),change=kind==='lifecycle'?'changeLifecycle':'changeCondition';
     const badge=<Badge className={`${assetStatusTone[state]} px-3 py-1 text-sm`}>{label(state)}</Badge>;

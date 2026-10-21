@@ -290,7 +290,7 @@ test('Category edit holds publication until Save and exposes explicit guarded De
  await page.route(`**/api/v1/catalog/categories/${localId}`,route=>{const method=route.request().method();if(method==='PUT'||method==='DELETE'){writes.push({method,body:route.request().postDataJSON()});return route.fulfill({status:204,body:''});}return route.fallback();});
  await page.goto(`/categories/${localId}`);const detail=page.getByRole('article');
  await expect(detail.getByRole('button',{name:en.ui.editCategory})).toBeVisible();await expect(detail.getByRole('button',{name:en.ui.exitDetail})).toBeVisible();
- const deletion=detail.getByRole('button',{name:en.ui.deleteEntry});await expect(deletion).toBeVisible();await expect(deletion).toHaveClass(/bg-destructive/);
+ const deletion=detail.getByRole('button',{name:en.ui.deleteEntry});await expect(deletion).toBeVisible();await expect(deletion).toHaveClass(/bg-destructive-action/);
  await detail.getByRole('button',{name:en.ui.editCategory}).click();const form=detail.getByRole('form',{name:en.ui.editCategory});await form.getByRole('checkbox',{name:en.ui.publishGlobally}).check();expect(writes).toHaveLength(0);
  await form.getByRole('button',{name:en.redesign.cancel}).click();await page.getByRole('alertdialog').getByRole('button',{name:en.ui.discardChanges}).click();expect(writes).toHaveLength(0);
  await detail.getByRole('button',{name:en.ui.editCategory}).click();await form.getByRole('checkbox',{name:en.ui.publishGlobally}).check();await form.getByRole('button',{name:en.ui.save}).click();await expect.poll(()=>writes.length).toBe(1);expect(writes[0]).toMatchObject({method:'PUT',body:{name:'Local category',publishGlobally:true}});

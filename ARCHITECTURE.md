@@ -40,6 +40,9 @@ The React app must load and validate runtime branding **before or during initial
 
 The default light KELIOS palette uses restrained orange (`#cd3a06`) for the primary accent and charcoal (`#18181b`) for strong text; semantic status colors remain independent. Runtime theme overrides and legacy `logoUrl` remain supported. Optional `organizationLogoUrl` is a separate deployment mark beside the live-text KELIOS wordmark, whose O uses the runtime primary token. Existing saved branding is not rewritten by an image update. See [runtime branding](docs/operations/runtime-branding.md).
 
+Asset lifecycle, condition and loanability use light semantic status tones independent of the brand accent. The shared Delete action derives a separate appearance from the validated runtime primary: dark neutral for orange/red-family brands, red for blue/green and other non-conflicting brands. Semantic error/danger feedback stays red under every brand; the action appearance changes no confirmation, permission or backend deletion semantics.
+The User collection uses the same light badge language without changing its accepted left-aligned table: ACTIVE is green, DISABLED/PENDING are neutral gray, GLOBAL ADMIN is lavender, TENANT ADMIN is soft blue, and USER is neutral gray. Role colors are categorical; they do not convey mutation authority. Existing localized labels and ordering remain authoritative.
+
 The backend and frontend images must be independently versionable and deployable. Specify how frontend API requests are routed (e.g., configurable base URL or reverse proxy) and document CORS/cookie implications; do not assume one unexamined deployment topology.
 
 ## 3. Backend structure

@@ -62,6 +62,7 @@ test('TENANT ADMIN reads own elevated User without management commands',async({p
  const f=await setup(page,'TENANT','ADMIN');
  await page.route('**/api/v1/users**',route=>{const path=new URL(route.request().url()).pathname;return route.fulfill({json:path.endsWith(foreign)?{id:foreign,scope:'TENANT',tenantId:own,role:'ADMIN',status:'ACTIVE',displayName:'Own elevated',tenant:{id:own,name:'Own school'},metadata,globalAccount:null}:{items:[{id:foreign,scope:'TENANT',tenantId:own,role:'ADMIN',status:'ACTIVE',displayName:'Own elevated',tenant:{id:own,name:'Own school'},metadata}],page:0,size:20,totalElements:1}});});
  await page.goto('/users');await expect(page.getByText('Own elevated',{exact:true})).toBeVisible();
+ const row=page.getByRole('row',{name:/Own elevated/});await expect(row.locator('td').nth(2).locator('span')).toHaveCSS('background-color','rgb(239, 246, 255)');await expect(row.locator('td').nth(4).locator('span')).toHaveCSS('background-color','rgb(220, 252, 231)');
  await page.goto(`/users/${foreign}`);await expect(page.getByRole('heading',{name:'Own elevated',exact:true})).toBeVisible();
  await expect(page.getByRole('button',{name:en.ui.disableUser,exact:true})).toHaveCount(0);
  await expect(page.getByRole('button',{name:en.ui.changeUserRole,exact:true})).toHaveCount(0);
@@ -99,6 +100,31 @@ for(const scope of ['GLOBAL','TENANT'] as const)for(const language of ['en','de'
  const cells=table.locator('tbody tr').first().locator('td');await expect(cells).toHaveCount(expected.length);
  const geometry=await table.evaluate(node=>({headers:Array.from(node.querySelectorAll('thead th'),cell=>({x:cell.getBoundingClientRect().x,width:cell.getBoundingClientRect().width})),cells:Array.from(node.querySelectorAll('tbody tr:first-child td'),cell=>({x:cell.getBoundingClientRect().x,width:cell.getBoundingClientRect().width}))}));
  for(let index=0;index<expected.length;index++){expect(Math.abs(geometry.headers[index].x-geometry.cells[index].x)).toBeLessThan(1);expect(Math.abs(geometry.headers[index].width-geometry.cells[index].width)).toBeLessThan(1);}
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});
+for(const language of ['en','de'] as const)for(const width of [1440,390])test(`${language}/${width} User badges distinguish status and role without changing table alignment`,async({page})=>{
+ const t=language==='de'?de:en;await setup(page,'GLOBAL','ADMIN','ACTIVE',language);await page.setViewportSize({width,height:900});
+ const users=[
+  {id:uid,scope:'GLOBAL',tenantId:null,tenant:null,role:'ADMIN',status:'ACTIVE',displayName:'Global admin',email:'global@example.test',metadata},
+  {id:own,scope:'TENANT',tenantId:own,tenant:{id:own,name:'Own school'},role:'ADMIN',status:'ACTIVE',displayName:'Tenant admin',email:null,metadata},
+  {id:foreign,scope:'TENANT',tenantId:own,tenant:{id:own,name:'Own school'},role:'USER',status:'DISABLED',displayName:'Disabled user',email:null,metadata},
+  {id:'dddddddd-dddd-dddd-dddd-dddddddddddd',scope:'TENANT',tenantId:own,tenant:{id:own,name:'Own school'},role:'USER',status:'PENDING',displayName:'Pending user',email:null,metadata},
+ ];
+ await page.route('**/api/v1/users?*',route=>route.fulfill({json:{items:users,page:0,size:20,totalElements:users.length}}));
+ await page.goto('/users');const table=page.locator('main .data-table');
+ const expected=language==='de'?['Name','E-Mail','Rolle','Mandant','Status','Erstellt am','Erstellt von']:['Name','Email','Role','Tenant','Status','Created at','Created by'];
+ await expect(table.locator('thead th')).toHaveText(expected);
+ for(const [name,role,status,roleBackground,statusBackground] of [
+  ['Global admin',t.enums.ADMIN,t.enums.ACTIVE,'rgb(245, 243, 255)','rgb(220, 252, 231)'],
+  ['Tenant admin',t.enums.ADMIN,t.enums.ACTIVE,'rgb(239, 246, 255)','rgb(220, 252, 231)'],
+  ['Disabled user',t.enums.USER,t.enums.DISABLED,'rgb(243, 244, 246)','rgb(243, 244, 246)'],
+  ['Pending user',t.enums.USER,t.enums.PENDING,'rgb(243, 244, 246)','rgb(243, 244, 246)'],
+ ]){
+  const row=table.getByRole('row',{name:new RegExp(name)}),cells=row.locator('td');
+  await expect(cells).toHaveCount(7);await expect(cells.nth(2)).toHaveCSS('text-align','left');await expect(cells.nth(4)).toHaveCSS('text-align','left');
+  await expect(cells.nth(2).locator('span')).toHaveText(role);await expect(cells.nth(2).locator('span')).toHaveCSS('background-color',roleBackground);
+  await expect(cells.nth(4).locator('span')).toHaveText(status);await expect(cells.nth(4).locator('span')).toHaveCSS('background-color',statusBackground);
+ }
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
 });
 test('TENANT ADMIN own provider read/update uses signed Tenant and existing command body',async({page})=>{

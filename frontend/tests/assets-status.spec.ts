@@ -24,14 +24,23 @@ async function setup(page:Page,{language='en',scope='GLOBAL',role='ADMIN',state=
 
 for(const language of ['de','en'] as const)for(const width of [390,1440])test(`${language}/${width} Asset status colors and guarded entry points`,async({page})=>{
  const text=language==='de'?de:en,f=await setup(page,{language});await page.setViewportSize({width,height:900});await page.goto(`/inventory/assets/${id}`);
- const states=[['lifecycle','REGISTERED',true,'sky'],['lifecycle','IN_STOCK',true,'slate'],['lifecycle','DEPLOYED',true,'emerald'],['lifecycle','DEREGISTERED',false,'stone'],['condition','UNKNOWN',true,'slate'],['condition','WORKING',true,'emerald'],['condition','DEFECTIVE',true,'amber'],['condition','UNUSABLE',false,'rose']] as const;
+ const states=[['lifecycle','REGISTERED',true,'rgb(243, 244, 246)'],['lifecycle','IN_STOCK',true,'rgb(219, 234, 254)'],['lifecycle','DEPLOYED',true,'rgb(220, 252, 231)'],['lifecycle','DEREGISTERED',false,'rgb(255, 237, 213)'],['condition','UNKNOWN',true,'rgb(243, 244, 246)'],['condition','WORKING',true,'rgb(220, 252, 231)'],['condition','DEFECTIVE',true,'rgb(254, 243, 199)'],['condition','UNUSABLE',false,'rgb(254, 226, 226)']] as const;
  for(const [kind,state,actionable,tone] of states){f.set({[kind]:state});await page.reload();
   const label=text.enums[state],action=kind==='lifecycle'?text.ui.changeLifecycle:text.ui.changeCondition;
-  const indicator=page.getByRole('tabpanel',{name:text.redesign.overview}).getByText(label,{exact:true});await expect(indicator).toBeVisible();await expect(indicator).toHaveClass(new RegExp(`bg-${tone}-50`));
+  const indicator=page.getByRole('tabpanel',{name:text.redesign.overview}).getByText(label,{exact:true});await expect(indicator).toBeVisible();await expect(indicator).toHaveCSS('background-color',tone);
   const trigger=page.getByRole('button',{name:`${action}: ${label}`,exact:true});await expect(trigger).toHaveCount(actionable?1:0);
   if(actionable){await trigger.focus();await page.keyboard.press('Enter');await expect(page.getByRole('dialog',{name:action})).toBeVisible();await page.getByRole('dialog').getByRole('button',{name:text.redesign.cancel,exact:true}).click();await expect(trigger).toBeFocused();}
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
  }
+});
+
+test('selected condition uses the semantic tone without styling native option menus',async({page})=>{
+ await setup(page,{state:{condition:'WORKING'}});await page.goto(`/inventory/assets/${id}`);
+ await page.getByRole('button',{name:`${en.ui.changeCondition}: ${en.enums.WORKING}`}).click();
+ const selection=page.getByRole('dialog',{name:en.ui.changeCondition}).getByLabel(en.ui.conditionTarget);
+ await selection.selectOption('DEFECTIVE');await expect(selection).toHaveCSS('background-color','rgb(254, 243, 199)');
+ await selection.selectOption('UNUSABLE');await expect(selection).toHaveCSS('background-color','rgb(254, 226, 226)');
+ await selection.focus();await expect(selection).toBeFocused();
 });
 
 for(const [scope,role] of [['GLOBAL','ADMIN'],['TENANT','ADMIN'],['GLOBAL','USER'],['TENANT','USER']] as const)test(`${scope} ${role} Asset status authority and outstanding-loan guard`,async({page})=>{
@@ -47,12 +56,12 @@ for(const language of ['de','en'] as const)for(const width of [390,1440])test(`$
  const text=language==='de'?de:en,f=await setup(page,{language,state:{loanable:false}});await page.setViewportSize({width,height:900});await page.goto(`/inventory/assets/${id}`);
  const card=page.getByRole('heading',{name:text.fields.loanable,exact:true}).locator('..');
  const trigger=(value:string)=>card.getByRole('button',{name:`${text.ui.changeLoanability}: ${value}`,exact:true});
- await expect(trigger(text.fields.false)).toHaveText(text.fields.false);await expect(trigger(text.fields.false)).toHaveClass(/bg-rose-50/);await expect(trigger(text.fields.false)).toHaveClass(/min-h-10/);
+ await expect(trigger(text.fields.false)).toHaveText(text.fields.false);await expect(trigger(text.fields.false)).toHaveCSS('background-color','rgb(254, 226, 226)');await expect(trigger(text.fields.false)).toHaveClass(/min-h-10/);
  await trigger(text.fields.false).click();let dialog=page.getByRole('dialog',{name:text.ui.changeLoanability});await expect(dialog).toContainText(text.ui.notLoanable);await expect(dialog).toContainText(text.ui.loanable);expect(f.writes).toHaveLength(0);
  await dialog.getByRole('button',{name:text.redesign.cancel,exact:true}).click();expect(f.writes).toHaveLength(0);await expect(page.getByRole('dialog')).toHaveCount(0);await expect(page.getByRole('button',{name:`${text.ui.changeLoanability}: ${text.fields.false}`})).toBeFocused();
  await trigger(text.fields.false).press('Space');dialog=page.getByRole('dialog',{name:text.ui.changeLoanability});await expect(dialog).toBeVisible();await dialog.getByRole('button',{name:text.redesign.cancel,exact:true}).click();await expect(trigger(text.fields.false)).toBeFocused();
  await trigger(text.fields.false).press('Enter');dialog=page.getByRole('dialog',{name:text.ui.changeLoanability});await dialog.getByRole('button',{name:text.redesign.confirm,exact:true}).click();await expect(dialog).toHaveCount(0);
- await expect(trigger(text.fields.true)).toBeVisible();await expect(trigger(text.fields.true)).toHaveClass(/bg-emerald-50/);await expect(trigger(text.fields.true)).toBeFocused();
+ await expect(trigger(text.fields.true)).toBeVisible();await expect(trigger(text.fields.true)).toHaveCSS('background-color','rgb(220, 252, 231)');await expect(trigger(text.fields.true)).toBeFocused();
  expect(f.writes).toEqual([{path:`/api/v1/assets/${id}/loanability`,method:'PUT',body:{expectedVersion:3,loanable:true}}]);
  f.fail('CONCURRENT_OPERATION');await trigger(text.fields.true).press('Enter');dialog=page.getByRole('dialog',{name:text.ui.changeLoanability});await expect(dialog).toContainText(text.ui.notLoanable);await dialog.getByRole('button',{name:text.redesign.confirm,exact:true}).click();
  await expect(dialog.getByRole('alert')).toContainText(text.errors.CONCURRENT_OPERATION);await expect(dialog).toBeVisible();expect(f.writes[1].body).toEqual({expectedVersion:4,loanable:false});

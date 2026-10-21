@@ -42,9 +42,18 @@ export async function loadBranding(): Promise<Branding> {
   }
 }
 
+export function destructiveActionColor(primary: string): string {
+  const [red, green, blue] = [1, 3, 5].map(index => parseInt(primary.slice(index, index + 2), 16));
+  const max = Math.max(red, green, blue), min = Math.min(red, green, blue), range = max - min;
+  if (max < 100 || range / max < 0.35) return '#b42318';
+  const hue = ((max === red ? (green - blue) / range : max === green ? (blue - red) / range + 2 : (red - green) / range + 4) * 60 + 360) % 360;
+  return hue <= 45 || hue >= 330 ? '#18181b' : '#b42318';
+}
+
 export function applyBranding(branding: Branding): void {
   for (const [key, value] of Object.entries(branding.theme)) {
     document.documentElement.style.setProperty(`--${key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`, value);
   }
+  document.documentElement.style.setProperty('--destructive-action', destructiveActionColor(branding.theme.primary));
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', branding.theme.primary);
 }

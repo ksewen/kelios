@@ -110,13 +110,28 @@ for(const lang of ['en','de'] as const)for(const width of [1440,390])test(`${lan
   await expect(detail.locator('header h2')).toBeVisible();await expect(detail.locator('header')).toContainText('Workspace');await expect(detail.locator('header')).toContainText(id);
   await expect(detail.locator('footer')).toContainText(text.ui.by);await expect(detail.locator('footer')).not.toContainText(metadata.createdBy);
   const actions=detail.getByRole('button');await expect(actions.filter({hasText:text.ui.editCategory})).toHaveCount(1);
-  await expect(detail.getByRole('button',{name:text.ui.deleteEntry,exact:true})).toHaveClass(/bg-destructive/);
+  await expect(detail.getByRole('button',{name:text.ui.deleteEntry,exact:true})).toHaveClass(/bg-destructive-action/);
   const labels=await actions.allTextContents();expect(labels.indexOf(text.ui.editCategory)).toBeLessThan(labels.indexOf(text.ui.deleteEntry));expect(labels.indexOf(text.ui.deleteEntry)).toBeLessThan(labels.indexOf(text.ui.exitDetail));
   await expect(detail.getByRole('button',{name:text.ui.publishGlobally})).toHaveCount(0);
   await detail.getByRole('button',{name:text.ui.editCategory}).click();
   await expect(detail.getByRole('checkbox',{name:text.ui.publishGlobally})).toHaveCount(['categories','manufacturers','products'].includes(kind)?1:0);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
  }
+});
+for(const [theme,primary,color] of [['orange','#cd3a06','rgb(24, 24, 27)'],['blue','#2458d3','rgb(180, 35, 24)'],['green','#087f5b','rgb(180, 35, 24)']] as const)test(`${theme} brand keeps Delete distinct from semantic errors`,async({page})=>{
+ await page.route('**/runtime/config.json',route=>route.fulfill({json:{schemaVersion:1,theme:{primary}}}));
+ await fixture(page);await page.goto(`/categories/${id}`);
+ const deletion=page.getByRole('button',{name:en.ui.deleteEntry,exact:true});
+ await expect(deletion).toHaveCSS('background-color',color);
+ await expect(deletion).toHaveCSS('color','rgb(255, 255, 255)');
+ await deletion.focus();await expect(deletion).toBeFocused();
+ expect(await page.evaluate(()=>getComputedStyle(document.documentElement).getPropertyValue('--destructive').trim())).toBe('#b42318');
+});
+test('Asset list shares lifecycle and condition tones with detail',async({page})=>{
+ await fixture(page);await page.goto('/assets');
+ const row=page.locator('main tbody tr').first();
+ await expect(row.getByText(en.enums.DEPLOYED,{exact:true})).toHaveCSS('background-color','rgb(220, 252, 231)');
+ await expect(row.getByText(en.enums.WORKING,{exact:true})).toHaveCSS('background-color','rgb(220, 252, 231)');
 });
 for(const width of [1440,390])test(`shared collections expose primary-cell navigation without Open columns at ${width}px`,async({page})=>{
  await fixture(page);await page.setViewportSize({width,height:900});
@@ -182,7 +197,7 @@ for(const lang of ['de','en'] as const)for(const width of [390,1440])test(`${lan
  await expect(header.getByRole('button')).toHaveCount(2);for(const badge of await header.locator('button > span').all())await expect(badge).toHaveClass(/text-sm/);
  const productInfo=overview.getByRole('region',{name:text.ui.productInformation});await expect(productInfo.locator('dt')).toHaveText([text.fields.productName,text.fields.manufacturerName,text.fields.categoryName,text.fields.serialNumber,text.fields.externalInventoryNumber]);await expect(productInfo).toContainText(product);await expect(productInfo).toContainText(serial);
  for(const key of ['locationName','ownerName','loanable'] as const)await expect(overview.getByRole('heading',{name:text.fields[key],exact:true})).toBeVisible();
- const loanable=overview.getByRole('heading',{name:text.fields.loanable,exact:true}).locator('..');await expect(loanable.getByText(text.fields.true,{exact:true})).toHaveClass(/bg-emerald-50/);await expect(loanable.locator('dt')).toHaveCount(0);await expect(loanable.getByRole('button')).toHaveCount(0);
+ const loanable=overview.getByRole('heading',{name:text.fields.loanable,exact:true}).locator('..');await expect(loanable.getByText(text.fields.true,{exact:true})).toHaveCSS('background-color','rgb(220, 252, 231)');await expect(loanable.locator('dt')).toHaveCount(0);await expect(loanable.getByRole('button')).toHaveCount(0);
  await expect(overview.getByRole('button',{name:`${text.ui.changeLocation}: Existing Location` })).toBeVisible();await expect(overview.getByRole('button',{name:`${text.ui.changeOwner}: —` })).toBeVisible();
  const currentLoan=overview.getByRole('region',{name:text.ui.currentLoan});await expect(currentLoan.locator('dt')).toHaveText([text.fields.loanedTo,text.fields.loanedAt,text.fields.expectedReturnAt,text.fields.loanNote]);await expect(currentLoan).toContainText('Retained loan note');
  const noteSection=overview.getByRole('region',{name:text.fields.note});await expect(noteSection).toContainText('First line');await expect(page.getByRole('button',{name:/Aktuelles Asset neu laden|Reload current Asset/})).toHaveCount(0);
