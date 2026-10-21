@@ -44,14 +44,16 @@ for(const [scope,role] of [['GLOBAL','ADMIN'],['TENANT','ADMIN'],['GLOBAL','USER
 
 for(const language of ['de','en'] as const)for(const width of [390,1440])test(`${language}/${width} Asset loanability confirmation, cancel, success and stale conflict`,async({page})=>{
  const text=language==='de'?de:en,f=await setup(page,{language,state:{loanable:false}});await page.setViewportSize({width,height:900});await page.goto(`/inventory/assets/${id}`);
- await expect(page.getByRole('heading',{name:text.fields.loanable,exact:true}).locator('..').getByText(text.fields.false,{exact:true})).toHaveClass(/bg-rose-50/);
- const open=async(value:string)=>{const trigger=page.getByRole('button',{name:`${text.ui.changeLoanability}: ${value}`,exact:true});await trigger.focus();await page.keyboard.press('Enter');return page.getByRole('dialog',{name:text.ui.changeLoanability});};
- let dialog=await open(text.fields.false);await expect(dialog).toContainText(text.ui.notLoanable);await expect(dialog).toContainText(text.ui.loanable);expect(f.writes).toHaveLength(0);
+ const card=page.getByRole('heading',{name:text.fields.loanable,exact:true}).locator('..');
+ const trigger=(value:string)=>card.getByRole('button',{name:`${text.ui.changeLoanability}: ${value}`,exact:true});
+ await expect(trigger(text.fields.false)).toHaveText(text.fields.false);await expect(trigger(text.fields.false)).toHaveClass(/bg-rose-50/);await expect(trigger(text.fields.false)).toHaveClass(/min-h-10/);
+ await trigger(text.fields.false).click();let dialog=page.getByRole('dialog',{name:text.ui.changeLoanability});await expect(dialog).toContainText(text.ui.notLoanable);await expect(dialog).toContainText(text.ui.loanable);expect(f.writes).toHaveLength(0);
  await dialog.getByRole('button',{name:text.redesign.cancel,exact:true}).click();expect(f.writes).toHaveLength(0);await expect(page.getByRole('dialog')).toHaveCount(0);await expect(page.getByRole('button',{name:`${text.ui.changeLoanability}: ${text.fields.false}`})).toBeFocused();
- dialog=await open(text.fields.false);await dialog.getByRole('button',{name:text.redesign.confirm,exact:true}).click();await expect(dialog).toHaveCount(0);
- await expect(page.getByRole('button',{name:`${text.ui.changeLoanability}: ${text.fields.true}`,exact:true})).toBeVisible();
+ await trigger(text.fields.false).press('Space');dialog=page.getByRole('dialog',{name:text.ui.changeLoanability});await expect(dialog).toBeVisible();await dialog.getByRole('button',{name:text.redesign.cancel,exact:true}).click();await expect(trigger(text.fields.false)).toBeFocused();
+ await trigger(text.fields.false).press('Enter');dialog=page.getByRole('dialog',{name:text.ui.changeLoanability});await dialog.getByRole('button',{name:text.redesign.confirm,exact:true}).click();await expect(dialog).toHaveCount(0);
+ await expect(trigger(text.fields.true)).toBeVisible();await expect(trigger(text.fields.true)).toHaveClass(/bg-emerald-50/);await expect(trigger(text.fields.true)).toBeFocused();
  expect(f.writes).toEqual([{path:`/api/v1/assets/${id}/loanability`,method:'PUT',body:{expectedVersion:3,loanable:true}}]);
- f.fail('CONCURRENT_OPERATION');dialog=await open(text.fields.true);await expect(dialog).toContainText(text.ui.notLoanable);await dialog.getByRole('button',{name:text.redesign.confirm,exact:true}).click();
+ f.fail('CONCURRENT_OPERATION');await trigger(text.fields.true).press('Enter');dialog=page.getByRole('dialog',{name:text.ui.changeLoanability});await expect(dialog).toContainText(text.ui.notLoanable);await dialog.getByRole('button',{name:text.redesign.confirm,exact:true}).click();
  await expect(dialog.getByRole('alert')).toContainText(text.errors.CONCURRENT_OPERATION);await expect(dialog).toBeVisible();expect(f.writes[1].body).toEqual({expectedVersion:4,loanable:false});
  await dialog.getByRole('button',{name:text.redesign.cancel,exact:true}).click();expect(f.writes).toHaveLength(2);await expect(page.getByRole('button',{name:`${text.ui.changeLoanability}: ${text.fields.true}`,exact:true})).toBeVisible();
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
