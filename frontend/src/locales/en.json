@@ -78,6 +78,7 @@
     "changeOwner": "Change Owner",
     "changeUserRole": "Change User role",
     "changeLoanability": "Change loanability",
+    "loanabilityBlocked": "Cannot enable loanability in this state.",
     "confirmLoanabilityChange": "Change loanability from {{current}} to {{next}}?",
     "notLoanable": "Not loanable",
     "changeOwnPassword": "Change own password",

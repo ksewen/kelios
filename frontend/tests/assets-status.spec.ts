@@ -7,18 +7,19 @@ const tenant='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',id='bbbbbbbb-bbbb-bbbb-bbbb-
 type State=ReturnType<typeof assetDetailFixture>;
 async function setup(page:Page,{language='en',scope='GLOBAL',role='ADMIN',state={}}:{language?:'en'|'de';scope?:'GLOBAL'|'TENANT';role?:'ADMIN'|'USER';state?:Partial<State>}={}){
  let asset=assetDetailFixture({id,tenantId:tenant,version:3,...state}),failure:string|null=null;
+ let pauseDetail=false,releaseDetail:(()=>void)|null=null;
  const writes:{path:string;method:string;body:any}[]=[];
  await page.addInitScript(value=>localStorage.setItem('kelios.ui.language',value),language);
- await page.route('**/api/v1/**',route=>{const url=new URL(route.request().url()),path=url.pathname,method=route.request().method();
+ await page.route('**/api/v1/**',async route=>{const url=new URL(route.request().url()),path=url.pathname,method=route.request().method();
   if(path.endsWith('/csrf'))return route.fulfill({json:{token:'fixture'}});
   if(path.endsWith('/session/refresh'))return route.fulfill({json:{accessToken:'fixture',expiresIn:900,user:{id,scope,role,status:'ACTIVE',tenantId:scope==='TENANT'?tenant:null,displayName:'Fixture'}}});
-  if(method!=='GET'){const body=route.request().postDataJSON();writes.push({path,method,body});if(failure)return route.fulfill({status:409,json:{code:failure}});asset={...asset,...(path.endsWith('/loanability')?{loanable:body.loanable}:path.endsWith('/lifecycle-transitions')?{lifecycle:body.target}:path.endsWith('/condition-transitions')?{condition:body.target}:{}),version:asset.version+1};return route.fulfill({json:asset});}
+  if(method!=='GET'){const body=route.request().postDataJSON();writes.push({path,method,body});if(failure)return route.fulfill({status:409,json:{code:failure}});const blocking=path.endsWith('/lifecycle-transitions')&&body.target==='DEREGISTERED'||path.endsWith('/condition-transitions')&&['DEFECTIVE','UNUSABLE'].includes(body.target);asset={...asset,...(path.endsWith('/loanability')?{loanable:body.loanable}:path.endsWith('/lifecycle-transitions')?{lifecycle:body.target}:path.endsWith('/condition-transitions')?{condition:body.target}:{}),loanable:blocking?false:path.endsWith('/loanability')?body.loanable:asset.loanable,version:asset.version+1};return route.fulfill({json:asset});}
   if(path==='/api/v1/tenants')return route.fulfill({json:[tenantFixture(tenant,'Fixture Tenant')]});
   if(path===`/api/v1/tenants/${tenant}`)return route.fulfill({json:tenantFixture(tenant,'Fixture Tenant')});
-  if(path===`/api/v1/assets/${id}`)return route.fulfill({json:asset});
+  if(path===`/api/v1/assets/${id}`){if(pauseDetail&&writes.length)await new Promise<void>(resolve=>{releaseDetail=resolve;});return route.fulfill({json:asset});}
   return route.fulfill({json:{items:[],page:0,size:20,totalElements:0}});
  });
- return {writes,set:(next:Partial<State>)=>{asset={...asset,...next};},fail:(code:string|null)=>{failure=code;}};
+ return {writes,set:(next:Partial<State>)=>{asset={...asset,...next};},fail:(code:string|null)=>{failure=code;},holdDetail:()=>{pauseDetail=true;return ()=>{pauseDetail=false;releaseDetail?.();releaseDetail=null;};}};
 }
 
 for(const language of ['de','en'] as const)for(const width of [390,1440])test(`${language}/${width} Asset status colors and guarded entry points`,async({page})=>{
@@ -57,6 +58,55 @@ for(const language of ['de','en'] as const)for(const width of [390,1440])test(`$
  await expect(dialog.getByRole('alert')).toContainText(text.errors.CONCURRENT_OPERATION);await expect(dialog).toBeVisible();expect(f.writes[1].body).toEqual({expectedVersion:4,loanable:false});
  await dialog.getByRole('button',{name:text.redesign.cancel,exact:true}).click();expect(f.writes).toHaveLength(2);await expect(page.getByRole('button',{name:`${text.ui.changeLoanability}: ${text.fields.true}`,exact:true})).toBeVisible();
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});
+
+for(const language of ['de','en'] as const)for(const width of [390,1440])for(const target of ['DEREGISTERED','DEFECTIVE','UNUSABLE'] as const)test(`${language}/${width} ${target} transition immediately disables loanability`,async({page})=>{
+ const text=language==='de'?de:en,f=await setup(page,{language,state:{lifecycle:'DEPLOYED',condition:'WORKING',loanable:true}});
+ await page.setViewportSize({width,height:900});await page.goto(`/inventory/assets/${id}`);
+ const release=f.holdDetail(),kind=target==='DEREGISTERED'?'Lifecycle':'Condition';
+ const action=text.ui[`change${kind}`],before=text.enums[kind==='Lifecycle'?'DEPLOYED':'WORKING'];
+ await page.getByRole('button',{name:`${action}: ${before}`}).click();const dialog=page.getByRole('dialog',{name:action});
+ await dialog.getByLabel(text.ui[kind==='Lifecycle'?'lifecycleTarget':'conditionTarget']).selectOption(target);
+ if(target==='DEREGISTERED')await dialog.getByLabel(text.ui.deregistrationReason).selectOption('LOST');
+ await dialog.getByRole('button',{name:action,exact:true}).click();
+ if(target==='DEREGISTERED')await page.getByRole('alertdialog').getByRole('button',{name:text.redesign.confirm,exact:true}).click();
+ const card=page.getByRole('heading',{name:text.fields.loanable,exact:true}).locator('..');
+ await expect(dialog).toHaveCount(0);await expect(card.getByText(text.fields.false,{exact:true})).toBeVisible();
+ await expect(card.getByText(text.ui.loanabilityBlocked)).toBeVisible();
+ await expect(card.getByRole('button',{name:`${text.ui.changeLoanability}: ${text.fields.false}`})).toHaveCount(0);
+ await expect(page.getByText(text.enums[target],{exact:true}).first()).toBeVisible();
+ expect(f.writes.map(write=>write.path)).toEqual([`/api/v1/assets/${id}/${kind.toLowerCase()}-transitions`]);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ release();await expect(card.getByText(text.fields.false,{exact:true})).toBeVisible();
+});
+
+for(const language of ['de','en'] as const)test(`${language} repaired Asset remains not loanable until explicit keyboard change`,async({page})=>{
+ const text=language==='de'?de:en,f=await setup(page,{language,state:{lifecycle:'DEPLOYED',condition:'DEFECTIVE',loanable:false}});await page.goto(`/inventory/assets/${id}`);
+ const card=page.getByRole('heading',{name:text.fields.loanable,exact:true}).locator('..');
+ await expect(card.getByRole('button')).toHaveCount(0);await expect(card.getByText(text.ui.loanabilityBlocked)).toBeVisible();
+ await page.getByRole('button',{name:`${text.ui.changeCondition}: ${text.enums.DEFECTIVE}`}).click();const dialog=page.getByRole('dialog',{name:text.ui.changeCondition});
+ await dialog.getByLabel(text.ui.conditionTarget).selectOption('WORKING');await dialog.getByRole('button',{name:text.ui.changeCondition,exact:true}).click();
+ const trigger=card.getByRole('button',{name:`${text.ui.changeLoanability}: ${text.fields.false}`});
+ await expect(trigger).toBeVisible();await expect(card.getByText(text.ui.loanabilityBlocked)).toHaveCount(0);
+ expect(f.writes).toHaveLength(1);expect(f.writes[0].body).toEqual({expectedVersion:3,target:'WORKING'});
+ await trigger.focus();await page.keyboard.press('Enter');const loanability=page.getByRole('dialog',{name:text.ui.changeLoanability});await expect(loanability).toBeVisible();
+ await loanability.getByRole('button',{name:text.redesign.cancel,exact:true}).click();await expect(trigger).toBeFocused();expect(f.writes).toHaveLength(1);
+});
+
+for(const role of ['ADMIN','USER'] as const)test(`${role} blocked Asset keeps permission-aware read-only value`,async({page})=>{
+ const f=await setup(page,{role,state:{lifecycle:'DEPLOYED',condition:'DEFECTIVE',loanable:false}});await page.goto(`/inventory/assets/${id}`);
+ const card=page.getByRole('heading',{name:en.fields.loanable,exact:true}).locator('..');
+ await expect(card.getByText(en.fields.false,{exact:true})).toBeVisible();await expect(card.getByText(en.ui.loanabilityBlocked)).toBeVisible();
+ await expect(card.getByRole('button')).toHaveCount(0);expect(f.writes).toHaveLength(0);
+});
+
+test('authorized historical blocking Asset can still change Yes to No',async({page})=>{
+ const f=await setup(page,{state:{lifecycle:'DEPLOYED',condition:'DEFECTIVE',loanable:true}});await page.goto(`/inventory/assets/${id}`);
+ const card=page.getByRole('heading',{name:en.fields.loanable,exact:true}).locator('..');
+ await card.getByRole('button',{name:`${en.ui.changeLoanability}: ${en.fields.true}`}).click();
+ await page.getByRole('dialog',{name:en.ui.changeLoanability}).getByRole('button',{name:en.redesign.confirm}).click();
+ await expect(card.getByText(en.fields.false,{exact:true})).toBeVisible();await expect(card.getByRole('button')).toHaveCount(0);
+ expect(f.writes).toEqual([{path:`/api/v1/assets/${id}/loanability`,method:'PUT',body:{expectedVersion:3,loanable:false}}]);
 });
 
 test('Asset status entry points retain transition payload and deregistration confirmation',async({page})=>{

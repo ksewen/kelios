@@ -78,6 +78,7 @@
     "changeOwner": "Eigentümer ändern",
     "changeUserRole": "Benutzerrolle ändern",
     "changeLoanability": "Ausleihbarkeit ändern",
+    "loanabilityBlocked": "In diesem Zustand nicht als ausleihbar aktivierbar.",
     "confirmLoanabilityChange": "Ausleihbarkeit von {{current}} auf {{next}} ändern?",
     "notLoanable": "Nicht ausleihbar",
     "changeOwnPassword": "Eigenes Passwort ändern",
