@@ -75,14 +75,14 @@ export class AuthSession {
     if (!this.access || generation !== this.generation) throw new ApiFailure(0, 'AUTHENTICATION_REQUIRED', 'Authentication required');
     const send = async () => {
       const headers: Record<string, string> = { Authorization: `Bearer ${this.access}` };
-      if (body !== undefined) headers['Content-Type'] = 'application/json';
+      if (body !== undefined && !(body instanceof FormData)) headers['Content-Type'] = 'application/json';
       if (path === '/api/v1/auth/local/password') {
         const csrf = await fetch('/api/v1/auth/csrf', { credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.timeout(10000) });
         if (!csrf.ok) throw new ApiFailure(0, 'AUTH_UNAVAILABLE', 'Authentication unavailable');
         headers['X-CSRF-Token'] = (await csrf.json() as { token: string }).token;
       }
       if (generation !== this.generation) throw new ApiFailure(0, 'SESSION_CHANGED', 'Session changed');
-      return fetch(path, { method, credentials: 'same-origin', cache: 'no-store', headers, signal: AbortSignal.timeout(15000), ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+      return fetch(path, { method, credentials: 'same-origin', cache: 'no-store', headers, signal: AbortSignal.timeout(path === '/api/v1/asset-csv/execute' ? 300000 : path === '/api/v1/asset-csv/preview' ? 60000 : 15000), ...(body === undefined ? {} : { body: body instanceof FormData ? body : JSON.stringify(body) }) });
     };
     let response = await send();
     if (method === 'GET' && response.status === 401 && await this.refresh()) response = await send();

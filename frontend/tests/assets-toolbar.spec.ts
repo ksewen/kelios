@@ -12,8 +12,8 @@ for(const language of ['de','en'] as const)for(const width of [390,1440])test(`$
  await expect(page.locator('.assets-list thead th')).toHaveText(assetHeaders(text));await expect(page.locator('.assets-list tbody tr').first().locator('td')).toHaveCount(9);await expect(page.locator('.assets-list tbody tr').first().locator('td').nth(2)).toHaveText('Fixture Tenant');
  const toolbar=page.getByRole('toolbar',{name:text.ui.assets}),input=toolbar.getByRole('textbox'),node=await input.elementHandle(),row=await page.locator('tbody tr').elementHandle();
  await expect(input).toHaveAttribute('placeholder',text.ui.assetSearchPlaceholder);await expect(page.locator('main').getByText(/Asset Tag.*suchen|Search Asset Tag/i)).toHaveCount(0);
- expect(await toolbar.evaluate(el=>Array.from(el.children).map(n=>n.tagName))).toEqual(['BUTTON','FORM','BUTTON','BUTTON']);
- expect(await toolbar.evaluate(el=>{const controls=[el.children[0],el.querySelector('input')!,el.querySelector('form button')!,el.children[2],el.children[3]];return controls.every(n=>Math.abs(n.getBoundingClientRect().height-40)<1);})).toBe(true);
+ expect(await toolbar.evaluate(el=>Array.from(el.children).map(n=>n.tagName))).toEqual(['BUTTON','BUTTON','FORM','BUTTON','BUTTON']);
+ expect(await toolbar.evaluate(el=>{const controls=[el.children[0],el.children[1],el.querySelector('input')!,el.querySelector('form button')!,el.children[3],el.children[4]];return controls.every(n=>Math.abs(n.getBoundingClientRect().height-40)<1);})).toBe(true);
  const before=requests.length;await input.fill('pending');await page.waitForTimeout(200);expect(requests.length).toBe(before);await expect(input).toBeFocused();
  await input.press('Enter');await expect.poll(()=>requests.at(-1)?.searchParams.get('q')).toBe('pending');
  const header=page.getByRole('columnheader',{name:'Tag',exact:true}),button=header.getByRole('button');const original=await header.boundingBox();
