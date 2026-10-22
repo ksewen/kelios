@@ -97,6 +97,7 @@ case "$*" in
   *"volume inspect"*"com.docker.compose.project"*) awk -F= '$1=="PROJECT" {print $2}' "$(dirname "$0")/../.kelios/installation.conf"; exit 0;;
   *"volume inspect"*"com.docker.compose.volume"*) echo postgres-data; exit 0;;
   *" run "*) [ ! -f "$(dirname "$0")/refuse" ]; exit $?;;
+  *" logs "*) echo 'frontend | /api/v1/auth/oidc/tenant/callback?code=fixture-secret&state=fixture-state'; echo 'backend | bounded fixture log'; exit 0;;
   *) exit 0;;
 esac
 ''')
@@ -252,7 +253,22 @@ with (root / 'docker-argv.jsonl').open('a') as out:
         self.assertFalse((self.root/'forbidden').exists())
         self.assertFalse((self.root/'.kelios').exists())
     def test_absent_status(self):
+        (self.root/'bin/fail-info').touch()
         rc, out = self.run_cli('status'); self.assertEqual(rc,0); self.assertIn('not initialized',out)
+        rc, out = self.run_cli('logs'); self.assertEqual(rc,0); self.assertIn('No installation logs',out)
+        self.assertFalse((self.root/'docker-argv.jsonl').exists())
+    def test_https_profile_keeps_auth_queries_out_of_proxy_access_log(self):
+        overlay=(ROOT/'deploy/compose.auth.yaml').read_text()
+        technical=(ROOT/'deploy/nginx/technical-http.conf').read_text()
+        tls=(ROOT/'deploy/nginx/phase2-tls.conf').read_text()
+        auth=re.search(r'location /api/v1/auth/ \{([^}]*)\}',tls)
+        self.assertIsNotNone(auth)
+        self.assertIn('access_log off;',auth.group(1))
+        self.assertIn('proxy_pass http://backend:8080;',auth.group(1))
+        self.assertIn('source: ./nginx/technical-http.conf',overlay)
+        self.assertIn('target: /etc/nginx/conf.d/default.conf',overlay)
+        self.assertIn('location = /healthz',technical)
+        self.assertIn('location / { return 404; }',technical)
     def test_start_without_install(self):
         rc, out = self.run_cli('start'); self.assertNotEqual(rc,0); self.assertIn('not initialized',out)
     def test_install_refuses_existing(self):
@@ -702,6 +718,43 @@ with (root / 'docker-argv.jsonl').open('a') as out:
         self.assertNotEqual(self.run_cli('stop')[0],0)
     def test_config_cancel_preserves_manifest(self):
         d=self.state(); before=(d/'installation.conf').read_bytes(); rc,_=self.run_cli('config',[('Choice','2'),('HTTPS port','9443'),('Choice','0')]); self.assertEqual(rc,0); self.assertEqual(before,(d/'installation.conf').read_bytes())
+    def test_bounded_logs_are_project_scoped_and_read_only(self):
+        d=self.state(); before=(d/'installation.conf').read_bytes()
+        rc,out=self.run_cli('logs')
+        self.assertEqual(rc,0); self.assertIn('bounded fixture log',out)
+        self.assertIn('callback?[REDACTED]',out)
+        self.assertNotIn('fixture-secret',out)
+        self.assertFalse(list((self.root/'tmp').iterdir()))
+        self.assertEqual(before,(d/'installation.conf').read_bytes())
+        calls=self.docker_calls()
+        self.assertTrue(any(c['argv'][-4:]==['logs','--no-color','--tail','100'] and '-p' in c['argv'] for c in calls))
+        self.assertFalse(any('up' in c['argv'] or 'build' in c['argv'] for c in calls))
+    def test_prepared_status_names_resume_and_release(self):
+        self.state(PHASE='prepared')
+        rc,out=self.run_cli('status')
+        self.assertEqual(rc,0)
+        self.assertIn('Status: installation-pending',out)
+        self.assertIn('Release: phase0',out)
+        self.assertIn('resume-install',out)
+    def test_noninteractive_config_validates_port_and_origin(self):
+        d=self.state(); saved=d/'installation.conf'; before=saved.read_bytes()
+        config=self.root/'changes.conf'; config.write_text('HTTPS_PORT=9443\nTHEME=blue\n')
+        result=self.certificate_cli('config',config=config)
+        self.assertEqual(result.returncode,0,result.stderr)
+        self.assertIn('HTTPS_PORT=9443',saved.read_text())
+        self.assertIn('PRIMARY=#2458d3',saved.read_text())
+        self.assertIn('ISSUER=https://localhost:8443',saved.read_text())
+        applied=saved.read_bytes(); self.assertNotEqual(before,applied)
+        (self.root/'bin/busy-port').touch(); config.write_text('HTTPS_PORT=9555\n')
+        self.assertIn('already listening',self.certificate_cli('config',config=config).stderr)
+        self.assertEqual(applied,saved.read_bytes())
+        (self.root/'bin/busy-port').unlink()
+        config.write_text('HTTPS_PORT=8080\n')
+        self.assertIn('must differ',self.certificate_cli('config',config=config).stderr)
+        self.assertEqual(applied,saved.read_bytes())
+        config.write_text('BROWSER_HOST=example.invalid\n')
+        self.assertIn('Unsupported config update field',self.certificate_cli('config',config=config).stderr)
+        self.assertEqual(applied,saved.read_bytes())
     def test_legacy_logo_survives_start_and_new_organization_logo_can_be_added(self):
         self.test_supplied_versioned_keys_are_preserved()
         d=self.root/'.kelios'

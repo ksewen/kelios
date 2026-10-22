@@ -37,7 +37,7 @@ fail() { printf 'KELIOS: %s\n' "$*" >&2; exit 1; }
 cleanup() {
   if [ "$ECHO_OFF" = 1 ]; then stty echo </dev/tty 2>/dev/null || :; fi
   if [ -n "$WORK" ] && [ -d "$WORK" ]; then
-    rm -f "$WORK/compose.env" "$WORK/recovery/password" "$WORK/recovery/output" "$WORK/certificate.pem" "$WORK/private.pem"
+    rm -f "$WORK/compose.env" "$WORK/logs-output" "$WORK/recovery/password" "$WORK/recovery/output" "$WORK/certificate.pem" "$WORK/private.pem"
     rmdir "$WORK/recovery" 2>/dev/null || :
     rmdir "$WORK" 2>/dev/null || :
   fi
@@ -47,9 +47,9 @@ cleanup() {
 trap cleanup 0
 trap 'exit 130' INT
 trap 'exit 143' TERM HUP
-usage() { printf 'Usage: ./kelios [--state-dir ABSOLUTE_PATH] [--config FILE] [--non-interactive] [--confirm-replace] {doctor|install|resume-install|update|start|stop|restart|status|config|uninstall|recover-admin|certificate init|certificate replace|host prepare docker-access}\n'; }
+usage() { printf 'Usage: ./kelios [--state-dir ABSOLUTE_PATH] [--config FILE] [--non-interactive] [--confirm-replace] {doctor|install|resume-install|update|start|stop|restart|status|logs|config|uninstall|recover-admin|certificate init|certificate replace|host prepare docker-access}\n'; }
 case "$*" in 'certificate init'|'certificate replace'|'host prepare docker-access') COMMAND=$*;; *) [ "$#" = 1 ] || { usage; exit 1; }; COMMAND=$1;; esac
-case "$COMMAND" in doctor|install|resume-install|update|start|stop|restart|status|config|uninstall|recover-admin|'certificate init'|'certificate replace'|'host prepare docker-access') ;; *) usage; exit 1;; esac
+case "$COMMAND" in doctor|install|resume-install|update|start|stop|restart|status|logs|config|uninstall|recover-admin|'certificate init'|'certificate replace'|'host prepare docker-access') ;; *) usage; exit 1;; esac
 [ "$CONFIRM_REPLACE" = 0 ] || [ "$COMMAND" = 'certificate replace' ] || fail '--confirm-replace is only valid for certificate replace.'
 case "$ROOT" in *[\'\"\$\`\\]* ) fail 'Repository path contains unsupported quoting characters.';; esac
 [ ! -L "$STATE" ] || fail 'Installation directory must not be a symlink.'
@@ -77,6 +77,7 @@ read_config() {
       ADMIN_EMAIL) C_ADMIN_EMAIL=$value;; ADMIN_DISPLAY_NAME) C_ADMIN_DISPLAY_NAME=$value;; ADMIN_PASSWORD_FILE) C_ADMIN_PASSWORD_FILE=$value;;
       *) fail "Unknown input configuration field: $key";;
     esac
+    CONFIG_KEYS="${CONFIG_KEYS-} $key"
   done < "$INPUT_CONFIG"
 }
 validate_input_config() {
@@ -587,13 +588,42 @@ status() {
     ROWS="$ROWS$service: $info
 "
   done
-  printf 'KELIOS\n\nStatus: %s\n\n%s\nURL: https://%s:%s\nDatabase: %s PostgreSQL\n' "$SUMMARY" "$ROWS" "$BROWSER_HOST" "$HTTPS_PORT" "$MODE"
-  [ "$PHASE" != prepared ] || printf 'Installation incomplete: finish protected recover-admin after healthy startup.\n'
+  [ "$PHASE" != prepared ] || SUMMARY=installation-pending
+  printf 'KELIOS\n\nStatus: %s\nRelease: %s\n\n%s\nURL: https://%s:%s\nDatabase: %s PostgreSQL\n' "$SUMMARY" "$RELEASE" "$ROWS" "$BROWSER_HOST" "$HTTPS_PORT" "$MODE"
+  [ "$PHASE" != prepared ] || printf 'Installation incomplete: run resume-install from the recorded clean source release.\n'
   [ "$PHASE" != data-deleted ] || printf 'Managed database permanently deleted.\n'
 }
+logs() {
+  if [ ! -f "$STATE/installation.conf" ]; then printf 'No installation logs at %s.\n' "$STATE"; return; fi
+  load; compose_env; owned
+  compose logs --no-color --tail 100 > "$WORK/logs-output" 2>&1 || fail 'Cannot read KELIOS container logs; inspect Docker access and deployment identity.'
+  sed -E 's#(/api/v1/auth/[^?[:space:]]*)\?[^[:space:]]*#\1?[REDACTED]#g' "$WORK/logs-output"
+  rm -f "$WORK/logs-output"
+}
+save_configuration() {
+  validate
+  [ "$HTTP_PORT" = "$OLD_HTTP_PORT" ] || port_free "$HTTP_PORT"
+  [ "$HTTPS_PORT" = "$OLD_HTTPS_PORT" ] || port_free "$HTTPS_PORT"
+  if [ "$CLEAR_LOGO" = true ]; then LOGO=; elif [ -n "$NEW_LOGO" ]; then logo_copy "$NEW_LOGO" legacy; fi
+  if [ "$CLEAR_ORG_LOGO" = true ]; then ORG_LOGO=; elif [ -n "$NEW_ORG_LOGO" ]; then logo_copy "$NEW_ORG_LOGO" organization; fi
+  save
+  printf 'Saved. Run ./kelios start to apply; no image rebuild is required.\n'
+}
 configure() {
-  terminal; files
+  files
+  OLD_HTTP_PORT=$HTTP_PORT; OLD_HTTPS_PORT=$HTTPS_PORT
   NEW_LOGO=; NEW_ORG_LOGO=; CLEAR_LOGO=false; CLEAR_ORG_LOGO=false
+  if [ "$NONINTERACTIVE" = 1 ]; then
+    [ -n "$INPUT_CONFIG" ] && [ -n "${CONFIG_KEYS-}" ] || fail 'Noninteractive config requires a nonempty --config file.'
+    for field in $CONFIG_KEYS; do case "$field" in BIND|HTTP_PORT|HTTPS_PORT|THEME|ORGANIZATION_LOGO) ;; *) fail "Unsupported config update field: $field";; esac; done
+    case "$CONFIG_SEEN" in *'|BIND|'*) BIND=$C_BIND;; esac
+    case "$CONFIG_SEEN" in *'|HTTP_PORT|'*) HTTP_PORT=$C_HTTP_PORT;; esac
+    case "$CONFIG_SEEN" in *'|HTTPS_PORT|'*) HTTPS_PORT=$C_HTTPS_PORT;; esac
+    case "$CONFIG_SEEN" in *'|THEME|'*) theme "$C_THEME";; esac
+    case "$CONFIG_SEEN" in *'|ORGANIZATION_LOGO|'*) if [ -n "$C_ORGANIZATION_LOGO" ]; then NEW_ORG_LOGO=$C_ORGANIZATION_LOGO; else CLEAR_ORG_LOGO=true; fi;; esac
+    save_configuration; return
+  fi
+  terminal
   printf 'Changes apply on next ./kelios start; branding then appears on page reload. Use certificate replace for explicit TLS rotation.\n'
   while :; do
     printf '\nKELIOS Configuration\n1. HTTP port\n2. HTTPS port\n3. Listen address\n4. Theme\n5. Six theme colors\n6. Legacy logo\n7. Organization logo\n8. Save and exit\n0. Exit without changes\n'
@@ -606,7 +636,7 @@ configure() {
       5) prompt 'Background' "$BACKGROUND"; BACKGROUND=$ANSWER; prompt 'Foreground' "$FOREGROUND"; FOREGROUND=$ANSWER; prompt 'Primary' "$PRIMARY"; PRIMARY=$ANSWER; prompt 'Primary foreground' "$PRIMARY_FOREGROUND"; PRIMARY_FOREGROUND=$ANSWER; prompt 'Accent' "$ACCENT"; ACCENT=$ANSWER; prompt 'Accent foreground' "$ACCENT_FOREGROUND"; ACCENT_FOREGROUND=$ANSWER;;
       6) prompt 'Legacy logo path (empty clears)' ''; if [ -n "$ANSWER" ]; then [ -f "$ANSWER" ] || fail 'Logo file unavailable.'; NEW_LOGO=$ANSWER; else CLEAR_LOGO=true; NEW_LOGO=; fi;;
       7) prompt 'Organization logo path (empty clears)' ''; if [ -n "$ANSWER" ]; then [ -f "$ANSWER" ] || fail 'Organization logo unavailable.'; NEW_ORG_LOGO=$ANSWER; else CLEAR_ORG_LOGO=true; NEW_ORG_LOGO=; fi;;
-      8) validate; if [ "$CLEAR_LOGO" = true ]; then LOGO=; elif [ -n "$NEW_LOGO" ]; then logo_copy "$NEW_LOGO" legacy; fi; if [ "$CLEAR_ORG_LOGO" = true ]; then ORG_LOGO=; elif [ -n "$NEW_ORG_LOGO" ]; then logo_copy "$NEW_ORG_LOGO" organization; fi; save; printf 'Saved. Run ./kelios start to apply; no image rebuild is required.\n'; return;;
+      8) save_configuration; return;;
       0) printf 'No configuration changes saved.\n'; return;; *) printf 'Select a listed option.\n';;
     esac
   done
@@ -642,8 +672,10 @@ case "$COMMAND" in 'certificate init'|'certificate replace')
   command -v openssl >/dev/null 2>&1 || fail 'OpenSSL is required for certificate operations.'
   lock; certificate_command; exit;;
 esac
+case "$COMMAND" in status|logs) if [ ! -f "$STATE/installation.conf" ]; then "$COMMAND"; exit; fi;; esac
 prerequisites
 if [ "$COMMAND" = status ]; then status; exit; fi
+if [ "$COMMAND" = logs ]; then logs; exit; fi
 if [ "$COMMAND" != install ] && [ ! -d "$STATE" ]; then fail 'Installation is not initialized. Run ./kelios install.'; fi
 lock
 if [ "$COMMAND" = install ]; then install; exit; fi
