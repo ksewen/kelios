@@ -925,6 +925,72 @@ paths:
           type: string
           maxLength: 128
         description: Trimmed literal case-insensitive substring; blank means no predicate; wildcard characters are escaped.
+  /asset-csv/export:
+    get:
+      operationId: exportAssetCsv
+      summary: Export all matching authorized Assets as UTF-8 CSV
+      description: ACTIVE Asset readers may export their authorized collection. Uses the same Asset filters, q and sort as /assets or the Tenant Asset list. page and size are ignored; the complete matching result is exported, up to 20000 rows and 20 MiB. GLOBAL readers may narrow with tenantId. TENANT readers are restricted to their signed Tenant. The CSV begins with a UTF-8 BOM and prefixes formula-like cell values for spreadsheet safety.
+      security: *id008
+      parameters:
+      - name: page
+        in: query
+        description: Ignored for export; all matching rows are exported.
+        schema:
+          type: string
+      - name: size
+        in: query
+        description: Ignored for export; all matching rows are exported.
+        schema:
+          type: string
+      - *id013
+      - *id014
+      - *id015
+      - *id016
+      - *id017
+      - *id018
+      - *id019
+      - *id020
+      - *id021
+      - *id022
+      - *id023
+      - name: tenantId
+        in: query
+        schema: *id010
+      - name: loanable
+        in: query
+        schema:
+          type: boolean
+      - name: localIdentifier
+        in: query
+        schema:
+          type: string
+          maxLength: 128
+      - name: serialNumber
+        in: query
+        schema:
+          type: string
+          maxLength: 128
+      - name: externalInventoryNumber
+        in: query
+        schema:
+          type: string
+          maxLength: 128
+      - name: delimiter
+        in: query
+        description: One printable character or tab; defaults to semicolon.
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 1
+      responses:
+        '200':
+          description: Complete matching CSV with stable English column names and readable association labels
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
+        default: *id009
   /assets/{id}:
     get:
       operationId: getAssetsId

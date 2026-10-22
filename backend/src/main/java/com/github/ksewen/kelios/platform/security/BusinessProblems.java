@@ -6,7 +6,7 @@ import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.http.converter.HttpMessageNotReadableException;
-@RestControllerAdvice(assignableTypes={AssetController.class,CatalogController.class,PlaceController.class,AuditController.class})
+@RestControllerAdvice(assignableTypes={AssetController.class,AssetCsvController.class,CatalogController.class,PlaceController.class,AuditController.class})
 public class BusinessProblems {
  @ExceptionHandler(BusinessFailure.class) public ResponseEntity<ProblemDetail> business(BusinessFailure ex){return problem(switch(ex.code()){case "INVALID_INPUT"->400;case "NOT_FOUND"->404;default->409;},ex.code(),ex.getMessage());}
  @ExceptionHandler(AuthFailure.class) public ResponseEntity<ProblemDetail> auth(AuthFailure ex){return problem(ex.status(),ex.status()==401?"AUTHENTICATION_REQUIRED":"FORBIDDEN",ex.getMessage());}

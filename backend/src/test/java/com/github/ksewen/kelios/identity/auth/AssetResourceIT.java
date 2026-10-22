@@ -67,6 +67,31 @@ class AssetResourceIT {
  long total(MvcResult r){return ((Number)data(r).get("totalElements")).longValue();}
  MvcResult list(Map<String,String> query)throws Exception{var b=get(path());query.forEach(b::param);var r=request(admin,b,null);assertEquals(200,status(r),r.getResponse().getContentAsString());return r;}
  AssetService.View create(String text,boolean loanable){return assets.register(tenant,new AssetService.Registration(new AssetService.ProductSelection(product),location,owner,loanable,text,text,"not searchable",text),actor);}
+ @Test void csvExportUsesAuthorizedFullCollectionQueryAndEscapesCells()throws Exception{
+  var created=new ArrayList<AssetService.View>();
+  for(int i=0;i<103;i++){clock.now=clock.now.plusSeconds(1);created.add(create("Äpfel-"+i,true));}
+  var foreignLocation=places.create(PlaceService.Kind.LOCATION,other,"Foreign",actor);
+  assets.register(other,new AssetService.Registration(new AssetService.ProductSelection(product),foreignLocation,null,true,"Äpfel foreign",null,null),actor);
+  var formula=assets.register(tenant,new AssetService.Registration(new AssetService.ProductSelection(product),location,null,true,"=HYPERLINK(\"x\",\"y\")",null,null),actor);
+  var user=principal(Scope.TENANT,Role.USER,Status.ACTIVE);
+  var response=request(user,get("/api/v1/asset-csv/export").param("q","Äpfel").param("page","4").param("size","1").param("sort","tag").param("direction","asc").param("delimiter",";"),null);
+  assertEquals(200,status(response));assertTrue(response.getResponse().getContentType().startsWith("text/csv"));
+  String csv=new String(response.getResponse().getContentAsByteArray(),java.nio.charset.StandardCharsets.UTF_8);
+  assertTrue(csv.startsWith("\ufeffid;assetTag;"));assertEquals(104,csv.split("\r\n").length);
+  assertTrue(csv.contains("Äpfel-0"));assertFalse(csv.contains("Äpfel foreign"));assertFalse(csv.contains(formula.id().toString()));
+  assertTrue(csv.indexOf(created.getFirst().id().toString())<csv.indexOf(created.getLast().id().toString()));
+  var forged=request(user,get("/api/v1/asset-csv/export").param("tenantId",other.toString()).param("q","Äpfel foreign"),null);
+  assertEquals(200,status(forged));assertFalse(new String(forged.getResponse().getContentAsByteArray(),java.nio.charset.StandardCharsets.UTF_8).contains("Äpfel foreign"));
+  assertEquals(401,status(request(null,get("/api/v1/asset-csv/export"),null)));
+  var global=request(admin,get("/api/v1/asset-csv/export").param("q","Äpfel foreign"),null);
+  assertEquals(200,status(global));assertTrue(new String(global.getResponse().getContentAsByteArray(),java.nio.charset.StandardCharsets.UTF_8).contains("Äpfel foreign"));
+  assertEquals(200,status(request(principal(Scope.GLOBAL,Role.USER,Status.ACTIVE),get("/api/v1/asset-csv/export").param("tenantId",tenant.toString()).param("q","Äpfel-0"),null)));
+  assertEquals(403,status(request(principal(Scope.TENANT,Role.USER,Status.PENDING),get("/api/v1/asset-csv/export"),null)));
+  var safe=request(admin,get("/api/v1/asset-csv/export").param("tenantId",tenant.toString()).param("q","HYPERLINK"),null);
+  assertEquals(200,status(safe));assertTrue(new String(safe.getResponse().getContentAsByteArray(),java.nio.charset.StandardCharsets.UTF_8).contains("'=HYPERLINK(\"\"x\"\",\"\"y\"\")"));
+  assertEquals(400,status(request(admin,get("/api/v1/asset-csv/export").param("delimiter","\n"),null)));
+  assertEquals(400,status(request(admin,get("/api/v1/asset-csv/export").param("sort","tenantId"),null)));
+ }
  @Test void defaultsSizesScopeAndBeyondEnd()throws Exception{
   var ids=new HashSet<String>();for(int i=0;i<103;i++){clock.now=clock.now.plusSeconds(1);ids.add(create("queryfixture",true).id().toString());}
   var r=list(Map.of());assertEquals(20,data(r).get("size"));assertEquals(0,data(r).get("page"));assertEquals(clock.now.toString(),items(r).getFirst().get("createdAt"));

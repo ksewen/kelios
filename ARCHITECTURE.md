@@ -98,6 +98,7 @@ A flow started before DELETE may complete after recreation if the current config
 
 - PostgreSQL is the source of truth. Use version-controlled schema migrations.
 - Domain operations are transactional; Asset changes and corresponding AssetEvents commit together.
+- Administrative Asset CSV import/export is a non-core adapter. Export delegates authorization and predicates to the established collection read boundary. Legacy import may initialize historical state/Tag date only in an isolated GLOBAL ADMIN row transaction; it does not change normal registration, Tag allocation, transition, Catalog, Place or loan commands. See [the gated Plan](docs/plans/asset-csv-import-export.md) and DOMAIN §9.
 - Business entities use soft deletion where Domain specifies it (except separate User/Identity privacy requirements). Normal browser collections exclude deleted records for every role; no ordinary deleted-data filter or implicit GLOBAL ADMIN repair interface. Retained-reference guards and historical evidence remain intact.
 - Persisted business Domains carry createdBy/createdAt/updatedBy/updatedAt, with authoritative actor identity and UTC instants. Immutable history carries appropriate creation/event attribution; metadata is not permission to update history or to fabricate a live actor FK. Default ordinary business collection order is createdAt DESC; timeline order uses occurredAt DESC. No mandatory UUID secondary order.
 - `AssetEvent` is immutable business history; `AuditLog` records system/administrative actions. They are not interchangeable.

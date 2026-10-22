@@ -1,0 +1,71 @@
+# Asset CSV import/export — isolated administrative tooling
+
+**Baseline:** clean public `main` at `e4ec59a59797c3ec417b85a3cd3f2241cc078614`, matching `origin/main` and the live public main ref on 2026-10-22. Dedicated branch: `feature/asset-csv-import-export`. The HUMAN request to implement the previously reviewed Plan authorized **Gate 1 only** under AGENTS.md's one-gate-at-a-time rule. HUMAN accepted Gate 1 and separately authorized its commit on 2026-10-22. No push, deployment or later-gate authorization is implied.
+
+**Status:** IN PROGRESS; Gate 1 **HUMAN ACCEPTED / CLOSED** on 2026-10-22, with the verification and limits below. Gates 2–5 require separate explicit authorization after the preceding review. This Plan owns CSV-only legacy import and filtered CSV export. Asset, Catalog, Place and loan workflows remain the authoritative core; no historical loan import or normal-service semantic change is in scope.
+
+## Source and policy findings
+
+- `AssetService.register` creates REGISTERED Assets, derives Product relationships, allocates today's UTC Tag, writes one REGISTERED snapshot event and initializes loan fields empty. Later graph transitions enforce their own edges; blocking lifecycle/condition transitions set loanable false prospectively.
+- `AssetTagAllocator.allocate(Instant)` uses UTC `yyyyMMdd-NNN`, a transactional per-day PostgreSQL counter and the unique `asset.asset_tag` constraint. Historical import can pass the mapped date as UTC midnight from an isolated writer without changing normal allocation.
+- Product selection supplies its authoritative Manufacturer and Category. Direct Assets store both Category and Manufacturer without Product. Location is required and Owner optional; their references belong to the Asset Tenant. Catalog names and Place names are not generally unique, so name resolution requires exact scoped candidate discovery and HUMAN selection for ambiguity.
+- `InventoryOperations.list/all` authorizes the effective collection scope; `InventoryReads.list` owns filters, search, sorting and pagination. Export pages that same query in one repeatable-read transaction. Current list projection lacks Note and loanNote; v1 export uses list fields and readable association projections, not per-row detail lookups.
+- `AssetHistory.append` records before/after snapshots atomically with mutation. Import will record one truthful REGISTERED initial snapshot marked with import context and a sanitized administrative audit action. It will not invent lifecycle, loan or return events.
+- `SecurityConfiguration` uses explicit route allowlisting and a 32 KiB JSON-body bound; later multipart import needs a narrow route-specific body policy plus reverse-proxy and parser limits. The ordinary request wrapper and core commands are protected.
+- DOMAIN §9 formerly deferred CSV/XLSX import under normal registration. The current HUMAN direction instead authorizes a CSV-only, isolated legacy-import exception. Future XLSX/Excel remains separate backlog scope; neither historical records nor normal registration are rewritten.
+
+## Contract and security design
+
+**Export.** `GET /api/v1/asset-csv/export` accepts current Asset `q`, filters, sort and direction, optional `tenantId`, and a single-character delimiter (default semicolon). `page` and `size` are ignored. Any ACTIVE user with existing Asset collection read authority may export only that authorized scope; a TENANT identity's signed Tenant wins over supplied context. GLOBAL users may export the authorized aggregate or narrow to one Tenant. The endpoint returns all matching rows up to 20,000 and 20 MiB, UTF-8 BOM, stable headers, readable associations and spreadsheet-safe cells. The v1 columns are Asset ID, Tag, local identifier, Tenant/Product/Manufacturer/Category/Location/Owner IDs and readable names, serial and external inventory numbers, lifecycle, condition, loanability, current borrower and loan dates, creation time and creator ID/display name. Note and loan note are excluded because the authoritative collection projection does not expose them. No CSV import-format equivalence is promised. Exceeding either bound fails without a partial download.
+
+**Import.** GLOBAL ADMIN only, one concrete Tenant per file. Proposed routes under `/api/v1/asset-csv`: `POST /parse-preview`, `POST /preview`, `POST /execute`, with bounded multipart CSV plus mapping/options JSON. There is no persistent ImportJob. The client resends the file; its hash and selected row identities bind Preview to Execute, but Execute revalidates every authoritative fact. Double-submit must not be retried automatically after an uncertain response. Initial limits: 5 MiB file, 5,000 data rows, 64 columns, 32 KiB decoded cell. Enforce at proxy, multipart, parser and output boundaries. Do not log raw data.
+
+Parser uses a CSV library only if the installed platform cannot safely handle quoted multiline CSV; assess Apache Commons CSV before dependency selection. UTF-8 (strict, optional BOM), Windows-1252 and ISO-8859-1 are explicit choices. Auto encoding chooses UTF-8 only when valid; otherwise HUMAN selection is required because 8-bit encodings are ambiguous. Auto delimiter chooses comma, semicolon or tab only with unambiguous consistent parsing; custom single-character delimiter is allowed. A header is mandatory. The raw decoded/parsed preview precedes mapping.
+
+Each source column maps to at most one target and each target to at most one source. Each reference is UUID **xor** Name; Product mode excludes independent Manufacturer/Category. UUID lookup is exact and never falls back; Name uses exact case-insensitive active/authorized matching. One unique match resolves, zero remains unresolved, multiple require explicit selection. Missing resource creation is an explicit HUMAN action through the existing normal creation UI/API and authority, followed by re-resolution of identical source values. No automatic creation or persistent aliasing.
+
+Mapped enum/boolean source values are visible and editable before preview. Targets include local identifier, serial, external inventory number, note, Product or direct Category/Manufacturer, Location, optional Owner, lifecycle, condition, loanability and a historical Tag date input. Defaults when unmapped: REGISTERED, UNKNOWN, false and current UTC Tag date. Historical dates support `yyyy-MM-dd` and `dd.MM.yyyy`; they affect only the normal Tag allocation, not actual creation timestamps. No loan state is imported. Preview classifies Ready/Warning/Error; a permitted legacy state bypass, defaulted field or blocking state combined with loanable=true must be explicit Warning. Invalid references, ownership, values, required fields or known collisions are Error. Preview reserves no Tag.
+
+Execute attempts only selected Ready/Warning rows. A separate isolated row-writer bean owns one transaction per row: revalidate Tenant/references/values, allocate normal Tag, insert complete Asset, append one REGISTERED snapshot with `LEGACY_CSV` context and sanitized `ASSET_LEGACY_IMPORTED` audit. A row rolls back in full on error while later rows proceed. The result lists successful, runtime-failed and preview-excluded counts and original row numbers/reasons. Failed-row download retains original columns plus a KELIOS error column, safely CSV-escaped and formula-protected. Existing constraints do not uniquely identify all re-imports because local identifier/serial/external number are non-unique; preview warns about exact candidates, final writes enforce only existing unique identity/Tag constraints. Operators re-import corrected failed rows rather than the entire file.
+
+## Protected core and blast radius
+
+**Protected, unchanged:** `AssetService`, `Asset`, `AssetTagAllocator`, `AssetHistory`, `InventoryReads`, `InventoryOperations`, `CatalogService`, `PlaceService`, ordinary Asset/Catalog/Place controllers and their mutation DTOs, checkout/return, normal collection query rules. The later import row writer lives in `inventory` to use existing package-level entity persistence semantics, but must never add an import branch to normal commands. If a later gate cannot preserve this boundary, stop and seek HUMAN architectural review.
+
+**New isolated backend code expected:** `AssetCsvController`, `AssetCsvExportService` (Gate 1); `AssetCsvParser`, `AssetCsvReferenceResolver`, import mapping/preview DTOs/service (Gate 2); `AssetCsvImportRowWriter` and execution/result service (Gate 3). New frontend code expected: `AssetCsvImport` route and CSV UI support (Gate 4), export action/client handling (Gate 5). **Minimal peripheral wiring:** explicit Security route, problem advice, multipart/proxy limits, Shell/Asset toolbar, locale/API types, OpenAPI, tests and normative/operator docs. No migration is expected under the current schema.
+
+## Gates
+
+### Gate 1 — export foundation and policy checkpoint
+
+Implement only the bounded read-only export API over authoritative Asset collection reads. Document the isolated legacy exception and route contract; materialize this Plan and backlog/status ownership. PostgreSQL verification: ACTIVE GLOBAL/TENANT roles, tenant forgery, q/filter/sort, page independence beyond 100 rows, Unicode/delimiters/CSV injection, bad input and size bounds. Run focused Maven, OpenAPI parsing/local references, links and `git diff --check`. Stop for HUMAN API/security review. No import write, UI, 8443 deployment, commit or push.
+
+### Gate 2 — isolated parse, mapping, resolution and Preview backend
+
+Implement bounded CSV decoding/parsing, mapped distinct values, exact authoritative reference resolution and Ready/Warning/Error Preview. Cover UTF-8/BOM/Windows-1252/Latin-1, quoted multiline cells, delimiter override, duplicate headers/targets, UUID-vs-Name and Product-vs-direct modes, ambiguity, authorization, Tenant/reference boundaries and stale resolution. Update OpenAPI and run focused unit/PostgreSQL verification. Stop for HUMAN data/security review.
+
+### Gate 3 — isolated per-row execution
+
+Implement transactional row writer and best-effort coordinator with authoritative revalidation, historical-date Tag allocation, truthful initial state/event/audit, partial result and failure CSV. Prove concurrent Tag uniqueness, per-row rollback, later-row continuation, stale Preview, duplicate/re-import cases, structural constraints, current-loan exclusion and no core-command changes. Stop for HUMAN domain/security review.
+
+### Gate 4 — import workflow frontend
+
+Add Asset import route: file/settings/raw preview, mapping, distinct enum/reference resolution with explicit normal creation, Preview and confirmation. Preserve context/authority, stable DOM/focus and stale-response cancellation. Unit/intercepted Chromium at desktop/390px, German/English, keyboard, dirty context changes, all mapping and partial-result states. Stop for HUMAN UX review.
+
+### Gate 5 — export UI and integration closeout
+
+Add collection export for applied q/filters/sort without page limit, delimiter choice and safe download. Run full Maven, frontend unit/build, complete intercepted Chromium, OpenAPI/document checks and `git diff --check`. Synchronize ARCHITECTURE/DOMAIN/OpenAPI/operator guidance and exact verification evidence, then stop for final HUMAN acceptance. No automatic deployment, commit or push.
+
+## Gate 1 execution record
+
+Authorized 2026-10-22 by “Implement the plan.” Baseline and remote main matched; dedicated branch created from clean main. Implemented `GET /api/v1/asset-csv/export` through a new read-only adapter and controller; only security routing, shared problem advice and its controller allowlist were minimally wired. Normal Asset reads and writes were not edited. DOMAIN, ARCHITECTURE, OpenAPI, this Plan, the backlog and implementation checkpoint now distinguish the approved CSV-only legacy import exception from historical future Excel work.
+
+**Verification and correction, 2026-10-22:**
+
+- Initial `./mvnw ... verify` could not create the Maven distribution under the sandboxed user home. The installed Maven 3.9.1 was used without a repository or operator-data change.
+- Initial `mvn -B -Dit.test=AssetResourceIT -Dtest=none -DfailIfNoTests=false verify` stopped before tests because Surefire requires its separate `surefire.failIfNoSpecifiedTests=false` option when only Failsafe ITs are selected.
+- The first focused integration run reached **50 passed / 1 error**: a direct Tenant mismatch test expected 403, but the new adapter raised an unmapped controller exception. The adapter now follows existing collection semantics by ignoring a TENANT caller's supplied Tenant and using the signed Tenant; the test asserts no foreign data. The next run reached **50 passed / 1 error** because the new controller was absent from scoped `BusinessProblems`; adding it restored ordinary 400 problem responses.
+- Final `mvn -B -Dit.test=AssetResourceIT,DomainFoundationIT -Dtest=none -Dsurefire.failIfNoSpecifiedTests=false verify`: **123/123 isolated PostgreSQL integration tests passed**, zero failures/errors/skips (AssetResourceIT 51, DomainFoundationIT 72). The preceding corrected Asset-only run was 51/51. Testcontainers used disposable PostgreSQL, not operator data.
+- OpenAPI YAML parsed: **61 paths, 230 local schema references, zero missing**. Five changed Markdown files had **zero broken local link targets**. `git diff --check` passed; new files had no trailing whitespace.
+
+**Evidence limits accepted by HUMAN on 2026-10-22:** No frontend or 8443 verification belongs to Gate 1. A 20,000-row/20 MiB export rejection and real spreadsheet compatibility were not exercised with a large live dataset; code bounds and focused formula/Unicode/quote, authorization, sorting and >100-row pagination checks were covered. **Review: HUMAN API/security ACCEPTED / CLOSED.** HUMAN separately permitted a Gate 1-only commit. No push, deployment or Gate 2 work.
