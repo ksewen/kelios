@@ -118,10 +118,11 @@ with (root / 'docker-argv.jsonl').open('a') as out:
         values.update(changes)
         d = self.root / '.kelios'
         d.mkdir(exist_ok=True)
-        for sub in ['temporary', 'secrets/auth', 'secrets/tls', 'branding/logos']:
+        for sub in ['temporary', 'secrets/auth', 'secrets/tls/0123456789ab', 'branding/logos']:
             (d / sub).mkdir(parents=True, exist_ok=True)
+        (d / 'certificate.conf').write_text('HOST=localhost\nVERSION=0123456789ab\n')
         (d / 'installation.conf').write_text(''.join(f'{k}={v}\n' for k,v in values.items()))
-        for f in ['secrets/db-password', 'secrets/auth/main.private.pem', 'secrets/auth/main.public.pem', 'secrets/auth/main.aes', 'secrets/tls/certificate.pem', 'secrets/tls/private.pem', 'branding/config.json', 'branding/logos/logo.svg']:
+        for f in ['secrets/db-password', 'secrets/auth/main.private.pem', 'secrets/auth/main.public.pem', 'secrets/auth/main.aes', 'secrets/tls/0123456789ab/certificate.pem', 'secrets/tls/0123456789ab/private.pem', 'branding/config.json', 'branding/logos/logo.svg']:
             (d / f).write_text('fixture-not-a-secret')
         return d
 
@@ -210,6 +211,69 @@ with (root / 'docker-argv.jsonl').open('a') as out:
         config=self.root/'input.conf'
         config.write_text(f'TLS_CERTIFICATE={cert}\nTLS_PRIVATE_KEY={key}\nAUTH_KEYS_DIRECTORY={auth_keys}\nADMIN_EMAIL=script-admin@example.org\nADMIN_PASSWORD_FILE={admin_password}\n')
         return config
+
+    def certificate_cli(self, *args, config=None):
+        command=[str(self.root/'kelios'),'--state-dir',str(self.root/'.kelios')]
+        if config: command += ['--config',str(config)]
+        command += ['--non-interactive',*args]
+        return subprocess.run(command,cwd=self.root,env=self.env,text=True,capture_output=True)
+
+    def test_certificate_init_then_install_preserves_identity_and_keys(self):
+        config=self.noninteractive_config()
+        config.write_text('\n'.join(line for line in config.read_text().splitlines() if not line.startswith(('TLS_CERTIFICATE=', 'TLS_PRIVATE_KEY=', 'AUTH_KEYS_DIRECTORY=')))+'\nBROWSER_HOST=localhost\n')
+        init=self.certificate_cli('certificate','init',config=config)
+        self.assertEqual(init.returncode,0,init.stderr)
+        self.assertFalse((self.root/'docker-argv.jsonl').exists())
+        state=self.root/'.kelios'
+        cert=dict(line.split('=',1) for line in (state/'certificate.conf').read_text().splitlines())
+        material=state/'secrets/tls'/cert['VERSION']
+        original_cert=(material/'certificate.pem').read_bytes()
+        self.assertEqual(cert['HOST'],'localhost')
+        self.assertEqual((state.stat().st_mode & 0o777),0o700)
+        self.assertEqual((material/'private.pem').stat().st_mode & 0o777,0o444)
+        details=subprocess.check_output(['openssl','x509','-in',str(material/'certificate.pem'),'-noout','-ext','subjectAltName'],text=True)
+        self.assertIn('DNS:localhost',details); self.assertIn('IP Address:127.0.0.1',details)
+        self.assertEqual(subprocess.run(['openssl','x509','-in',str(material/'certificate.pem'),'-noout','-checkend',str(729*86400)],capture_output=True).returncode,0)
+        self.assertNotEqual(self.certificate_cli('certificate','init',config=config).returncode,0)
+        prepared=subprocess.run([str(self.root/'kelios'),'--state-dir',str(state),'status'],cwd=self.root,env=self.env,text=True,capture_output=True)
+        self.assertEqual(prepared.returncode,0,prepared.stderr)
+        self.assertIn('installation pending',prepared.stdout)
+        installed=self.certificate_cli('install',config=config)
+        self.assertEqual(installed.returncode,0,installed.stderr)
+        keys=(state/'secrets/auth/main.aes').read_bytes()
+        self.assertTrue((state/'secrets/auth/main.private.pem').exists())
+        self.assertNotEqual(self.certificate_cli('install',config=config).returncode,0)
+        self.assertEqual(original_cert,(material/'certificate.pem').read_bytes())
+        self.assertEqual(keys,(state/'secrets/auth/main.aes').read_bytes())
+
+    def test_certificate_replace_is_explicit_and_failed_import_preserves_active_version(self):
+        config=self.root/'cert.conf';config.write_text('BROWSER_HOST=127.0.0.1\n')
+        init=self.certificate_cli('certificate','init',config=config)
+        self.assertEqual(init.returncode,0,init.stderr)
+        state=self.root/'.kelios'
+        before=(state/'certificate.conf').read_bytes()
+        self.assertNotEqual(self.certificate_cli('certificate','replace',config=config).returncode,0)
+        wrong=self.root/'wrong.pem';wrong.write_text('not a certificate')
+        config.write_text(f'TLS_CERTIFICATE={wrong}\nTLS_PRIVATE_KEY={wrong}\n')
+        invalid=self.certificate_cli('--confirm-replace','certificate','replace',config=config)
+        self.assertNotEqual(invalid.returncode,0)
+        self.assertEqual(before,(state/'certificate.conf').read_bytes())
+        wrong_cert=self.root/'wrong-cert.pem';wrong_key=self.root/'wrong-key.pem'
+        subprocess.run(['openssl','req','-x509','-newkey','rsa:2048','-nodes','-days','1','-subj','/CN=elsewhere.internal','-addext','subjectAltName=DNS:elsewhere.internal','-keyout',str(wrong_key),'-out',str(wrong_cert)],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        config.write_text(f'TLS_CERTIFICATE={wrong_cert}\nTLS_PRIVATE_KEY={wrong_key}\n')
+        self.assertNotEqual(self.certificate_cli('--confirm-replace','certificate','replace',config=config).returncode,0)
+        self.assertEqual(before,(state/'certificate.conf').read_bytes())
+        active=state/'secrets/tls'/before.decode().split('VERSION=')[1].strip()
+        config.write_text(f'TLS_CERTIFICATE={active}/certificate.pem\nTLS_PRIVATE_KEY={wrong_key}\n')
+        self.assertNotEqual(self.certificate_cli('--confirm-replace','certificate','replace',config=config).returncode,0)
+        self.assertEqual(before,(state/'certificate.conf').read_bytes())
+        config.write_text('')
+        replaced=self.certificate_cli('--confirm-replace','certificate','replace',config=config)
+        self.assertEqual(replaced.returncode,0,replaced.stderr)
+        self.assertNotEqual(before,(state/'certificate.conf').read_bytes())
+        old_version=before.decode().split('VERSION=')[1].strip()
+        self.assertTrue((state/'secrets/tls'/old_version/'private.pem').exists())
+        self.assertFalse(list((self.root/'tmp').iterdir()))
 
     def test_noninteractive_install_and_relocated_source(self):
         config=self.noninteractive_config()

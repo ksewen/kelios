@@ -9,10 +9,12 @@ ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
 STATE=${XDG_DATA_HOME:-$HOME/.local/share}/kelios/default
 INPUT_CONFIG=
 NONINTERACTIVE=0
+CONFIRM_REPLACE=0
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --state-dir|--config) [ "$#" -ge 2 ] || { printf 'Missing value for %s\n' "$1" >&2; exit 1; }; if [ "$1" = --state-dir ]; then STATE=$2; else INPUT_CONFIG=$2; fi; shift 2;;
     --non-interactive) NONINTERACTIVE=1; shift;;
+    --confirm-replace) CONFIRM_REPLACE=1; shift;;
     *) break;;
   esac
 done
@@ -30,23 +32,25 @@ ECHO_OFF=0
 TEMP=
 ENV_FILE=
 WORK=
+STAGED_CERT=
 fail() { printf 'KELIOS: %s\n' "$*" >&2; exit 1; }
 cleanup() {
   if [ "$ECHO_OFF" = 1 ]; then stty echo </dev/tty 2>/dev/null || :; fi
   if [ -n "$WORK" ] && [ -d "$WORK" ]; then
-    rm -f "$WORK/compose.env" "$WORK/recovery/password" "$WORK/recovery/output"
+    rm -f "$WORK/compose.env" "$WORK/recovery/password" "$WORK/recovery/output" "$WORK/certificate.pem" "$WORK/private.pem"
     rmdir "$WORK/recovery" 2>/dev/null || :
     rmdir "$WORK" 2>/dev/null || :
   fi
+  if [ -n "$STAGED_CERT" ] && [ -d "$STAGED_CERT" ]; then rm -f "$STAGED_CERT/certificate.pem" "$STAGED_CERT/private.pem"; rmdir "$STAGED_CERT" 2>/dev/null || :; fi
   if [ "$LOCKED" = 1 ]; then rmdir "$LOCK" 2>/dev/null || :; fi
 }
 trap cleanup 0
 trap 'exit 130' INT
 trap 'exit 143' TERM HUP
-usage() { printf 'Usage: ./kelios [--state-dir ABSOLUTE_PATH] [--config FILE] [--non-interactive] {doctor|install|start|stop|status|config|uninstall|recover-admin}\n'; }
-[ "$#" = 1 ] || { usage; exit 1; }
-COMMAND=$1
-case "$COMMAND" in doctor|install|start|stop|status|config|uninstall|recover-admin) ;; *) usage; exit 1;; esac
+usage() { printf 'Usage: ./kelios [--state-dir ABSOLUTE_PATH] [--config FILE] [--non-interactive] [--confirm-replace] {doctor|install|start|stop|status|config|uninstall|recover-admin|certificate init|certificate replace}\n'; }
+case "$*" in 'certificate init'|'certificate replace') COMMAND=$*;; *) [ "$#" = 1 ] || { usage; exit 1; }; COMMAND=$1;; esac
+case "$COMMAND" in doctor|install|start|stop|status|config|uninstall|recover-admin|'certificate init'|'certificate replace') ;; *) usage; exit 1;; esac
+[ "$CONFIRM_REPLACE" = 0 ] || [ "$COMMAND" = 'certificate replace' ] || fail '--confirm-replace is only valid for certificate replace.'
 case "$ROOT" in *[\'\"\$\`\\]* ) fail 'Repository path contains unsupported quoting characters.';; esac
 [ ! -L "$STATE" ] || fail 'Installation directory must not be a symlink.'
 workspace() {
@@ -106,11 +110,11 @@ doctor() {
     fail 'Docker daemon is unavailable. Start the installed Docker daemon and check its context.'
   fi
   command -v openssl >/dev/null 2>&1 || fail 'OpenSSL is absent. Install OpenSSL before deploying KELIOS.'
-  if [ -e "$STATE" ]; then load; files; printf 'KELIOS doctor: basic prerequisites and saved files present.\n'; else printf 'KELIOS doctor: basic prerequisites available; no installation at %s.\n' "$STATE"; fi
+  if [ -f "$STATE/installation.conf" ]; then load; files; printf 'KELIOS doctor: basic prerequisites and saved files present.\n'; elif [ -f "$STATE/certificate.conf" ]; then certificate_load; BROWSER_HOST=$CERT_HOST; tls "$CERT_DIR/certificate.pem" "$CERT_DIR/private.pem"; printf 'KELIOS doctor: certificate provisioned; installation pending.\n'; else printf 'KELIOS doctor: basic prerequisites available; no installation at %s.\n' "$STATE"; fi
 }
 lock() {
   [ ! -L "$LOCK" ] || fail 'Unsafe installation lock.'
-  if [ "$COMMAND" = install ]; then mkdir -p "$(dirname "$STATE")" || fail 'Cannot create state parent.'; fi
+  case "$COMMAND" in install|'certificate init') mkdir -p "$(dirname "$STATE")" || fail 'Cannot create state parent.';; esac
   mkdir "$LOCK" 2>/dev/null || fail 'Another operation or an abandoned .kelios.lock exists. Inspect before removing the lock.'
   LOCKED=1
 }
@@ -210,13 +214,15 @@ branding() {
   mv -f "$BRANDING_TEMP" "$STATE/branding/config.json"
 }
 compose_env() {
+  certificate_load
+  [ "$CERT_HOST" = "$BROWSER_HOST" ] || fail 'Certificate identity differs from the installation browser host.'
   case "$BIND" in *:*) PUBLISH_BIND=[$BIND];; *) PUBLISH_BIND=$BIND;; esac
   case "$DB_HOST" in *:*) JDBC_HOST=[$DB_HOST];; *) JDBC_HOST=$DB_HOST;; esac
   workspace
   ENV_FILE=$WORK/compose.env
   { printf 'KELIOS_BIND_ADDRESS=%s\nKELIOS_HTTP_PORT=%s\nKELIOS_HTTPS_PORT=%s\n' "$PUBLISH_BIND" "$HTTP_PORT" "$HTTPS_PORT"
     printf 'KELIOS_DATABASE_URL=jdbc:postgresql://%s:%s/%s\nKELIOS_DATABASE_USER=%s\n' "$JDBC_HOST" "$DB_PORT" "$DB_NAME" "$DB_USER"
-    printf "KELIOS_DB_PASSWORD_FILE='%s/secrets/db-password'\nKELIOS_AUTH_KEY_DIRECTORY='%s/secrets/auth'\nKELIOS_TLS_DIRECTORY='%s/secrets/tls'\nKELIOS_BRANDING_DIRECTORY='%s/branding'\nKELIOS_LOGO_DIRECTORY='%s/branding/logos'\n" "$STATE" "$STATE" "$STATE" "$STATE" "$STATE"
+    printf "KELIOS_DB_PASSWORD_FILE='%s/secrets/db-password'\nKELIOS_AUTH_KEY_DIRECTORY='%s/secrets/auth'\nKELIOS_TLS_DIRECTORY='%s'\nKELIOS_BRANDING_DIRECTORY='%s/branding'\nKELIOS_LOGO_DIRECTORY='%s/branding/logos'\n" "$STATE" "$STATE" "$CERT_DIR" "$STATE" "$STATE"
     printf 'KELIOS_AUTH_PUBLIC_ORIGIN=https://%s:%s\nKELIOS_AUTH_ISSUER=%s\n' "$BROWSER_HOST" "$HTTPS_PORT" "$ISSUER"
   } > "$ENV_FILE"
   # Ambient shell deployment settings must not override recorded installation.
@@ -244,7 +250,9 @@ owned() {
   done
 }
 files() {
-  for f in installation.conf secrets/db-password secrets/auth/main.private.pem secrets/auth/main.public.pem secrets/auth/main.aes secrets/tls/certificate.pem secrets/tls/private.pem branding/config.json; do
+  certificate_load
+  [ "$CERT_HOST" = "$BROWSER_HOST" ] || fail 'Certificate identity differs from the installation browser host.'
+  for f in installation.conf secrets/db-password secrets/auth/main.private.pem secrets/auth/main.public.pem secrets/auth/main.aes branding/config.json; do
     [ -f "$STATE/$f" ] && [ ! -L "$STATE/$f" ] || fail "Required installation file missing or unsafe: $f"
   done
   for f in "$LOGO" "$ORG_LOGO"; do [ -z "$f" ] || { [ -f "$STATE/branding/logos/$f" ] && [ ! -L "$STATE/branding/logos/$f" ]; } || fail 'Required logo file missing or unsafe.'; done
@@ -264,10 +272,10 @@ crypto() {
     [ "$bytes" = 32 ] || fail 'AES key must be base64-encoded 32 bytes.'
     unset encoded
   done
-  tls "$STATE/secrets/tls/certificate.pem" "$STATE/secrets/tls/private.pem"
+  tls "$CERT_DIR/certificate.pem" "$CERT_DIR/private.pem"
 }
 tls() {
-  [ -f "$1" ] && [ -f "$2" ] || fail 'Supply readable local TLS certificate and private-key files. Automatic issuance is not supported.'
+  [ -f "$1" ] && [ -f "$2" ] || fail 'Supply readable TLS certificate and private-key files, or run certificate init before installation.'
   openssl x509 -in "$1" -checkend 0 -noout >/dev/null 2>&1 || fail 'TLS certificate invalid or expired.'
   openssl pkey -in "$2" -passin pass: -check -noout >/dev/null 2>&1 || fail 'TLS key must be readable, valid and unencrypted for nginx.'
   a=$(openssl x509 -in "$1" -pubkey -noout 2>/dev/null | openssl dgst -sha256)
@@ -275,6 +283,68 @@ tls() {
   [ "$a" = "$b" ] || fail 'TLS certificate/private-key mismatch.'
   case "$BROWSER_HOST" in *[!0-9.]* ) check=-checkhost;; *) check=-checkip;; esac
   openssl x509 -in "$1" "$check" "$BROWSER_HOST" -noout >/dev/null 2>&1 || fail 'TLS certificate does not cover the browser host.'
+}
+certificate_load() {
+  [ -f "$STATE/certificate.conf" ] && [ ! -L "$STATE/certificate.conf" ] || fail 'Certificate state missing; provision a certificate before installation.'
+  [ -z "$(find "$STATE" -type l -print)" ] || fail 'Certificate state contains unsafe symlinks.'
+  IFS= read -r cert_host_line < "$STATE/certificate.conf" || fail 'Invalid certificate state.'
+  cert_version_line=$(sed -n '2p' "$STATE/certificate.conf")
+  [ "$(wc -l < "$STATE/certificate.conf" | tr -d ' ')" = 2 ] || fail 'Invalid certificate state.'
+  case "$cert_host_line" in HOST=*) CERT_HOST=${cert_host_line#HOST=};; *) fail 'Invalid certificate identity.';; esac
+  host "$CERT_HOST"
+  case "$CERT_HOST" in *:*) fail 'Certificate identity must be a DNS name or IPv4 address.';; esac
+  case "$cert_version_line" in VERSION=*) CERT_VERSION=${cert_version_line#VERSION=};; *) fail 'Invalid certificate version.';; esac
+  case "$CERT_VERSION" in ''|*[!0-9a-f]*) fail 'Invalid certificate version.';; esac
+  [ "${#CERT_VERSION}" = 12 ] || fail 'Invalid certificate version.'
+  CERT_DIR=$STATE/secrets/tls/$CERT_VERSION
+  [ -d "$CERT_DIR" ] && [ ! -L "$CERT_DIR" ] || fail 'Active certificate directory missing or unsafe.'
+  for f in certificate.pem private.pem; do [ -f "$CERT_DIR/$f" ] && [ ! -L "$CERT_DIR/$f" ] || fail 'Active certificate file missing or unsafe.'; done
+}
+certificate_store() {
+  [ -d "$STATE/secrets/tls" ] || mkdir -p "$STATE/secrets/tls"
+  chmod 755 "$STATE/secrets/tls"
+  STAGED_CERT=$(mktemp -d "$STATE/secrets/tls/.pending.XXXXXXXX") || fail 'Cannot stage certificate.'
+  cp "$1" "$STAGED_CERT/certificate.pem"; cp "$2" "$STAGED_CERT/private.pem"
+  chmod 755 "$STAGED_CERT"; chmod 444 "$STAGED_CERT/certificate.pem" "$STAGED_CERT/private.pem"
+  tls "$STAGED_CERT/certificate.pem" "$STAGED_CERT/private.pem"
+  new_version=$(openssl rand -hex 6)
+  [ ! -e "$STATE/secrets/tls/$new_version" ] || fail 'Certificate version collision; retry.'
+  mv "$STAGED_CERT" "$STATE/secrets/tls/$new_version"; STAGED_CERT=
+  pointer=$(mktemp "$STATE/certificate.XXXXXXXX") || fail 'Cannot stage certificate pointer.'
+  printf 'HOST=%s\nVERSION=%s\n' "$BROWSER_HOST" "$new_version" > "$pointer"
+  chmod 600 "$pointer"; mv -f "$pointer" "$STATE/certificate.conf"
+  CERT_DIR=$STATE/secrets/tls/$new_version
+}
+certificate_generate() {
+  workspace
+  case "$BROWSER_HOST" in *[!0-9.]*) san=DNS:$BROWSER_HOST;; *) bind "$BROWSER_HOST"; san=IP:$BROWSER_HOST;; esac
+  [ "$BROWSER_HOST" != localhost ] || san=$san,IP:127.0.0.1
+  openssl req -x509 -newkey rsa:3072 -nodes -keyout "$WORK/private.pem" -out "$WORK/certificate.pem" -days 730 -subj "/CN=$BROWSER_HOST" -addext "subjectAltName=$san" >/dev/null 2>&1 || fail 'Private certificate generation failed; check OpenSSL support.'
+  certificate_store "$WORK/certificate.pem" "$WORK/private.pem"
+  rm -f "$WORK/private.pem" "$WORK/certificate.pem"
+}
+certificate_command() {
+  if [ "$COMMAND" = 'certificate init' ]; then
+    [ ! -e "$STATE" ] || fail 'Certificate or installation state already exists; nothing was overwritten.'
+    prompt 'Browser hostname (certificate must cover it)' 'localhost'; BROWSER_HOST=$ANSWER
+    host "$BROWSER_HOST"
+    case "$BROWSER_HOST" in *:*) fail 'Use a DNS name or IPv4 address for the certificate.';; esac
+    mkdir "$STATE"; chmod 700 "$STATE"
+    certificate_generate
+    printf 'Private certificate provisioned for %s (730 days). Trust it explicitly on intended clients; run ./kelios install.\n' "$BROWSER_HOST"
+  else
+    certificate_load
+    BROWSER_HOST=$CERT_HOST
+    if [ -f "$STATE/installation.conf" ]; then load; [ "$BROWSER_HOST" = "$CERT_HOST" ] || fail 'Certificate identity differs from the installation browser host.'; fi
+    [ -z "${C_BROWSER_HOST-}" ] || [ "$C_BROWSER_HOST" = "$BROWSER_HOST" ] || fail 'Replacement cannot change the persisted browser host.'
+    if [ "$NONINTERACTIVE" = 1 ]; then [ "$CONFIRM_REPLACE" = 1 ] || fail 'Use --confirm-replace for noninteractive certificate replacement.'
+    else terminal; prompt "Type REPLACE $BROWSER_HOST exactly to replace the certificate (self-signed unless PEM paths are configured)" ''; [ "$ANSWER" = "REPLACE $BROWSER_HOST" ] || fail 'Certificate replacement canceled.'; fi
+    if [ -n "${C_TLS_CERTIFICATE-}${C_TLS_PRIVATE_KEY-}" ]; then
+      [ -n "${C_TLS_CERTIFICATE-}" ] && [ -n "${C_TLS_PRIVATE_KEY-}" ] || fail 'Provide both TLS_CERTIFICATE and TLS_PRIVATE_KEY.'
+      certificate_store "$C_TLS_CERTIFICATE" "$C_TLS_PRIVATE_KEY"
+    else certificate_generate; fi
+    printf 'Certificate replaced for %s. Previous version retained. Run ./kelios start to apply to the runtime; clients may need to trust the new certificate.\n' "$BROWSER_HOST"
+  fi
 }
 start_runtime() {
   [ "$PHASE" != data-deleted ] || fail 'Managed data was permanently deleted. Archive/remove preserved .kelios state explicitly before a fresh install.'
@@ -328,7 +398,14 @@ theme() {
 }
 install() {
   if [ "$NONINTERACTIVE" != 1 ]; then terminal; fi
-  [ ! -e "$STATE" ] || fail 'Installation state already exists; use start or recover-admin. Nothing was overwritten.'
+  PREPROVISIONED=0
+  if [ -e "$STATE" ]; then
+    [ ! -f "$STATE/installation.conf" ] && [ -f "$STATE/certificate.conf" ] || fail 'Installation state already exists; use start or recover-admin. Nothing was overwritten.'
+    certificate_load; PREPROVISIONED=1
+    [ -z "$(find "$STATE" -type f ! -path "$STATE/certificate.conf" ! -path "$CERT_DIR/certificate.pem" ! -path "$CERT_DIR/private.pem" -print -quit)" ] || fail 'Pre-provisioned state contains unexpected files; refused installation.'
+    [ -z "${C_BROWSER_HOST-}" ] || [ "$C_BROWSER_HOST" = "$CERT_HOST" ] || fail 'Configured browser host differs from pre-provisioned certificate identity.'
+    [ -z "${C_TLS_CERTIFICATE-}${C_TLS_PRIVATE_KEY-}" ] || fail 'Certificate already provisioned; do not supply TLS paths to install.'
+  fi
   if [ "$NONINTERACTIVE" = 1 ]; then
     [ -n "${C_ADMIN_EMAIL-}" ] || fail 'ADMIN_EMAIL is required for noninteractive installation.'
     [ -n "${C_ADMIN_PASSWORD_FILE-}" ] && [ -f "$C_ADMIN_PASSWORD_FILE" ] && [ -r "$C_ADMIN_PASSWORD_FILE" ] && [ ! -L "$C_ADMIN_PASSWORD_FILE" ] || fail 'ADMIN_PASSWORD_FILE must name a readable regular file.'
@@ -338,11 +415,13 @@ install() {
   case "$BIND" in 127.*|::1) ;; *) printf 'Warning: this bind may expose the local installation beyond this machine.\n';; esac
   prompt 'HTTP technical/health port' '8080'; HTTP_PORT=$ANSWER; port "$HTTP_PORT"
   prompt 'HTTPS application port' '8443'; HTTPS_PORT=$ANSWER; port "$HTTPS_PORT"
-  prompt 'Browser hostname (certificate must cover it)' 'localhost'; BROWSER_HOST=$ANSWER; host "$BROWSER_HOST"
+  if [ "$PREPROVISIONED" = 1 ]; then BROWSER_HOST=$CERT_HOST; else prompt 'Browser hostname (certificate must cover it)' 'localhost'; BROWSER_HOST=$ANSWER; host "$BROWSER_HOST"; fi
   ISSUER=https://$BROWSER_HOST:$HTTPS_PORT
-  prompt 'TLS certificate path (required)' ''; CERT=$ANSWER
-  prompt 'TLS private-key path (required)' ''; KEY=$ANSWER
-  tls "$CERT" "$KEY"
+  if [ "$PREPROVISIONED" = 1 ]; then tls "$CERT_DIR/certificate.pem" "$CERT_DIR/private.pem"; else
+    prompt 'TLS certificate path (required)' ''; CERT=$ANSWER
+    prompt 'TLS private-key path (required)' ''; KEY=$ANSWER
+    tls "$CERT" "$KEY"
+  fi
   prompt 'Database mode: managed or external' 'managed'; MODE=$ANSWER
   DB_HOST=postgres; DB_PORT=5432; DB_NAME=kelios; DB_USER=kelios
   case "$MODE" in managed) DB_PASSWORD=$(openssl rand -hex 32);;
@@ -362,11 +441,11 @@ install() {
   if [ -n "$SUPPLIED_KEYS" ]; then
     for f in main.private.pem main.public.pem main.aes; do [ -f "$SUPPLIED_KEYS/$f" ] || fail 'Supplied key directory incomplete.'; done
   fi
-  mkdir "$STATE"; chmod 700 "$STATE"
+  if [ "$PREPROVISIONED" = 0 ]; then mkdir "$STATE"; chmod 700 "$STATE"; fi
   mkdir -p "$STATE/secrets/auth" "$STATE/secrets/tls" "$STATE/branding/logos" "$STATE/diagnostics"
   chmod 755 "$STATE/secrets/auth" "$STATE/secrets/tls" "$STATE/branding" "$STATE/branding/logos"
   if [ "$MODE" = external ] && [ "$NONINTERACTIVE" = 1 ]; then cp "$C_DB_PASSWORD_FILE" "$STATE/secrets/db-password"; else printf '%s' "$DB_PASSWORD" > "$STATE/secrets/db-password"; unset DB_PASSWORD; fi
-  cp "$CERT" "$STATE/secrets/tls/certificate.pem"; cp "$KEY" "$STATE/secrets/tls/private.pem"
+  if [ "$PREPROVISIONED" = 0 ]; then certificate_store "$CERT" "$KEY"; fi
   if [ -n "$SUPPLIED_KEYS" ]; then
     for supplied in "$SUPPLIED_KEYS/"*; do
       [ -f "$supplied" ] || fail 'Supplied authentication directory must contain key files only.'
@@ -381,7 +460,7 @@ install() {
     openssl pkey -in "$STATE/secrets/auth/main.private.pem" -pubout -out "$STATE/secrets/auth/main.public.pem" 2>/dev/null
     openssl rand -base64 32 > "$STATE/secrets/auth/main.aes"
   fi
-  chmod 444 "$STATE/secrets/db-password" "$STATE/secrets/auth/"* "$STATE/secrets/tls/"*
+  chmod 444 "$STATE/secrets/db-password" "$STATE/secrets/auth/"*
   LOGO=; ORG_LOGO=
   [ -z "$ORG_LOGO_SOURCE" ] || logo_copy "$ORG_LOGO_SOURCE" organization
   save; branding; compose_env; crypto; owned
@@ -399,6 +478,7 @@ install() {
 }
 status() {
   if [ ! -e "$STATE" ]; then printf 'KELIOS\n\nStatus: not initialized\n'; return; fi
+  if [ ! -f "$STATE/installation.conf" ] && [ -f "$STATE/certificate.conf" ]; then certificate_load; printf 'KELIOS\n\nStatus: certificate provisioned for %s; installation pending\n' "$CERT_HOST"; return; fi
   load; compose_env; owned
   SUMMARY=running; ROWS=
   SERVICES='backend frontend'; [ "$MODE" != managed ] || SERVICES="$SERVICES postgres"
@@ -416,7 +496,7 @@ status() {
 configure() {
   terminal; files
   NEW_LOGO=; NEW_ORG_LOGO=; CLEAR_LOGO=false; CLEAR_ORG_LOGO=false
-  printf 'Changes apply on next ./kelios start; branding then appears on page reload. TLS rotation is not supported here.\n'
+  printf 'Changes apply on next ./kelios start; branding then appears on page reload. Use certificate replace for explicit TLS rotation.\n'
   while :; do
     printf '\nKELIOS Configuration\n1. HTTP port\n2. HTTPS port\n3. Listen address\n4. Theme\n5. Six theme colors\n6. Legacy logo\n7. Organization logo\n8. Save and exit\n0. Exit without changes\n'
     prompt 'Choice' '0'
@@ -457,6 +537,11 @@ uninstall() {
 }
 read_config
 if [ "$COMMAND" = doctor ]; then doctor; exit; fi
+case "$COMMAND" in 'certificate init'|'certificate replace')
+  validate_input_config
+  command -v openssl >/dev/null 2>&1 || fail 'OpenSSL is required for certificate operations.'
+  lock; certificate_command; exit;;
+esac
 prerequisites
 if [ "$COMMAND" = status ]; then status; exit; fi
 if [ "$COMMAND" != install ] && [ ! -d "$STATE" ]; then fail 'Installation is not initialized. Run ./kelios install.'; fi

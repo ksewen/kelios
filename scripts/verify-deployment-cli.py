@@ -45,7 +45,8 @@ def config(d):
 def dc(d,*args):
     c=config(d); state=d/'.kelios'
     env=BASE/(d.name+'-verify.env')
-    env.write_text(f"KELIOS_DB_PASSWORD_FILE={state}/secrets/db-password\nKELIOS_BIND_ADDRESS={c['BIND']}\nKELIOS_HTTP_PORT={c['HTTP_PORT']}\nKELIOS_HTTPS_PORT={c['HTTPS_PORT']}\nKELIOS_DATABASE_URL=jdbc:postgresql://{c['DB_HOST']}:{c['DB_PORT']}/{c['DB_NAME']}\nKELIOS_DATABASE_USER={c['DB_USER']}\nKELIOS_AUTH_KEY_DIRECTORY={state}/secrets/auth\nKELIOS_TLS_DIRECTORY={state}/secrets/tls\nKELIOS_AUTH_PUBLIC_ORIGIN=https://{c['BROWSER_HOST']}:{c['HTTPS_PORT']}\nKELIOS_AUTH_ISSUER={c['ISSUER']}\nKELIOS_BRANDING_DIRECTORY={state}/branding\nKELIOS_LOGO_DIRECTORY={state}/branding/logos\n")
+    cert=dict(line.split('=',1) for line in (state/'certificate.conf').read_text().splitlines())
+    env.write_text(f"KELIOS_DB_PASSWORD_FILE={state}/secrets/db-password\nKELIOS_BIND_ADDRESS={c['BIND']}\nKELIOS_HTTP_PORT={c['HTTP_PORT']}\nKELIOS_HTTPS_PORT={c['HTTPS_PORT']}\nKELIOS_DATABASE_URL=jdbc:postgresql://{c['DB_HOST']}:{c['DB_PORT']}/{c['DB_NAME']}\nKELIOS_DATABASE_USER={c['DB_USER']}\nKELIOS_AUTH_KEY_DIRECTORY={state}/secrets/auth\nKELIOS_TLS_DIRECTORY={state}/secrets/tls/{cert['VERSION']}\nKELIOS_AUTH_PUBLIC_ORIGIN=https://{c['BROWSER_HOST']}:{c['HTTPS_PORT']}\nKELIOS_AUTH_ISSUER={c['ISSUER']}\nKELIOS_BRANDING_DIRECTORY={state}/branding\nKELIOS_LOGO_DIRECTORY={state}/branding/logos\n")
     files=['-f',str(d/'deploy/compose.yaml')]
     if c['MODE']=='managed': files+=['-f',str(d/'deploy/compose.postgres.yaml')]
     files+=['-f',str(d/'deploy/compose.auth.yaml')]
@@ -93,7 +94,7 @@ def recover_answers(user='cli-admin'):
 PASSWORD='Aa9!'+secrets.token_hex(20)
 EXTERNAL_PASSWORD=secrets.token_hex(32)
 (BASE/'password').write_text(PASSWORD); (BASE/'password').chmod(0o600)
-# Operator-supplied test fixture only: kelios itself NEVER issues certificates.
+# Operator-supplied PEM path fixture; separate certificate commands are tested by focused controls.
 if not (BASE/'tls-cert.pem').exists():
     run(['openssl','req','-x509','-newkey','rsa:3072','-noenc','-keyout',str(BASE/'tls-key.pem'),'-out',str(BASE/'tls-cert.pem'),'-days','2','-subj','/CN=localhost','-addext','subjectAltName=DNS:localhost,IP:127.0.0.1'])
 MANAGED=fixture('managed')
