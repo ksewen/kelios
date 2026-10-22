@@ -47,9 +47,9 @@ cleanup() {
 trap cleanup 0
 trap 'exit 130' INT
 trap 'exit 143' TERM HUP
-usage() { printf 'Usage: ./kelios [--state-dir ABSOLUTE_PATH] [--config FILE] [--non-interactive] [--confirm-replace] {doctor|install|start|stop|status|config|uninstall|recover-admin|certificate init|certificate replace}\n'; }
-case "$*" in 'certificate init'|'certificate replace') COMMAND=$*;; *) [ "$#" = 1 ] || { usage; exit 1; }; COMMAND=$1;; esac
-case "$COMMAND" in doctor|install|start|stop|status|config|uninstall|recover-admin|'certificate init'|'certificate replace') ;; *) usage; exit 1;; esac
+usage() { printf 'Usage: ./kelios [--state-dir ABSOLUTE_PATH] [--config FILE] [--non-interactive] [--confirm-replace] {doctor|install|start|stop|status|config|uninstall|recover-admin|certificate init|certificate replace|host prepare docker-access}\n'; }
+case "$*" in 'certificate init'|'certificate replace'|'host prepare docker-access') COMMAND=$*;; *) [ "$#" = 1 ] || { usage; exit 1; }; COMMAND=$1;; esac
+case "$COMMAND" in doctor|install|start|stop|status|config|uninstall|recover-admin|'certificate init'|'certificate replace'|'host prepare docker-access') ;; *) usage; exit 1;; esac
 [ "$CONFIRM_REPLACE" = 0 ] || [ "$COMMAND" = 'certificate replace' ] || fail '--confirm-replace is only valid for certificate replace.'
 case "$ROOT" in *[\'\"\$\`\\]* ) fail 'Repository path contains unsupported quoting characters.';; esac
 [ ! -L "$STATE" ] || fail 'Installation directory must not be a symlink.'
@@ -91,26 +91,73 @@ validate_input_config() {
   case "${C_MODE-}" in ''|managed|external) ;; *) fail 'Database mode must be managed or external.';; esac
   case "${C_THEME-}" in ''|orange|green|blue) ;; *) fail 'Theme must be orange, green or blue.';; esac
 }
-prerequisites() {
-  command -v docker >/dev/null 2>&1 || fail 'Install Docker with Docker Compose first.'
-  docker info >/dev/null 2>&1 || fail 'Docker daemon is unavailable.'
-  docker compose version >/dev/null 2>&1 || fail 'Docker Compose v2 is required.'
-  command -v openssl >/dev/null 2>&1 || fail 'OpenSSL is required for key generation and validation.'
+docker_endpoint() {
+  [ -z "${DOCKER_HOST-}" ] || [ -z "${DOCKER_CONTEXT-}" ] || fail 'DOCKER_HOST and DOCKER_CONTEXT are both set; select one unambiguous local Docker endpoint.'
+  if [ -n "${DOCKER_CONTEXT-}" ]; then endpoint=$(docker context inspect "$DOCKER_CONTEXT" --format '{{.Endpoints.docker.Host}}' 2>/dev/null) || fail 'Cannot inspect the selected Docker context.'
+  elif [ -n "${DOCKER_HOST-}" ]; then endpoint=$DOCKER_HOST
+  else endpoint=$(docker context inspect --format '{{.Endpoints.docker.Host}}' 2>/dev/null) || fail 'Cannot inspect the selected Docker context.'; fi
+  case "$endpoint" in unix:///*) ;; *) fail 'A local Unix-socket Docker context is required because KELIOS bind-mounts local instance files. Select a local Docker context.';; esac
 }
-doctor() {
-  validate_input_config
+docker_access() {
+  [ "$(id -u)" != 0 ] || fail 'Run KELIOS as the ordinary operator user so persistent state is not root-owned.'
   case "$(uname -s)" in Linux|Darwin) ;; *) fail 'Unsupported host OS. Use a tested Linux server or macOS development host.';; esac
   case "$(uname -m)" in x86_64|aarch64|arm64) ;; *) fail 'Unsupported CPU architecture. Use AMD64 or ARM64.';; esac
   command -v docker >/dev/null 2>&1 || fail 'Docker Engine is absent. Install Docker Engine before deploying KELIOS.'
-  docker compose version >/dev/null 2>&1 || fail 'Docker Compose v2 is absent. Install the Compose plugin.'
-  if ! docker info >/dev/null 2>&1; then
-    if [ -S /var/run/docker.sock ] && [ ! -w /var/run/docker.sock ]; then
-      fail 'Docker socket access denied. The operator account needs authorized Docker access; this grants high-privilege host control.'
-    fi
-    fail 'Docker daemon is unavailable. Start the installed Docker daemon and check its context.'
+  docker compose version >/dev/null 2>&1 || fail 'Docker Compose plugin is absent or unusable. Install a supported Compose plugin (v2 or later).'
+  docker_endpoint
+  if docker_error=$(docker info 2>&1 >/dev/null); then :; else
+    case "$docker_error" in *'permission denied'*|*'Permission denied'*) fail 'Docker socket access denied. Authorized Docker access grants high-privilege host control; on supported Linux hosts inspect ./kelios host prepare docker-access.';; esac
+    fail 'Docker daemon is unavailable. Start the installed Docker daemon and check its context/socket.'
   fi
+  docker_security=$(docker info --format '{{json .SecurityOptions}}' 2>/dev/null) || fail 'Cannot inspect Docker security options.'
+  case "$docker_security" in *rootless*) fail 'Rootless Docker is outside the supported deployment contract.';; esac
+}
+prerequisites() {
+  docker_access
+  command -v openssl >/dev/null 2>&1 || fail 'OpenSSL is required for key generation and validation.'
+}
+port_free() {
+  if [ "$(uname -s)" = Linux ]; then
+    command -v ss >/dev/null 2>&1 || fail 'Linux port preflight needs ss (iproute2). Install it before deploying KELIOS.'
+    listeners=$(ss -H -ltn) || fail 'Cannot inspect listening TCP ports with ss.'
+    if printf '%s\n' "$listeners" | awk -v port="$1" '$4 ~ ":" port "$" {busy=1} END {exit !busy}'; then fail "Host port $1 is already listening. Choose another port or stop the conflicting service."; fi
+  else
+    command -v lsof >/dev/null 2>&1 || fail 'macOS port preflight needs lsof.'
+    if lsof -nP "-iTCP:$1" -sTCP:LISTEN >/dev/null 2>&1; then fail "Host port $1 is already listening. Choose another port or stop the conflicting service."; fi
+  fi
+}
+doctor() {
+  validate_input_config
+  docker_access
   command -v openssl >/dev/null 2>&1 || fail 'OpenSSL is absent. Install OpenSSL before deploying KELIOS.'
-  if [ -f "$STATE/installation.conf" ]; then load; files; printf 'KELIOS doctor: basic prerequisites and saved files present.\n'; elif [ -f "$STATE/certificate.conf" ]; then certificate_load; BROWSER_HOST=$CERT_HOST; tls "$CERT_DIR/certificate.pem" "$CERT_DIR/private.pem"; printf 'KELIOS doctor: certificate provisioned; installation pending.\n'; else printf 'KELIOS doctor: basic prerequisites available; no installation at %s.\n' "$STATE"; fi
+  if [ -f "$STATE/installation.conf" ]; then load; files; compose_env; owned; compose config --quiet >/dev/null 2>&1 || fail 'Saved deployment configuration does not render with Compose.'; printf 'KELIOS doctor: prerequisites, saved files and deployment identity valid.\n'; elif [ -f "$STATE/certificate.conf" ]; then certificate_load; BROWSER_HOST=$CERT_HOST; tls "$CERT_DIR/certificate.pem" "$CERT_DIR/private.pem"; port_free "${C_HTTP_PORT:-8080}"; port_free "${C_HTTPS_PORT:-8443}"; printf 'KELIOS doctor: certificate provisioned; installation pending.\n'; else port_free "${C_HTTP_PORT:-8080}"; port_free "${C_HTTPS_PORT:-8443}"; printf 'KELIOS doctor: basic prerequisites and requested ports available; no installation at %s.\n' "$STATE"; fi
+}
+host_prepare_docker_access() {
+  [ "$(uname -s)" = Linux ] || fail 'Docker-access preparation is supported only on Linux hosts.'
+  [ "$(id -u)" != 0 ] || fail 'Run host preparation as the ordinary operator user, not root.'
+  command -v docker >/dev/null 2>&1 || fail 'Install Docker Engine before preparing access.'
+  docker_endpoint
+  [ "$endpoint" = unix:///var/run/docker.sock ] || fail 'Automated access preparation supports only the local /var/run/docker.sock context.'
+  if docker_error=$(docker info 2>&1 >/dev/null); then printf 'Docker access already works; no host change made.\n'; return; fi
+  case "$docker_error" in *'permission denied'*|*'Permission denied'*) ;; *) fail 'Docker daemon is unavailable for a reason other than socket permission. Start or repair Docker before changing group membership.';; esac
+  [ -S /var/run/docker.sock ] || fail 'Docker socket is absent. Start Docker Engine before changing access.'
+  socket_group=$(stat -c %G /var/run/docker.sock) || fail 'Cannot inspect Docker socket group.'
+  [ "$socket_group" = docker ] || fail 'Docker socket is not owned by the docker group; inspect host policy instead of changing membership.'
+  socket_mode=$(stat -c %A /var/run/docker.sock) || fail 'Cannot inspect Docker socket permissions.'
+  case "$socket_mode" in ?????w????) ;; *) fail 'Docker socket is not group-writable; changing group membership would not grant access.';; esac
+  case " $(id -nG) " in *' docker '*) fail 'This session already has docker group membership; inspect the socket ACL/context. No host change made.';; esac
+  operator_name=$(id -un)
+  account_groups=$(id -nG "$operator_name") || fail 'Cannot inspect the operator account groups.'
+  case " $account_groups " in *' docker '*) fail 'The account already belongs to the docker group. Log out and back in instead of changing host membership.';; esac
+  command -v sudo >/dev/null 2>&1 || fail 'sudo is required for the optional group change. Ask the host administrator to grant approved Docker access.'
+  [ "$NONINTERACTIVE" = 0 ] || fail 'Host access preparation requires an interactive terminal and explicit confirmation.'
+  terminal
+  case "$operator_name" in ''|-*|*[!A-Za-z0-9_.-]*) fail 'Unsupported operator account name for automatic group preparation.';; esac
+  printf 'Docker group membership grants high-privilege control of this host.\nProposed command: sudo usermod -aG docker -- %s\n' "$operator_name"
+  prompt 'Type GRANT DOCKER ACCESS exactly to apply this host change' ''
+  [ "$ANSWER" = 'GRANT DOCKER ACCESS' ] || fail 'Docker access preparation canceled; no host change made.'
+  sudo usermod -aG docker -- "$operator_name" || fail 'Docker group change failed; inspect sudo policy and host logs.'
+  printf 'Docker group membership requested. Log out and back in, then run ./kelios doctor.\n'
 }
 lock() {
   [ ! -L "$LOCK" ] || fail 'Unsafe installation lock.'
@@ -240,6 +287,11 @@ owned() {
     volume_owner=$(docker volume inspect --format '{{index .Labels "com.docker.compose.project"}}' "${PROJECT}_postgres-data")
     volume_kind=$(docker volume inspect --format '{{index .Labels "com.docker.compose.volume"}}' "${PROJECT}_postgres-data")
     [ "$volume_owner" = "$PROJECT" ] && [ "$volume_kind" = postgres-data ] || fail 'Managed volume ownership mismatch.'
+  fi
+  if docker network inspect "${PROJECT}_default" >/dev/null 2>&1; then
+    network_owner=$(docker network inspect --format '{{index .Labels "com.docker.compose.project"}}' "${PROJECT}_default")
+    network_kind=$(docker network inspect --format '{{index .Labels "com.docker.compose.network"}}' "${PROJECT}_default")
+    [ "$network_owner" = "$PROJECT" ] && [ "$network_kind" = default ] || fail 'Project network ownership mismatch.'
   fi
   # Inspect only IDs bearing the exact recorded project label. Never broad prune.
   for id in $(docker ps -aq --filter "label=com.docker.compose.project=$PROJECT"); do
@@ -415,6 +467,8 @@ install() {
   case "$BIND" in 127.*|::1) ;; *) printf 'Warning: this bind may expose the local installation beyond this machine.\n';; esac
   prompt 'HTTP technical/health port' '8080'; HTTP_PORT=$ANSWER; port "$HTTP_PORT"
   prompt 'HTTPS application port' '8443'; HTTPS_PORT=$ANSWER; port "$HTTPS_PORT"
+  [ "$HTTP_PORT" != "$HTTPS_PORT" ] || fail 'HTTP and HTTPS ports must differ.'
+  port_free "$HTTP_PORT"; port_free "$HTTPS_PORT"
   if [ "$PREPROVISIONED" = 1 ]; then BROWSER_HOST=$CERT_HOST; else prompt 'Browser hostname (certificate must cover it)' 'localhost'; BROWSER_HOST=$ANSWER; host "$BROWSER_HOST"; fi
   ISSUER=https://$BROWSER_HOST:$HTTPS_PORT
   if [ "$PREPROVISIONED" = 1 ]; then tls "$CERT_DIR/certificate.pem" "$CERT_DIR/private.pem"; else
@@ -464,7 +518,9 @@ install() {
   LOGO=; ORG_LOGO=
   [ -z "$ORG_LOGO_SOURCE" ] || logo_copy "$ORG_LOGO_SOURCE" organization
   save; branding; compose_env; crypto; owned
+  compose config --quiet >/dev/null 2>&1 || fail 'Deployment configuration invalid; build not started.'
   # Reserve the unique project before creating resources; refuse accidental collisions.
+  docker network inspect "${PROJECT}_default" >/dev/null 2>&1 && fail 'Project network identity already exists.'
   [ -z "$(docker ps -aq --filter "label=com.docker.compose.project=$PROJECT")" ] || fail 'Project identity already exists.'
   [ -z "$(docker volume ls -q --filter "label=com.docker.compose.project=$PROJECT")" ] || fail 'Project volume identity already exists.'
   printf 'Building the existing independent images; this may require registry/dependency network access.\n'
@@ -537,8 +593,10 @@ uninstall() {
 }
 read_config
 if [ "$COMMAND" = doctor ]; then doctor; exit; fi
+if [ "$COMMAND" = 'host prepare docker-access' ]; then host_prepare_docker_access; exit; fi
 case "$COMMAND" in 'certificate init'|'certificate replace')
   validate_input_config
+  [ "$(id -u)" != 0 ] || fail 'Run KELIOS as the ordinary operator user so certificate state is not root-owned.'
   command -v openssl >/dev/null 2>&1 || fail 'OpenSSL is required for certificate operations.'
   lock; certificate_command; exit;;
 esac

@@ -75,9 +75,18 @@ class CliControlTests(unittest.TestCase):
 if [ -n "${PASSWORD+x}${FIRST+x}${DB_PASSWORD+x}${encoded+x}" ]; then exit 42; fi
 python3 "$(dirname "$0")/capture.py" "$@" || exit $?
 case "$*" in
-  info) if [ -f "$(dirname "$0")/fail-info" ]; then exit 1; fi;;
+  info) if [ -f "$(dirname "$0")/deny-info" ]; then echo 'permission denied while connecting to the Docker daemon socket' >&2; exit 1; fi
+        if [ -f "$(dirname "$0")/fail-info" ]; then exit 1; fi;;
+  *"info --format"*) if [ -f "$(dirname "$0")/rootless-info" ]; then echo 'name=rootless'; fi; exit 0;;
+  *"compose version"*) [ ! -f "$(dirname "$0")/missing-compose" ]; exit $?;;
+  *"context inspect"*) if [ -f "$(dirname "$0")/remote-context" ]; then echo tcp://remote:2375; else echo unix:///var/run/docker.sock; fi; exit 0;;
+  *"network inspect"*)
+    [ -f "$(dirname "$0")/network-exists" ] || exit 1
+    case "$*" in *com.docker.compose.project*) if [ -f "$(dirname "$0")/wrong-network" ]; then echo other; else awk -F= '$1=="PROJECT" {print $2}' "$(dirname "$0")/../.kelios/installation.conf"; fi;; *com.docker.compose.network*) echo default;; esac
+    exit 0;;
   *" build"*) if [ -f "$(dirname "$0")/fail-build" ]; then exit 1; fi;;
-  *"config --quiet"*) if [ -f "$(dirname "$0")/sleep-config" ]; then sleep 2; fi;;
+  *"config --quiet"*) if [ -f "$(dirname "$0")/bad-config" ]; then exit 1; fi
+                       if [ -f "$(dirname "$0")/sleep-config" ]; then sleep 2; fi;;
   *"volume inspect"*) if [ -f "$(dirname "$0")/missing-volume" ]; then exit 1; fi;;
 esac
 case "$*" in
@@ -91,6 +100,10 @@ case "$*" in
 esac
 ''')
         docker.chmod(0o755)
+        (self.root / 'bin/lsof').write_text('#!/bin/sh\n[ -f "$(dirname "$0")/busy-port" ]\n')
+        (self.root / 'bin/lsof').chmod(0o755)
+        (self.root / 'bin/ss').write_text('#!/bin/sh\n[ ! -f "$(dirname "$0")/busy-port" ] || printf "LISTEN 0 128 127.0.0.1:8443 0.0.0.0:*\\n"\n')
+        (self.root / 'bin/ss').chmod(0o755)
         # Observe argv without joining/evaluating it or changing fake Docker outcomes.
         (self.root / 'bin/capture.py').write_text("""import hashlib, json, pathlib, sys
 root = pathlib.Path(__file__).resolve().parents[1]
@@ -152,6 +165,77 @@ with (root / 'docker-argv.jsonl').open('a') as out:
         self.assertNotEqual(result.returncode,0)
         self.assertIn('Port must be an integer',result.stderr)
         self.assertFalse((self.root/'.kelios').exists())
+    def test_docker_preflight_distinguishes_plugin_socket_and_context(self):
+        for flag, message in [('missing-compose','Compose plugin is absent'),('deny-info','Docker socket access denied'),('fail-info','Docker daemon is unavailable'),('remote-context','local Unix-socket Docker context'),('rootless-info','Rootless Docker is outside')]:
+            marker=self.root/'bin'/flag;marker.touch()
+            result=subprocess.run([str(self.root/'kelios'),'--state-dir',str(self.root/'.kelios'),'doctor'],cwd=self.root,env=self.env,text=True,capture_output=True)
+            self.assertNotEqual(result.returncode,0,flag)
+            self.assertIn(message,result.stderr)
+            marker.unlink()
+        self.assertFalse((self.root/'.kelios').exists())
+        env=self.env.copy();env['DOCKER_HOST']='unix:///var/run/docker.sock';env['DOCKER_CONTEXT']='remote'
+        ambiguous=subprocess.run([str(self.root/'kelios'),'doctor'],cwd=self.root,env=env,text=True,capture_output=True)
+        self.assertIn('both set',ambiguous.stderr)
+    def test_missing_docker_reports_prerequisite(self):
+        minimal=self.root/'minimal-bin';minimal.mkdir()
+        for name in ['dirname','id','uname']:
+            (minimal/name).symlink_to(shutil.which(name))
+        env=self.env.copy();env['PATH']=str(minimal)
+        result=subprocess.run([str(self.root/'kelios'),'--state-dir',str(self.root/'.kelios'),'doctor'],cwd=self.root,env=env,text=True,capture_output=True)
+        self.assertNotEqual(result.returncode,0)
+        self.assertIn('Docker Engine is absent',result.stderr)
+        self.assertFalse((self.root/'.kelios').exists())
+    def test_busy_ports_refused_before_install_state_or_build(self):
+        (self.root/'bin/busy-port').touch()
+        config=self.noninteractive_config()
+        result=subprocess.run([str(self.root/'kelios'),'--state-dir',str(self.root/'.kelios'),'--config',str(config),'--non-interactive','install'],cwd=self.root,env=self.env,text=True,capture_output=True)
+        self.assertNotEqual(result.returncode,0)
+        self.assertIn('already listening',result.stderr)
+        self.assertFalse((self.root/'.kelios').exists())
+        self.assertFalse(any('build' in call['argv'] for call in self.docker_calls()))
+    def test_linux_port_probe_and_network_collision(self):
+        (self.root/'bin/uname').write_text('#!/bin/sh\ncase "$1" in -s) echo Linux;; -m) echo x86_64;; esac\n')
+        (self.root/'bin/uname').chmod(0o755)
+        (self.root/'bin/busy-port').touch()
+        result=subprocess.run([str(self.root/'kelios'),'--state-dir',str(self.root/'.kelios'),'doctor'],cwd=self.root,env=self.env,text=True,capture_output=True)
+        self.assertIn('already listening',result.stderr)
+        (self.root/'bin/busy-port').unlink()
+        config=self.noninteractive_config();(self.root/'bin/network-exists').touch()
+        result=subprocess.run([str(self.root/'kelios'),'--state-dir',str(self.root/'.kelios'),'--config',str(config),'--non-interactive','install'],cwd=self.root,env=self.env,text=True,capture_output=True)
+        self.assertNotEqual(result.returncode,0)
+        self.assertIn('network identity already exists',result.stderr)
+        self.assertFalse(any('build' in call['argv'] for call in self.docker_calls()))
+    def test_existing_network_ownership_mismatch_refused(self):
+        self.state();(self.root/'bin/network-exists').touch();(self.root/'bin/wrong-network').touch()
+        rc,out=self.run_cli('stop')
+        self.assertNotEqual(rc,0)
+        self.assertIn('network ownership mismatch',out)
+        self.assertFalse(any('stop' in call['argv'] for call in self.docker_calls()))
+    def test_compose_render_refused_before_build(self):
+        config=self.noninteractive_config();(self.root/'bin/bad-config').touch()
+        result=subprocess.run([str(self.root/'kelios'),'--state-dir',str(self.root/'.kelios'),'--config',str(config),'--non-interactive','install'],cwd=self.root,env=self.env,text=True,capture_output=True)
+        self.assertNotEqual(result.returncode,0)
+        self.assertIn('Deployment configuration invalid',result.stderr)
+        self.assertFalse(any('build' in call['argv'] for call in self.docker_calls()))
+    def test_root_execution_refused_before_state(self):
+        (self.root/'bin/id').write_text('#!/bin/sh\n[ "$1" != -u ] || { echo 0; exit; }\n/usr/bin/id "$@"\n')
+        (self.root/'bin/id').chmod(0o755)
+        for args in [('doctor',),('certificate','init')]:
+            result=subprocess.run([str(self.root/'kelios'),'--state-dir',str(self.root/'.kelios'),*args],cwd=self.root,env=self.env,text=True,capture_output=True)
+            self.assertNotEqual(result.returncode,0)
+            self.assertIn('ordinary operator user',result.stderr)
+        self.assertFalse((self.root/'.kelios').exists())
+    def test_host_prepare_does_not_change_macos_host(self):
+        result=subprocess.run([str(self.root/'kelios'),'host','prepare','docker-access'],cwd=self.root,env=self.env,text=True,capture_output=True)
+        self.assertNotEqual(result.returncode,0)
+        self.assertIn('only on Linux',result.stderr)
+        self.assertFalse((self.root/'.kelios').exists())
+    def test_normal_doctor_never_invokes_sudo(self):
+        (self.root/'bin/sudo').write_text('#!/bin/sh\ntouch "$(dirname "$0")/sudo-called"\nexit 1\n')
+        (self.root/'bin/sudo').chmod(0o755)
+        result=subprocess.run([str(self.root/'kelios'),'--state-dir',str(self.root/'.kelios'),'doctor'],cwd=self.root,env=self.env,text=True,capture_output=True)
+        self.assertEqual(result.returncode,0,result.stderr)
+        self.assertFalse((self.root/'bin/sudo-called').exists())
     def test_config_rejects_shell_text_without_execution(self):
         config=self.noninteractive_config();config.write_text(config.read_text()+'BROWSER_HOST=$(touch forbidden)\n')
         result=subprocess.run([str(self.root/'kelios'),'--state-dir',str(self.root/'.kelios'),'--config',str(config),'--non-interactive','install'],cwd=self.root,env=self.env,text=True,capture_output=True)
