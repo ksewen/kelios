@@ -10,7 +10,10 @@ import org.springframework.web.multipart.MultipartFile;
 public class AssetCsvController {
     private final AssetCsvExportService exporter;
     private final AssetCsvPreviewService preview;
-    public AssetCsvController(AssetCsvExportService exporter,AssetCsvPreviewService preview){this.exporter=exporter;this.preview=preview;}
+    private final AssetCsvImportService importer;
+    public AssetCsvController(AssetCsvExportService exporter,AssetCsvPreviewService preview,AssetCsvImportService importer){
+        this.exporter=exporter;this.preview=preview;this.importer=importer;
+    }
     @GetMapping("/export")
     public ResponseEntity<byte[]> export(@RequestParam Map<String,String> query){
         return ResponseEntity.ok()
@@ -28,5 +31,10 @@ public class AssetCsvController {
     public AssetCsvPreviewService.Preview preview(@RequestPart("file") MultipartFile file,
         @RequestPart("config") AssetCsvPreviewService.Input config){
         return preview.preview(file,config);
+    }
+    @PostMapping(value="/execute",consumes=MediaType.MULTIPART_FORM_DATA_VALUE)
+    public AssetCsvImportService.Result execute(@RequestPart("file") MultipartFile file,
+        @RequestPart("config") AssetCsvImportService.Input config){
+        return importer.execute(file,config);
     }
 }

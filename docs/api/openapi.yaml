@@ -1043,6 +1043,78 @@ paths:
                   referenceResolution: {type: object}
         '413': {description: Upload exceeds configured limit}
         default: *id009
+  /asset-csv/execute:
+    post:
+      operationId: executeAssetCsvImport
+      summary: Import selected legacy Asset CSV rows independently
+      description: ACTIVE GLOBAL ADMIN only. Requires the original bounded CSV and concrete-Tenant Preview mapping with SHA-256 file identity, plus distinct selected logical row numbers. Current mapping and references are revalidated; selected rows that are no longer importable fail individually. Each successful row commits one Asset, a truthful REGISTERED initial snapshot with LEGACY_CSV origin, and sanitized ASSET_LEGACY_IMPORTED audit in one transaction. Later rows continue after a row failure. Unselected rows are skipped. No historical loan records are created. A repeated request can create duplicates because non-Tag identifiers are not unique; clients must not automatically retry after an uncertain response.
+      security: *id008
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, config]
+              properties:
+                file: {type: string, format: binary}
+                config:
+                  type: object
+                  required: [preview, selectedRows]
+                  properties:
+                    preview:
+                      type: object
+                      required: [tenantId, sha256, columns]
+                      properties:
+                        tenantId: *id010
+                        sha256: {type: string}
+                        encoding: {type: string}
+                        delimiter: {type: string}
+                        columns: {type: object, additionalProperties: {type: string}}
+                        values:
+                          type: object
+                          additionalProperties:
+                            type: object
+                            additionalProperties: {type: string}
+                        choices:
+                          type: object
+                          additionalProperties:
+                            type: object
+                            additionalProperties: *id010
+                    selectedRows:
+                      type: array
+                      minItems: 1
+                      maxItems: 5000
+                      uniqueItems: true
+                      items: {type: integer, format: int64}
+      responses:
+        '200':
+          description: Per-row result and UTF-8 BOM failure CSV containing original columns plus KELIOS import-error
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [successful, failed, skipped, rows, failureCsv]
+                properties:
+                  successful: {type: integer, format: int64}
+                  failed: {type: integer, format: int64}
+                  skipped: {type: integer, format: int64}
+                  rows:
+                    type: array
+                    items:
+                      type: object
+                      required: [rowNumber, status]
+                      properties:
+                        rowNumber: {type: integer, format: int64}
+                        status: {type: string, enum: [SUCCESS, FAILED, SKIPPED]}
+                        assetId: *id010
+                        assetTag: {type: string}
+                        reason: {type: string}
+                  failureCsv:
+                    type: string
+                    description: Empty when every row succeeded; otherwise UTF-8 BOM CSV for download. Spreadsheet formula-like cells are prefixed safely.
+        '413': {description: Upload exceeds configured limit}
+        default: *id009
   /asset-csv/export:
     get:
       operationId: exportAssetCsv
