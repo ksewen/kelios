@@ -55,6 +55,11 @@ class AssetResourceIT {
  @BeforeEach void setup(){clock.now=Instant.parse("2026-10-11T12:00:00Z");tenant=tenants.create("Tenant "+UUID.randomUUID(),actor);other=tenants.create("Other",actor);category=catalog.createCategory(null,"Category",actor);manufacturer=catalog.createManufacturer(null,"Manufacturer",actor);product=catalog.createProduct(null,category,manufacturer,"Product",null,actor);location=places.create(PlaceService.Kind.LOCATION,tenant,"Room",actor);owner=places.create(PlaceService.Kind.OWNER,tenant,"Owner",actor);admin=new Identity(actor.id(),Scope.GLOBAL,null,Role.ADMIN,Status.ACTIVE,actor.displayName());mvc=MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build();}
  AssetService.View asset(){return assets.register(tenant,new AssetService.Registration(new AssetService.ProductSelection(product),location,owner,true,null,null,null),actor);}
  MvcResult request(Identity who,MockHttpServletRequestBuilder b,Object body)throws Exception{if(who!=null)b.header("Authorization","Bearer "+tokens.login(who).accessToken());if(body!=null)b.contentType("application/json").content(json.writeValueAsString(body));return mvc.perform(b).andReturn();}
+ MvcResult request(Identity who,org.springframework.test.web.servlet.request.MockMultipartHttpServletRequestBuilder b,Object body)throws Exception{
+  if(body!=null)throw new IllegalArgumentException("Multipart parts carry their own body");
+  if(who!=null)b.header("Authorization","Bearer "+tokens.login(who).accessToken());
+  return mvc.perform(b).andReturn();
+ }
  Map<String,Object> data(MvcResult r){return json.readValue(r.getResponse().getContentAsByteArray(),new tools.jackson.core.type.TypeReference<Map<String,Object>>(){});}
  int status(MvcResult r){return r.getResponse().getStatus();}
  long events(UUID id){return jdbc.queryForObject("SELECT count(*) FROM asset_event WHERE asset_id=?",Long.class,id);}
@@ -91,6 +96,79 @@ class AssetResourceIT {
   assertEquals(200,status(safe));assertTrue(new String(safe.getResponse().getContentAsByteArray(),java.nio.charset.StandardCharsets.UTF_8).contains("'=HYPERLINK(\"\"x\"\",\"\"y\"\")"));
   assertEquals(400,status(request(admin,get("/api/v1/asset-csv/export").param("delimiter","\n"),null)));
   assertEquals(400,status(request(admin,get("/api/v1/asset-csv/export").param("sort","tenantId"),null)));
+ }
+ @Test void legacyCsvPreviewRequiresGlobalAdminAndResolvesOnlyAuthorizedReferences()throws Exception{
+  byte[] csv="Kennung;Modell;Raum;Status;Zustand;Ausleihbar;Datum\nAlt-1;Product;Room;alt;kaputt;ja;01.02.2017\nAlt-2;Missing;Room;alt;kaputt;ja;01.02.2017\n".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+  var file=new org.springframework.mock.web.MockMultipartFile("file","legacy.csv","text/csv",csv);
+  var parsed=request(admin,multipart("/api/v1/asset-csv/parse-preview").file(file),null);
+  assertEquals(200,status(parsed));String hash=(String)data(parsed).get("sha256");
+  assertEquals(2,((Number)data(parsed).get("totalRows")).intValue());
+  assertEquals(403,status(request(principal(Scope.GLOBAL,Role.USER,Status.ACTIVE),multipart("/api/v1/asset-csv/parse-preview").file(file),null)));
+  assertEquals(403,status(request(principal(Scope.TENANT,Role.ADMIN,Status.ACTIVE),multipart("/api/v1/asset-csv/parse-preview").file(file),null)));
+  assertEquals(401,status(request(null,multipart("/api/v1/asset-csv/parse-preview").file(file),null)));
+  Map<String,Object> config=new LinkedHashMap<>();
+  config.put("tenantId",tenant);config.put("sha256",hash);config.put("encoding","UTF-8");config.put("delimiter",";");
+  config.put("columns",Map.of("localIdentifier","Kennung","productName","Modell","locationName","Raum",
+      "lifecycle","Status","condition","Zustand","loanable","Ausleihbar","tagDate","Datum"));
+  config.put("values",Map.of("lifecycle",Map.of("alt","DEREGISTERED"),"condition",Map.of("kaputt","DEFECTIVE"),"loanable",Map.of("ja","true")));
+  config.put("choices",Map.of("productName",Map.of("Product",product)));
+  var response=csvPreview(admin,file,config);
+  assertEquals(200,status(response),response.getResponse().getContentAsString());
+  var body=data(response);assertEquals(2,((Number)body.get("totalRows")).intValue());assertEquals(1,((Number)body.get("warnings")).intValue(),response.getResponse().getContentAsString());assertEquals(1,((Number)body.get("errors")).intValue());
+  var rows=(List<Map<String,Object>>)body.get("rows");assertEquals("WARNING",rows.getFirst().get("status"));assertEquals("ERROR",rows.getLast().get("status"));
+  var refs=(Map<String,Object>)rows.getFirst().get("references");assertEquals(product.toString(),refs.get("productId"));assertEquals(category.toString(),refs.get("categoryId"));assertEquals(manufacturer.toString(),refs.get("manufacturerId"));assertEquals(location.toString(),refs.get("locationId"));
+  assertEquals("2017-02-01",((Map<?,?>)rows.getFirst().get("normalized")).get("tagDate"));
+  assertEquals(0L,jdbc.queryForObject("SELECT count(*) FROM asset WHERE local_identifier LIKE 'Alt-%'",Long.class));
+  config.put("sha256","0".repeat(64));assertEquals(400,status(csvPreview(admin,file,config)));
+  config.put("sha256",hash);
+  config.put("columns",Map.of("productName","Modell","manufacturerName","Kennung","locationName","Raum"));
+  assertEquals(400,status(csvPreview(admin,file,config)));
+  config.put("columns",Map.of("productId","Kennung","productName","Modell","locationName","Raum"));
+  assertEquals(400,status(csvPreview(admin,file,config)));
+  config.put("columns",Map.of("productName","Modell","locationName","Modell"));
+  assertEquals(400,status(csvPreview(admin,file,config)));
+ }
+ @SuppressWarnings("unchecked") MvcResult csvPreview(Identity who,org.springframework.mock.web.MockMultipartFile file,Map<String,Object> config)throws Exception{
+  var settings=new org.springframework.mock.web.MockMultipartFile("config","","application/json",json.writeValueAsBytes(config));
+  return request(who,multipart("/api/v1/asset-csv/preview").file(file).file(settings),null);
+ }
+ @Test void legacyCsvPreviewAmbiguityExplicitChoiceAndUuidScope()throws Exception{
+  UUID duplicate=catalog.createProduct(tenant,category,manufacturer,"Product",null,actor);
+  byte[] csv="Modell;Raum\nProduct;Room\n".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+  var file=new org.springframework.mock.web.MockMultipartFile("file","legacy.csv","text/csv",csv);
+  String hash=(String)data(request(admin,multipart("/api/v1/asset-csv/parse-preview").file(file),null)).get("sha256");
+  var config=new LinkedHashMap<String,Object>();
+  config.put("tenantId",tenant);config.put("sha256",hash);config.put("encoding","UTF-8");config.put("delimiter",";");
+  config.put("columns",Map.of("productName","Modell","locationName","Raum"));
+  var unresolved=data(csvPreview(admin,file,config));
+  assertEquals("ERROR",((List<Map<String,Object>>)unresolved.get("rows")).getFirst().get("status"));
+  config.put("choices",Map.of("productName",Map.of("Product",duplicate)));
+  var chosen=data(csvPreview(admin,file,config));
+  var row=((List<Map<String,Object>>)chosen.get("rows")).getFirst();
+  assertEquals("WARNING",row.get("status"));assertEquals(duplicate.toString(),((Map<?,?>)row.get("references")).get("productId"));
+  config.put("choices",Map.of("productName",Map.of("Product",UUID.randomUUID())));
+  assertEquals("ERROR",((List<Map<String,Object>>)data(csvPreview(admin,file,config)).get("rows")).getFirst().get("status"));
+  config.remove("choices");
+  UUID foreignLocation=places.create(PlaceService.Kind.LOCATION,other,"Foreign",actor);
+  byte[] uuids=("Produkt;Raum\n"+product+";"+foreignLocation+"\n").getBytes(java.nio.charset.StandardCharsets.UTF_8);
+  var uuidFile=new org.springframework.mock.web.MockMultipartFile("file","uuid.csv","text/csv",uuids);
+  config.put("sha256",data(request(admin,multipart("/api/v1/asset-csv/parse-preview").file(uuidFile),null)).get("sha256"));
+  config.put("columns",Map.of("productId","Produkt","locationId","Raum"));
+  var foreign=data(csvPreview(admin,uuidFile,config));
+  assertEquals("ERROR",((List<Map<String,Object>>)foreign.get("rows")).getFirst().get("status"));
+  byte[] direct=("Kategorie;Hersteller;Raum\n"+category+";"+manufacturer+";"+location+"\n").getBytes(java.nio.charset.StandardCharsets.UTF_8);
+  var directFile=new org.springframework.mock.web.MockMultipartFile("file","direct.csv","text/csv",direct);
+  config.put("sha256",data(request(admin,multipart("/api/v1/asset-csv/parse-preview").file(directFile),null)).get("sha256"));
+  config.put("columns",Map.of("categoryId","Kategorie","manufacturerId","Hersteller","locationId","Raum"));
+  assertEquals("WARNING",((List<Map<String,Object>>)data(csvPreview(admin,directFile,config)).get("rows")).getFirst().get("status"));
+  UUID transientLocation=places.create(PlaceService.Kind.LOCATION,tenant,"Transient",actor);
+  byte[] stale=("Produkt;Raum\n"+product+";Transient\n").getBytes(java.nio.charset.StandardCharsets.UTF_8);
+  var staleFile=new org.springframework.mock.web.MockMultipartFile("file","stale.csv","text/csv",stale);
+  config.put("sha256",data(request(admin,multipart("/api/v1/asset-csv/parse-preview").file(staleFile),null)).get("sha256"));
+  config.put("columns",Map.of("productId","Produkt","locationName","Raum"));
+  assertEquals("WARNING",((List<Map<String,Object>>)data(csvPreview(admin,staleFile,config)).get("rows")).getFirst().get("status"));
+  places.delete(PlaceService.Kind.LOCATION,tenant,transientLocation,actor);
+  assertEquals("ERROR",((List<Map<String,Object>>)data(csvPreview(admin,staleFile,config)).get("rows")).getFirst().get("status"));
  }
  @Test void defaultsSizesScopeAndBeyondEnd()throws Exception{
   var ids=new HashSet<String>();for(int i=0;i<103;i++){clock.now=clock.now.plusSeconds(1);ids.add(create("queryfixture",true).id().toString());}

@@ -33,7 +33,7 @@ public class SecurityConfiguration {
         if(m.equals("GET"))return p.equals("/api/v1/asset-csv/export") || p.matches("/api/v1/(assets|audit-log)(/"+id+"(/events)?)?") || p.matches("/api/v1/tenants/"+id+"/(assets|locations|owners|catalog/(categories|manufacturers|products))") || p.matches("/api/v1/(catalog/(categories|manufacturers|products)|locations|owners)(/"+id+")?");
         if(m.equals("PUT"))return p.matches("/api/v1/assets/"+id+"/(metadata|catalog|loanability|location|owner)") || p.matches("/api/v1/(catalog/(categories|manufacturers|products)|locations|owners)/"+id);
         if(m.equals("DELETE"))return p.matches("/api/v1/(catalog/(categories|manufacturers|products)|locations|owners)/"+id);
-        if(m.equals("POST"))return p.matches("/api/v1/tenants/"+id+"/(assets|locations|owners|catalog/(categories|manufacturers|products))") || p.matches("/api/v1/assets/"+id+"/(lifecycle-transitions|condition-transitions|loan|return)") || p.matches("/api/v1/catalog/(categories|manufacturers|products)(/"+id+"/publish)?") || p.matches("/api/v1/catalog/(categories|manufacturers)/(merge-preview|merge)");
+        if(m.equals("POST"))return p.equals("/api/v1/asset-csv/parse-preview") || p.equals("/api/v1/asset-csv/preview") || p.matches("/api/v1/tenants/"+id+"/(assets|locations|owners|catalog/(categories|manufacturers|products))") || p.matches("/api/v1/assets/"+id+"/(lifecycle-transitions|condition-transitions|loan|return)") || p.matches("/api/v1/catalog/(categories|manufacturers|products)(/"+id+"/publish)?") || p.matches("/api/v1/catalog/(categories|manufacturers)/(merge-preview|merge)");
         return false;
     }
     private static boolean protectedRequest(HttpServletRequest r){return inventoryRequest(r) || identityPath(r.getRequestURI());}
@@ -73,7 +73,10 @@ public class SecurityConfiguration {
                     SecurityContextHolder.getContext().setAuthentication(UsernamePasswordAuthenticationToken.authenticated(identity,null,List.of()));
                 }
                 if(protectedRequest(request) && !path.equals("/api/v1/auth/me"))Authorization.active(CurrentIdentity.require());
-                if((path.startsWith("/api/v1/auth/") || protectedRequest(request)) && !Set.of("GET","HEAD","OPTIONS").contains(request.getMethod())){
+                boolean csvMultipart=(path.equals("/api/v1/asset-csv/parse-preview") || path.equals("/api/v1/asset-csv/preview"))
+                    && request.getContentType()!=null && request.getContentType().startsWith("multipart/form-data");
+                if(csvMultipart && request.getContentLengthLong()>6L*1024*1024)throw new AuthFailure(400,"CSV request body exceeds limit");
+                if((path.startsWith("/api/v1/auth/") || protectedRequest(request)) && !Set.of("GET","HEAD","OPTIONS").contains(request.getMethod()) && !csvMultipart){
                     // Bound JSON before binding/hash work, including chunked requests without Content-Length.
                     byte[] body=request.getInputStream().readNBytes(32769);
                     if(body.length>32768)throw new AuthFailure(400,"Identity request body exceeds limit");

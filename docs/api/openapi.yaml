@@ -925,6 +925,124 @@ paths:
           type: string
           maxLength: 128
         description: Trimmed literal case-insensitive substring; blank means no predicate; wildcard characters are escaped.
+  /asset-csv/parse-preview:
+    post:
+      operationId: parseAssetCsv
+      summary: Parse a bounded legacy Asset CSV file without writing
+      description: ACTIVE GLOBAL ADMIN only. CSV has a required header and at most 5 MiB, 5000 data rows, 64 columns and 32 KiB per decoded cell. AUTO encoding accepts valid UTF-8 only; ambiguous 8-bit encodings require explicit override. AUTO delimiter accepts an unambiguous semicolon, comma or tab. Response includes the first ten raw records and a SHA-256 file identity for later Preview. Logical row numbers include the header.
+      security: *id008
+      parameters:
+      - name: encoding
+        in: query
+        schema:
+          type: string
+          enum: [AUTO, UTF-8, WINDOWS-1252, ISO-8859-1]
+          default: AUTO
+      - name: delimiter
+        in: query
+        description: AUTO, SEMICOLON, COMMA, TAB or a custom single character.
+        schema:
+          type: string
+          default: AUTO
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Parsed settings, source headers, row count and first ten raw rows
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [sha256, encoding, delimiter, headers, totalRows, rows]
+                properties:
+                  sha256: {type: string}
+                  encoding: {type: string}
+                  delimiter: {type: string}
+                  headers: {type: array, items: {type: string}}
+                  totalRows: {type: integer, format: int64}
+                  rows:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        rowNumber: {type: integer, format: int64}
+                        values: {type: object, additionalProperties: {type: string}}
+        '413': {description: Upload exceeds configured limit}
+        default: *id009
+  /asset-csv/preview:
+    post:
+      operationId: previewAssetCsvImport
+      summary: Validate mapped legacy Asset rows without writing
+      description: ACTIVE GLOBAL ADMIN only. Requires the same file bytes as parse-preview and one concrete Tenant. Column targets are unique and reference UUID/Name modes are exclusive; Product mode excludes direct Manufacturer/Category mapping. Name matches are exact, active and Tenant-visible; ambiguous values require explicit choice. Preview does not reserve Tags or create resources. Every row is revalidated during later execution.
+      security: *id008
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, config]
+              properties:
+                file: {type: string, format: binary}
+                config:
+                  type: object
+                  required: [tenantId, sha256, columns]
+                  properties:
+                    tenantId: *id010
+                    sha256: {type: string}
+                    encoding: {type: string}
+                    delimiter: {type: string}
+                    columns: {type: object, additionalProperties: {type: string}}
+                    values:
+                      type: object
+                      additionalProperties:
+                        type: object
+                        additionalProperties: {type: string}
+                    choices:
+                      type: object
+                      additionalProperties:
+                        type: object
+                        additionalProperties: *id010
+      responses:
+        '200':
+          description: Read-only per-row Ready, Warning or Error classification and distinct reference candidates
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [sha256, encoding, delimiter, headers, totalRows, ready, warnings, errors, rows, referenceResolution]
+                properties:
+                  sha256: {type: string}
+                  encoding: {type: string}
+                  delimiter: {type: string}
+                  headers: {type: array, items: {type: string}}
+                  totalRows: {type: integer, format: int64}
+                  ready: {type: integer, format: int64}
+                  warnings: {type: integer, format: int64}
+                  errors: {type: integer, format: int64}
+                  rows:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        rowNumber: {type: integer, format: int64}
+                        status: {type: string, enum: [READY, WARNING, ERROR]}
+                        source: {type: object, additionalProperties: {type: string}}
+                        normalized: {type: object}
+                        references: {type: object, additionalProperties: *id010}
+                        issues: {type: array, items: {type: string}}
+                  referenceResolution: {type: object}
+        '413': {description: Upload exceeds configured limit}
+        default: *id009
   /asset-csv/export:
     get:
       operationId: exportAssetCsv
