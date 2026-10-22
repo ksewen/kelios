@@ -47,9 +47,9 @@ cleanup() {
 trap cleanup 0
 trap 'exit 130' INT
 trap 'exit 143' TERM HUP
-usage() { printf 'Usage: ./kelios [--state-dir ABSOLUTE_PATH] [--config FILE] [--non-interactive] [--confirm-replace] {doctor|install|start|stop|status|config|uninstall|recover-admin|certificate init|certificate replace|host prepare docker-access}\n'; }
+usage() { printf 'Usage: ./kelios [--state-dir ABSOLUTE_PATH] [--config FILE] [--non-interactive] [--confirm-replace] {doctor|install|resume-install|update|start|stop|restart|status|config|uninstall|recover-admin|certificate init|certificate replace|host prepare docker-access}\n'; }
 case "$*" in 'certificate init'|'certificate replace'|'host prepare docker-access') COMMAND=$*;; *) [ "$#" = 1 ] || { usage; exit 1; }; COMMAND=$1;; esac
-case "$COMMAND" in doctor|install|start|stop|status|config|uninstall|recover-admin|'certificate init'|'certificate replace'|'host prepare docker-access') ;; *) usage; exit 1;; esac
+case "$COMMAND" in doctor|install|resume-install|update|start|stop|restart|status|config|uninstall|recover-admin|'certificate init'|'certificate replace'|'host prepare docker-access') ;; *) usage; exit 1;; esac
 [ "$CONFIRM_REPLACE" = 0 ] || [ "$COMMAND" = 'certificate replace' ] || fail '--confirm-replace is only valid for certificate replace.'
 case "$ROOT" in *[\'\"\$\`\\]* ) fail 'Repository path contains unsupported quoting characters.';; esac
 [ ! -L "$STATE" ] || fail 'Installation directory must not be a symlink.'
@@ -210,6 +210,7 @@ validate() {
   identifier "$PROJECT"
   case "$MODE" in managed|external) ;; *) fail 'Invalid database mode.';; esac
   case "$PHASE" in prepared|initialized|data-deleted) ;; *) fail 'Invalid installation state.';; esac
+  case "$RELEASE" in phase0) ;; *) case "$RELEASE" in *[!0-9a-f]*|'') fail 'Invalid release identity.';; esac; [ "${#RELEASE}" = 12 ] || fail 'Invalid release identity.';; esac
   bind "$BIND"; port "$HTTP_PORT"; port "$HTTPS_PORT"
   [ "$HTTP_PORT" != "$HTTPS_PORT" ] || fail 'HTTP and HTTPS ports must differ.'
   host "$BROWSER_HOST"; host "$DB_HOST"; port "$DB_PORT"; identifier "$DB_NAME"; identifier "$DB_USER"
@@ -225,27 +226,27 @@ validate() {
 load() {
   [ -f "$STATE/installation.conf" ] && [ ! -L "$STATE/installation.conf" ] || fail 'Installation is not initialized. Run ./kelios install.'
   [ -z "$(find "$STATE" -type l -print)" ] || fail 'Installation state contains unsafe symlinks.'
-  SEEN='|'; ORG_LOGO=
+  SEEN='|'; ORG_LOGO=; RELEASE=phase0
   while IFS='=' read -r key value; do
     case "$SEEN" in *"|$key|"*) fail 'Duplicate installation field.';; esac
     SEEN=$SEEN$key'|'
     case "$key" in
-      SCHEMA) SCHEMA=$value;; PROJECT) PROJECT=$value;; MODE) MODE=$value;; PHASE) PHASE=$value;;
+      SCHEMA) SCHEMA=$value;; PROJECT) PROJECT=$value;; MODE) MODE=$value;; PHASE) PHASE=$value;; RELEASE) RELEASE=$value;;
       BIND) BIND=$value;; HTTP_PORT) HTTP_PORT=$value;; HTTPS_PORT) HTTPS_PORT=$value;; BROWSER_HOST) BROWSER_HOST=$value;; ISSUER) ISSUER=$value;;
       DB_HOST) DB_HOST=$value;; DB_PORT) DB_PORT=$value;; DB_NAME) DB_NAME=$value;; DB_USER) DB_USER=$value;;
       BACKGROUND) BACKGROUND=$value;; FOREGROUND) FOREGROUND=$value;; PRIMARY) PRIMARY=$value;; PRIMARY_FOREGROUND) PRIMARY_FOREGROUND=$value;;
       ACCENT) ACCENT=$value;; ACCENT_FOREGROUND) ACCENT_FOREGROUND=$value;; LOGO) LOGO=$value;; ORG_LOGO) ORG_LOGO=$value;; *) fail 'Unknown installation field.';;
     esac
   done < "$STATE/installation.conf"
-  case "$SEEN" in '|SCHEMA|PROJECT|MODE|PHASE|BIND|HTTP_PORT|HTTPS_PORT|BROWSER_HOST|ISSUER|DB_HOST|DB_PORT|DB_NAME|DB_USER|BACKGROUND|FOREGROUND|PRIMARY|PRIMARY_FOREGROUND|ACCENT|ACCENT_FOREGROUND|LOGO|'|'|SCHEMA|PROJECT|MODE|PHASE|BIND|HTTP_PORT|HTTPS_PORT|BROWSER_HOST|ISSUER|DB_HOST|DB_PORT|DB_NAME|DB_USER|BACKGROUND|FOREGROUND|PRIMARY|PRIMARY_FOREGROUND|ACCENT|ACCENT_FOREGROUND|LOGO|ORG_LOGO|') ;; *) fail 'Incomplete or reordered installation configuration.';; esac
+  case "$SEEN" in '|SCHEMA|PROJECT|MODE|PHASE|BIND|HTTP_PORT|HTTPS_PORT|BROWSER_HOST|ISSUER|DB_HOST|DB_PORT|DB_NAME|DB_USER|BACKGROUND|FOREGROUND|PRIMARY|PRIMARY_FOREGROUND|ACCENT|ACCENT_FOREGROUND|LOGO|'|'|SCHEMA|PROJECT|MODE|PHASE|BIND|HTTP_PORT|HTTPS_PORT|BROWSER_HOST|ISSUER|DB_HOST|DB_PORT|DB_NAME|DB_USER|BACKGROUND|FOREGROUND|PRIMARY|PRIMARY_FOREGROUND|ACCENT|ACCENT_FOREGROUND|LOGO|ORG_LOGO|'|'|SCHEMA|PROJECT|MODE|PHASE|RELEASE|BIND|HTTP_PORT|HTTPS_PORT|BROWSER_HOST|ISSUER|DB_HOST|DB_PORT|DB_NAME|DB_USER|BACKGROUND|FOREGROUND|PRIMARY|PRIMARY_FOREGROUND|ACCENT|ACCENT_FOREGROUND|LOGO|ORG_LOGO|') ;; *) fail 'Incomplete or reordered installation configuration.';; esac
   validate
 }
 save() {
   validate
   MANIFEST_TEMP=$(mktemp "$STATE/installation.XXXXXXXX")
-  { for field in SCHEMA PROJECT MODE PHASE BIND HTTP_PORT HTTPS_PORT BROWSER_HOST ISSUER DB_HOST DB_PORT DB_NAME DB_USER BACKGROUND FOREGROUND PRIMARY PRIMARY_FOREGROUND ACCENT ACCENT_FOREGROUND LOGO ORG_LOGO; do
+  { for field in SCHEMA PROJECT MODE PHASE RELEASE BIND HTTP_PORT HTTPS_PORT BROWSER_HOST ISSUER DB_HOST DB_PORT DB_NAME DB_USER BACKGROUND FOREGROUND PRIMARY PRIMARY_FOREGROUND ACCENT ACCENT_FOREGROUND LOGO ORG_LOGO; do
       # Explicit cases: no eval and never execute saved data.
-      case "$field" in SCHEMA) v=$SCHEMA;; PROJECT) v=$PROJECT;; MODE) v=$MODE;; PHASE) v=$PHASE;; BIND) v=$BIND;; HTTP_PORT) v=$HTTP_PORT;; HTTPS_PORT) v=$HTTPS_PORT;; BROWSER_HOST) v=$BROWSER_HOST;; ISSUER) v=$ISSUER;; DB_HOST) v=$DB_HOST;; DB_PORT) v=$DB_PORT;; DB_NAME) v=$DB_NAME;; DB_USER) v=$DB_USER;; BACKGROUND) v=$BACKGROUND;; FOREGROUND) v=$FOREGROUND;; PRIMARY) v=$PRIMARY;; PRIMARY_FOREGROUND) v=$PRIMARY_FOREGROUND;; ACCENT) v=$ACCENT;; ACCENT_FOREGROUND) v=$ACCENT_FOREGROUND;; LOGO) v=$LOGO;; ORG_LOGO) v=$ORG_LOGO;; esac
+      case "$field" in SCHEMA) v=$SCHEMA;; PROJECT) v=$PROJECT;; MODE) v=$MODE;; PHASE) v=$PHASE;; RELEASE) v=$RELEASE;; BIND) v=$BIND;; HTTP_PORT) v=$HTTP_PORT;; HTTPS_PORT) v=$HTTPS_PORT;; BROWSER_HOST) v=$BROWSER_HOST;; ISSUER) v=$ISSUER;; DB_HOST) v=$DB_HOST;; DB_PORT) v=$DB_PORT;; DB_NAME) v=$DB_NAME;; DB_USER) v=$DB_USER;; BACKGROUND) v=$BACKGROUND;; FOREGROUND) v=$FOREGROUND;; PRIMARY) v=$PRIMARY;; PRIMARY_FOREGROUND) v=$PRIMARY_FOREGROUND;; ACCENT) v=$ACCENT;; ACCENT_FOREGROUND) v=$ACCENT_FOREGROUND;; LOGO) v=$LOGO;; ORG_LOGO) v=$ORG_LOGO;; esac
       printf '%s=%s\n' "$field" "$v"
     done; } > "$MANIFEST_TEMP"
   mv -f "$MANIFEST_TEMP" "$STATE/installation.conf"
@@ -268,12 +269,13 @@ compose_env() {
   workspace
   ENV_FILE=$WORK/compose.env
   { printf 'KELIOS_BIND_ADDRESS=%s\nKELIOS_HTTP_PORT=%s\nKELIOS_HTTPS_PORT=%s\n' "$PUBLISH_BIND" "$HTTP_PORT" "$HTTPS_PORT"
+    printf 'KELIOS_BACKEND_IMAGE=kelios-backend:%s\nKELIOS_FRONTEND_IMAGE=kelios-frontend:%s\n' "$RELEASE" "$RELEASE"
     printf 'KELIOS_DATABASE_URL=jdbc:postgresql://%s:%s/%s\nKELIOS_DATABASE_USER=%s\n' "$JDBC_HOST" "$DB_PORT" "$DB_NAME" "$DB_USER"
     printf "KELIOS_DB_PASSWORD_FILE='%s/secrets/db-password'\nKELIOS_AUTH_KEY_DIRECTORY='%s/secrets/auth'\nKELIOS_TLS_DIRECTORY='%s'\nKELIOS_BRANDING_DIRECTORY='%s/branding'\nKELIOS_LOGO_DIRECTORY='%s/branding/logos'\n" "$STATE" "$STATE" "$CERT_DIR" "$STATE" "$STATE"
     printf 'KELIOS_AUTH_PUBLIC_ORIGIN=https://%s:%s\nKELIOS_AUTH_ISSUER=%s\n' "$BROWSER_HOST" "$HTTPS_PORT" "$ISSUER"
   } > "$ENV_FILE"
   # Ambient shell deployment settings must not override recorded installation.
-  unset COMPOSE_PROFILES COMPOSE_PROJECT_NAME COMPOSE_FILE KELIOS_BIND_ADDRESS KELIOS_HTTP_PORT KELIOS_HTTPS_PORT KELIOS_DATABASE_URL KELIOS_DATABASE_USER KELIOS_DATABASE_PASSWORD KELIOS_DB_PASSWORD_FILE KELIOS_AUTH_KEY_DIRECTORY KELIOS_TLS_DIRECTORY KELIOS_BRANDING_DIRECTORY KELIOS_LOGO_DIRECTORY KELIOS_AUTH_PUBLIC_ORIGIN KELIOS_AUTH_ISSUER KELIOS_AUTH_SIGNING_KEY_ID KELIOS_AUTH_ENCRYPTION_KEY_ID KELIOS_AUTH_TRUSTED_PROVIDER_HOSTS KELIOS_AUTH_PROVIDER_TRUST_STORE KELIOS_AUTH_PROVIDER_TRUST_STORE_PASSWORD
+  unset COMPOSE_PROFILES COMPOSE_PROJECT_NAME COMPOSE_FILE KELIOS_BACKEND_IMAGE KELIOS_FRONTEND_IMAGE KELIOS_BIND_ADDRESS KELIOS_HTTP_PORT KELIOS_HTTPS_PORT KELIOS_DATABASE_URL KELIOS_DATABASE_USER KELIOS_DATABASE_PASSWORD KELIOS_DB_PASSWORD_FILE KELIOS_AUTH_KEY_DIRECTORY KELIOS_TLS_DIRECTORY KELIOS_BRANDING_DIRECTORY KELIOS_LOGO_DIRECTORY KELIOS_AUTH_PUBLIC_ORIGIN KELIOS_AUTH_ISSUER KELIOS_AUTH_SIGNING_KEY_ID KELIOS_AUTH_ENCRYPTION_KEY_ID KELIOS_AUTH_TRUSTED_PROVIDER_HOSTS KELIOS_AUTH_PROVIDER_TRUST_STORE KELIOS_AUTH_PROVIDER_TRUST_STORE_PASSWORD
 }
 compose() {
   if [ "$MODE" = managed ]; then
@@ -408,7 +410,23 @@ start_runtime() {
   for image in $(compose config --images); do
     docker image inspect "$image" >/dev/null 2>&1 || fail 'A required image is missing. Build/pull the maintained deployment images explicitly before start.'
   done
-  compose up -d --wait --wait-timeout 180 --no-build --pull never >/dev/null 2>&1 || fail 'Runtime failed to become healthy. Check Docker, ports, database access and migrations. Configuration and data were preserved.'
+  if [ "${1-}" = restart ]; then set -- --force-recreate; else set --; fi
+  compose up -d --wait --wait-timeout 180 --no-build --pull never "$@" >/dev/null 2>&1 || fail 'Runtime failed to become healthy. Check Docker, ports, database access and migrations; run start to retry. Configuration and data were preserved. Database migrations may already have committed.'
+}
+source_release() {
+  command -v git >/dev/null 2>&1 || fail 'Git is required to identify a source release.'
+  changes=$(git -C "$ROOT" status --porcelain --untracked-files=normal 2>/dev/null) || fail 'Source must be a readable Git checkout.'
+  [ -z "$changes" ] || fail 'Source checkout has uncommitted files; use a clean checkout for install or update.'
+  commit=$(git -C "$ROOT" rev-parse --verify HEAD 2>/dev/null) || fail 'Source must be a Git checkout with a commit.'
+  RELEASE=$(printf '%s' "$commit" | cut -c 1-12)
+  case "$RELEASE" in *[!0-9a-f]*|'') fail 'Git returned an invalid release identity.';; esac
+  [ "${#RELEASE}" = 12 ] || fail 'Git returned an invalid release identity.'
+}
+build_images() {
+  compose config --quiet >/dev/null 2>&1 || fail 'Deployment configuration invalid; build not started.'
+  printf 'Building independent application images for release %s.\n' "$RELEASE"
+  compose build > "$STATE/diagnostics/build-output" 2>&1 || fail 'Image build failed; private build-output is retained for local inspection. Runtime and data were preserved.'
+  rm -f "$STATE/diagnostics/build-output"
 }
 recovery() {
   prompt 'GLOBAL ADMIN Email' ''; RECOVERY_EMAIL=$ANSWER
@@ -452,7 +470,7 @@ install() {
   if [ "$NONINTERACTIVE" != 1 ]; then terminal; fi
   PREPROVISIONED=0
   if [ -e "$STATE" ]; then
-    [ ! -f "$STATE/installation.conf" ] && [ -f "$STATE/certificate.conf" ] || fail 'Installation state already exists; use start or recover-admin. Nothing was overwritten.'
+    [ ! -f "$STATE/installation.conf" ] && [ -f "$STATE/certificate.conf" ] || fail 'Installation state already exists; use resume-install for prepared state or start/update for initialized state. Nothing was overwritten.'
     certificate_load; PREPROVISIONED=1
     [ -z "$(find "$STATE" -type f ! -path "$STATE/certificate.conf" ! -path "$CERT_DIR/certificate.pem" ! -path "$CERT_DIR/private.pem" -print -quit)" ] || fail 'Pre-provisioned state contains unexpected files; refused installation.'
     [ -z "${C_BROWSER_HOST-}" ] || [ "$C_BROWSER_HOST" = "$CERT_HOST" ] || fail 'Configured browser host differs from pre-provisioned certificate identity.'
@@ -463,6 +481,7 @@ install() {
     [ -n "${C_ADMIN_PASSWORD_FILE-}" ] && [ -f "$C_ADMIN_PASSWORD_FILE" ] && [ -r "$C_ADMIN_PASSWORD_FILE" ] && [ ! -L "$C_ADMIN_PASSWORD_FILE" ] || fail 'ADMIN_PASSWORD_FILE must name a readable regular file.'
   fi
   SCHEMA=1; PROJECT=kelios-local-$(openssl rand -hex 6); PHASE=prepared
+  source_release
   prompt 'Listen address' '127.0.0.1'; BIND=$ANSWER; bind "$BIND"
   case "$BIND" in 127.*|::1) ;; *) printf 'Warning: this bind may expose the local installation beyond this machine.\n';; esac
   prompt 'HTTP technical/health port' '8080'; HTTP_PORT=$ANSWER; port "$HTTP_PORT"
@@ -523,14 +542,37 @@ install() {
   docker network inspect "${PROJECT}_default" >/dev/null 2>&1 && fail 'Project network identity already exists.'
   [ -z "$(docker ps -aq --filter "label=com.docker.compose.project=$PROJECT")" ] || fail 'Project identity already exists.'
   [ -z "$(docker volume ls -q --filter "label=com.docker.compose.project=$PROJECT")" ] || fail 'Project volume identity already exists.'
-  printf 'Building the existing independent images; this may require registry/dependency network access.\n'
-  compose build > "$STATE/diagnostics/build-output" 2>&1 || fail 'Image build failed; private build-output is retained for local inspection. Run the maintained Docker build, then start/recover-admin to resume.'
-  rm -f "$STATE/diagnostics/build-output"
+  build_images
   if [ "$MODE" = managed ]; then
     compose pull --quiet postgres >/dev/null 2>&1 || fail 'Cannot obtain the maintained PostgreSQL image; installation state preserved.'
   fi
   start_runtime; recovery; start_runtime
   printf 'KELIOS installation ready: https://%s:%s\n' "$BROWSER_HOST" "$HTTPS_PORT"
+}
+resume_install() {
+  [ "$PHASE" = prepared ] || fail 'Only a prepared installation can resume; initialized installations use update or start.'
+  if [ "$NONINTERACTIVE" = 1 ]; then
+    [ -n "${C_ADMIN_EMAIL-}" ] || fail 'ADMIN_EMAIL is required for noninteractive installation recovery.'
+    [ -n "${C_ADMIN_PASSWORD_FILE-}" ] && [ -f "$C_ADMIN_PASSWORD_FILE" ] && [ -r "$C_ADMIN_PASSWORD_FILE" ] && [ ! -L "$C_ADMIN_PASSWORD_FILE" ] || fail 'ADMIN_PASSWORD_FILE must name a readable regular file.'
+  else terminal; fi
+  source_release
+  [ "$RELEASE" = "$SAVED_RELEASE" ] || fail 'Resume the prepared install from its recorded source release.'
+  files; crypto; compose_env; owned
+  build_images
+  if [ "$MODE" = managed ]; then compose pull --quiet postgres >/dev/null 2>&1 || fail 'Cannot obtain the maintained PostgreSQL image; installation state preserved.'; fi
+  start_runtime; recovery; start_runtime
+  printf 'KELIOS installation ready: https://%s:%s\n' "$BROWSER_HOST" "$HTTPS_PORT"
+}
+update() {
+  [ "$PHASE" = initialized ] || fail 'Update requires an initialized installation. Resume a prepared install first.'
+  files; crypto; compose_env; owned
+  if [ "$MODE" = managed ]; then docker volume inspect "${PROJECT}_postgres-data" >/dev/null 2>&1 || fail 'Initialized managed database volume is missing; refused to create an empty replacement.'; fi
+  source_release
+  compose_env
+  build_images
+  save
+  start_runtime
+  printf 'KELIOS updated to release %s. Database migrations, if any, are not automatically rolled back.\n' "$RELEASE"
 }
 status() {
   if [ ! -e "$STATE" ]; then printf 'KELIOS\n\nStatus: not initialized\n'; return; fi
@@ -607,8 +649,11 @@ lock
 if [ "$COMMAND" = install ]; then install; exit; fi
 load
 case "$COMMAND" in
-  start) start_runtime; printf 'KELIOS: https://%s:%s\n' "$BROWSER_HOST" "$HTTPS_PORT";;
+  start) [ "$PHASE" = initialized ] || fail 'Installation is prepared; use resume-install to finish it.'; start_runtime; printf 'KELIOS: https://%s:%s\n' "$BROWSER_HOST" "$HTTPS_PORT";;
+  restart) [ "$PHASE" = initialized ] || fail 'Installation is prepared; use resume-install to finish it.'; start_runtime restart; printf 'KELIOS restarted: https://%s:%s\n' "$BROWSER_HOST" "$HTTPS_PORT";;
   stop) compose_env; owned; compose stop >/dev/null 2>&1 || fail 'Stop failed.'; printf 'Stopped; configuration, data and keys preserved.\n';;
+  resume-install) SAVED_RELEASE=$RELEASE; resume_install;;
+  update) update;;
   config) configure;;
   recover-admin) if [ "$NONINTERACTIVE" != 1 ]; then terminal; else
       [ -n "${C_ADMIN_EMAIL-}" ] || fail 'ADMIN_EMAIL is required for noninteractive recovery.'

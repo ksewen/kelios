@@ -3,7 +3,7 @@
 import hashlib, json, os, pathlib, pty, re, select, shutil, signal, subprocess, termios, time, unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-BASE = ROOT / '.cache/deployment-cli/control'
+BASE = ROOT / '.cache/deployment-cli' / f'control-{os.getpid()}'
 
 
 def conversation(directory, command, answers, env=None, timeout=15):
@@ -85,13 +85,14 @@ case "$*" in
     case "$*" in *com.docker.compose.project*) if [ -f "$(dirname "$0")/wrong-network" ]; then echo other; else awk -F= '$1=="PROJECT" {print $2}' "$(dirname "$0")/../.kelios/installation.conf"; fi;; *com.docker.compose.network*) echo default;; esac
     exit 0;;
   *" build"*) if [ -f "$(dirname "$0")/fail-build" ]; then exit 1; fi;;
+  *" up "*) if [ -f "$(dirname "$0")/fail-up" ]; then exit 1; fi;;
   *"config --quiet"*) if [ -f "$(dirname "$0")/bad-config" ]; then exit 1; fi
                        if [ -f "$(dirname "$0")/sleep-config" ]; then sleep 2; fi;;
   *"volume inspect"*) if [ -f "$(dirname "$0")/missing-volume" ]; then exit 1; fi;;
 esac
 case "$*" in
   info|"compose version") exit 0;;
-  *"config --images"*) echo kelios-backend:phase0; echo kelios-frontend:phase0; echo postgres:17-alpine; exit 0;;
+  *"config --images"*) awk -F= '$1=="KELIOS_BACKEND_IMAGE" || $1=="KELIOS_FRONTEND_IMAGE" {print $2}' "$3"; echo postgres:17-alpine; exit 0;;
   *"image inspect"*) [ ! -f "$(dirname "$0")/missing-image" ]; exit $?;;
   *"volume inspect"*"com.docker.compose.project"*) awk -F= '$1=="PROJECT" {print $2}' "$(dirname "$0")/../.kelios/installation.conf"; exit 0;;
   *"volume inspect"*"com.docker.compose.volume"*) echo postgres-data; exit 0;;
@@ -100,6 +101,14 @@ case "$*" in
 esac
 ''')
         docker.chmod(0o755)
+        (self.root / 'bin/git').write_text('''#!/bin/sh
+case "$*" in
+  *"status --porcelain"*) [ ! -f "$(dirname "$0")/dirty-source" ] || echo ' M kelios';;
+  *"rev-parse --verify HEAD"*) if [ -f "$(dirname "$0")/release" ]; then cat "$(dirname "$0")/release"; else echo 0123456789abcdef0123456789abcdef01234567; fi;;
+  *) exit 1;;
+esac
+''')
+        (self.root / 'bin/git').chmod(0o755)
         (self.root / 'bin/lsof').write_text('#!/bin/sh\n[ -f "$(dirname "$0")/busy-port" ]\n')
         (self.root / 'bin/lsof').chmod(0o755)
         (self.root / 'bin/ss').write_text('#!/bin/sh\n[ ! -f "$(dirname "$0")/busy-port" ] || printf "LISTEN 0 128 127.0.0.1:8443 0.0.0.0:*\\n"\n')
@@ -140,7 +149,7 @@ with (root / 'docker-argv.jsonl').open('a') as out:
         return d
 
     def test_unknown_command(self):
-        rc, out = self.run_cli('restart'); self.assertNotEqual(rc,0); self.assertIn('Usage:',out)
+        rc, out = self.run_cli('unknown'); self.assertNotEqual(rc,0); self.assertIn('Usage:',out)
     def test_default_state_is_outside_source(self):
         env=self.env.copy(); env['XDG_DATA_HOME']=str(self.root/'data')
         result=subprocess.run([str(self.root/'kelios'),'status'],cwd=self.root/'bin',env=env,text=True,capture_output=True)
@@ -365,11 +374,20 @@ with (root / 'docker-argv.jsonl').open('a') as out:
         self.assertEqual(result.returncode,0,result.stderr)
         self.assertIn('installation ready',result.stdout)
         self.assertFalse(list((self.root/'tmp').iterdir()))
-        moved=self.root/'moved';moved.mkdir();shutil.copy2(self.root/'kelios',moved/'kelios')
+        moved=self.root/'moved';moved.mkdir();shutil.copy2(self.root/'kelios',moved/'kelios');shutil.copytree(ROOT/'deploy',moved/'deploy')
         result=subprocess.run([str(moved/'kelios'),'--state-dir',str(self.root/'.kelios'),'start'],cwd=self.root/'bin',env=self.env,text=True,capture_output=True)
         self.assertEqual(result.returncode,0,result.stderr)
+        self.assertTrue(any(str(moved/'deploy/compose.yaml') in call['argv'] for call in self.docker_calls()))
         self.assertFalse(list((self.root/'tmp').iterdir()))
         self.assertIn('PHASE=initialized',(self.root/'.kelios/installation.conf').read_text())
+        secret_before=hashlib.sha256((self.root/'.kelios/secrets/auth/main.aes').read_bytes()).hexdigest()
+        db_before=hashlib.sha256((self.root/'.kelios/secrets/db-password').read_bytes()).hexdigest()
+        (self.root/'bin/release').write_text('abcdef0123456789abcdef0123456789abcdef01\n')
+        updated=subprocess.run([str(moved/'kelios'),'--state-dir',str(self.root/'.kelios'),'update'],cwd=self.root/'bin',env=self.env,text=True,capture_output=True)
+        self.assertEqual(updated.returncode,0,updated.stderr)
+        self.assertIn('RELEASE=abcdef012345',(self.root/'.kelios/installation.conf').read_text())
+        self.assertEqual(secret_before,hashlib.sha256((self.root/'.kelios/secrets/auth/main.aes').read_bytes()).hexdigest())
+        self.assertEqual(db_before,hashlib.sha256((self.root/'.kelios/secrets/db-password').read_bytes()).hexdigest())
         recovery=subprocess.run([str(moved/'kelios'),'--state-dir',str(self.root/'.kelios'),'--config',str(config),'--non-interactive','recover-admin'],cwd=self.root/'bin',env=self.env,text=True,capture_output=True)
         self.assertEqual(recovery.returncode,0,recovery.stderr)
         self.assertFalse(list((self.root/'tmp').iterdir()))
@@ -384,6 +402,77 @@ with (root / 'docker-argv.jsonl').open('a') as out:
         self.assertIn('Image build failed',result.stderr)
         self.assertFalse(list((self.root/'tmp').iterdir()))
         self.assertTrue((self.root/'.kelios/diagnostics/build-output').exists())
+    def test_prepared_install_resumes_without_regenerating_secrets(self):
+        config=self.noninteractive_config(); (self.root/'bin/fail-build').touch()
+        failed=self.certificate_cli('install',config=config)
+        self.assertNotEqual(failed.returncode,0)
+        state=self.root/'.kelios'
+        before={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in (state/'secrets/auth').iterdir()}
+        db_before=hashlib.sha256((state/'secrets/db-password').read_bytes()).hexdigest()
+        self.assertIn('PHASE=prepared',(state/'installation.conf').read_text())
+        self.assertNotEqual(self.certificate_cli('start').returncode,0)
+        (self.root/'bin/fail-build').unlink()
+        resumed=self.certificate_cli('resume-install',config=config)
+        self.assertEqual(resumed.returncode,0,resumed.stderr)
+        self.assertIn('PHASE=initialized',(state/'installation.conf').read_text())
+        self.assertEqual(before,{p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in (state/'secrets/auth').iterdir()})
+        self.assertEqual(db_before,hashlib.sha256((state/'secrets/db-password').read_bytes()).hexdigest())
+        self.assertNotEqual(self.certificate_cli('resume-install',config=config).returncode,0)
+    def test_update_build_failure_keeps_release_and_runtime(self):
+        config=self.noninteractive_config()
+        self.assertEqual(self.certificate_cli('install',config=config).returncode,0)
+        state=self.root/'.kelios'; before=(state/'installation.conf').read_bytes()
+        key_before=hashlib.sha256((state/'secrets/auth/main.aes').read_bytes()).hexdigest()
+        (self.root/'bin/release').write_text('abcdef0123456789abcdef0123456789abcdef01\n')
+        (self.root/'bin/missing-volume').touch()
+        calls_before=len(self.docker_calls())
+        missing=self.certificate_cli('update')
+        self.assertIn('database volume is missing',missing.stderr)
+        self.assertFalse(any('build' in c['argv'] for c in self.docker_calls()[calls_before:]))
+        (self.root/'bin/missing-volume').unlink()
+        (self.root/'bin/fail-build').touch()
+        calls_before=len(self.docker_calls())
+        failed=self.certificate_cli('update')
+        self.assertNotEqual(failed.returncode,0)
+        self.assertIn('Image build failed',failed.stderr)
+        self.assertEqual(before,(state/'installation.conf').read_bytes())
+        self.assertEqual(key_before,hashlib.sha256((state/'secrets/auth/main.aes').read_bytes()).hexdigest())
+        calls=self.docker_calls()[calls_before:]
+        self.assertFalse(any('up' in c['argv'] or 'down' in c['argv'] or 'volume rm' in ' '.join(c['argv']) for c in calls))
+    def test_update_switch_retry_and_source_cleanliness(self):
+        config=self.noninteractive_config()
+        self.assertEqual(self.certificate_cli('install',config=config).returncode,0)
+        state=self.root/'.kelios'
+        self.assertIn('RELEASE=0123456789ab',(state/'installation.conf').read_text())
+        (self.root/'bin/release').write_text('abcdef0123456789abcdef0123456789abcdef01\n')
+        (self.root/'bin/dirty-source').touch()
+        self.assertIn('clean checkout',self.certificate_cli('update').stderr)
+        (self.root/'bin/dirty-source').unlink()
+        key_before=hashlib.sha256((state/'secrets/auth/main.aes').read_bytes()).hexdigest()
+        (self.root/'bin/fail-up').touch()
+        failed=self.certificate_cli('update')
+        self.assertNotEqual(failed.returncode,0)
+        self.assertIn('RELEASE=abcdef012345',(state/'installation.conf').read_text())
+        self.assertIn('migrations may already have committed',failed.stderr.lower())
+        (self.root/'bin/fail-up').unlink()
+        retry=self.certificate_cli('start')
+        self.assertEqual(retry.returncode,0,retry.stderr)
+        self.assertEqual(key_before,hashlib.sha256((state/'secrets/auth/main.aes').read_bytes()).hexdigest())
+        self.assertTrue(any('kelios-backend:abcdef012345' in c['argv'] for c in self.docker_calls() if 'image' in c['argv']))
+        self.assertFalse(any('down' in c['argv'] or 'volume rm' in ' '.join(c['argv']) for c in self.docker_calls()))
+    def test_restart_recreates_without_build_and_stop_preserves_state(self):
+        config=self.noninteractive_config()
+        self.assertEqual(self.certificate_cli('install',config=config).returncode,0)
+        state=self.root/'.kelios'; before=(state/'installation.conf').read_bytes()
+        calls_before=len(self.docker_calls())
+        self.assertEqual(self.certificate_cli('stop').returncode,0)
+        self.assertEqual(self.certificate_cli('start').returncode,0)
+        self.assertEqual(self.certificate_cli('restart').returncode,0)
+        calls=self.docker_calls()[calls_before:]
+        self.assertEqual(sum('stop' in c['argv'] for c in calls),1)
+        self.assertEqual(sum('--force-recreate' in c['argv'] for c in calls),1)
+        self.assertFalse(any('build' in c['argv'] or 'down' in c['argv'] for c in calls))
+        self.assertEqual(before,(state/'installation.conf').read_bytes())
     def test_interrupted_operation_cleans_workspace(self):
         config=self.noninteractive_config()
         installed=subprocess.run([str(self.root/'kelios'),'--state-dir',str(self.root/'.kelios'),'--config',str(config),'--non-interactive','install'],cwd=self.root,env=self.env,text=True,capture_output=True)
@@ -616,7 +705,7 @@ with (root / 'docker-argv.jsonl').open('a') as out:
     def test_legacy_logo_survives_start_and_new_organization_logo_can_be_added(self):
         self.test_supplied_versioned_keys_are_preserved()
         d=self.root/'.kelios'
-        saved='\n'.join('LOGO=logo.svg' if line=='LOGO=' else 'PRIMARY=#087f5b' if line=='PRIMARY=#cd3a06' else line for line in (d/'installation.conf').read_text().splitlines() if not line.startswith('ORG_LOGO='))+'\n'
+        saved='\n'.join('LOGO=logo.svg' if line=='LOGO=' else 'PRIMARY=#087f5b' if line=='PRIMARY=#cd3a06' else line for line in (d/'installation.conf').read_text().splitlines() if not line.startswith(('ORG_LOGO=', 'RELEASE=')))+'\n'
         (d/'installation.conf').write_text(saved)
         shutil.copy2(ROOT/'deploy/branding/green/logo.svg',d/'branding/logos/logo.svg')
         original=(d/'installation.conf').read_bytes()
