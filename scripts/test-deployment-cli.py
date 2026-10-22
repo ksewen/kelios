@@ -10,7 +10,8 @@ def conversation(directory, command, answers, env=None, timeout=15):
     pid, fd = pty.fork()
     if pid == 0:
         os.chdir(directory)
-        os.execve(str(directory / 'kelios'), [str(directory / 'kelios'), command], env or os.environ.copy())
+        args=command if isinstance(command,list) else [command]
+        os.execve(str(directory / 'kelios'), [str(directory / 'kelios'), *args], env or os.environ.copy())
     transcript = b''
     cursor = 0
     deadline = time.monotonic() + timeout
@@ -74,13 +75,16 @@ class CliControlTests(unittest.TestCase):
 if [ -n "${PASSWORD+x}${FIRST+x}${DB_PASSWORD+x}${encoded+x}" ]; then exit 42; fi
 python3 "$(dirname "$0")/capture.py" "$@" || exit $?
 case "$*" in
+  info) if [ -f "$(dirname "$0")/fail-info" ]; then exit 1; fi;;
+  *" build"*) if [ -f "$(dirname "$0")/fail-build" ]; then exit 1; fi;;
+  *"config --quiet"*) if [ -f "$(dirname "$0")/sleep-config" ]; then sleep 2; fi;;
   *"volume inspect"*) if [ -f "$(dirname "$0")/missing-volume" ]; then exit 1; fi;;
 esac
 case "$*" in
   info|"compose version") exit 0;;
   *"config --images"*) echo kelios-backend:phase0; echo kelios-frontend:phase0; echo postgres:17-alpine; exit 0;;
   *"image inspect"*) [ ! -f "$(dirname "$0")/missing-image" ]; exit $?;;
-  *"volume inspect"*"com.docker.compose.project"*) awk -F= '$1=="PROJECT" {print $2}' .kelios/installation.conf; exit 0;;
+  *"volume inspect"*"com.docker.compose.project"*) awk -F= '$1=="PROJECT" {print $2}' "$(dirname "$0")/../.kelios/installation.conf"; exit 0;;
   *"volume inspect"*"com.docker.compose.volume"*) echo postgres-data; exit 0;;
   *" run "*) [ ! -f "$(dirname "$0")/refuse" ]; exit $?;;
   *) exit 0;;
@@ -103,9 +107,11 @@ with (root / 'docker-argv.jsonl').open('a') as out:
 """)
         self.env = os.environ.copy()
         self.env['PATH'] = str(self.root / 'bin') + ':' + self.env['PATH']
+        (self.root / 'tmp').mkdir(exist_ok=True)
+        self.env['TMPDIR'] = str(self.root / 'tmp')
 
     def run_cli(self, command, answers=()):
-        return conversation(self.root, command, answers, self.env)
+        return conversation(self.root, ['--state-dir',str(self.root/'.kelios'),command], answers, self.env)
 
     def state(self, **changes):
         values = dict(SCHEMA='1', PROJECT='kelios-local-control', MODE='managed', PHASE='initialized', BIND='127.0.0.1', HTTP_PORT='8080', HTTPS_PORT='8443', BROWSER_HOST='localhost', ISSUER='https://localhost:8443', DB_HOST='postgres', DB_PORT='5432', DB_NAME='kelios', DB_USER='kelios', BACKGROUND='#f2faf5', FOREGROUND='#16372b', PRIMARY='#087f5b', PRIMARY_FOREGROUND='#ffffff', ACCENT='#d8f2e4', ACCENT_FOREGROUND='#14543c', LOGO='logo.svg')
@@ -121,6 +127,36 @@ with (root / 'docker-argv.jsonl').open('a') as out:
 
     def test_unknown_command(self):
         rc, out = self.run_cli('restart'); self.assertNotEqual(rc,0); self.assertIn('Usage:',out)
+    def test_default_state_is_outside_source(self):
+        env=self.env.copy(); env['XDG_DATA_HOME']=str(self.root/'data')
+        result=subprocess.run([str(self.root/'kelios'),'status'],cwd=self.root/'bin',env=env,text=True,capture_output=True)
+        self.assertEqual(result.returncode,0)
+        self.assertIn('not initialized',result.stdout)
+        self.assertFalse((self.root/'.kelios').exists())
+        self.assertFalse((self.root/'data').exists())
+        invalid=subprocess.run([str(self.root/'kelios'),'--state-dir','relative','status'],cwd=self.root/'bin',env=env,text=True,capture_output=True)
+        self.assertNotEqual(invalid.returncode,0)
+        self.assertIn('must be absolute',invalid.stderr)
+        trailing=subprocess.run([str(self.root/'kelios'),'--state-dir',str(self.root/'.kelios')+'/', 'status'],cwd=self.root/'bin',env=env,text=True,capture_output=True)
+        self.assertEqual(trailing.returncode,0,trailing.stderr)
+    def test_doctor_reports_daemon_failure_without_mutation(self):
+        (self.root/'bin/fail-info').touch()
+        result=subprocess.run([str(self.root/'kelios'),'--state-dir',str(self.root/'.kelios'),'doctor'],cwd=self.root,env=self.env,text=True,capture_output=True)
+        self.assertNotEqual(result.returncode,0)
+        self.assertIn('Start the installed Docker daemon',result.stderr)
+        self.assertFalse((self.root/'.kelios').exists())
+    def test_doctor_validates_input_without_mutation(self):
+        config=self.root/'input.conf';config.write_text('HTTP_PORT=0\n')
+        result=subprocess.run([str(self.root/'kelios'),'--state-dir',str(self.root/'.kelios'),'--config',str(config),'doctor'],cwd=self.root,env=self.env,text=True,capture_output=True)
+        self.assertNotEqual(result.returncode,0)
+        self.assertIn('Port must be an integer',result.stderr)
+        self.assertFalse((self.root/'.kelios').exists())
+    def test_config_rejects_shell_text_without_execution(self):
+        config=self.noninteractive_config();config.write_text(config.read_text()+'BROWSER_HOST=$(touch forbidden)\n')
+        result=subprocess.run([str(self.root/'kelios'),'--state-dir',str(self.root/'.kelios'),'--config',str(config),'--non-interactive','install'],cwd=self.root,env=self.env,text=True,capture_output=True)
+        self.assertNotEqual(result.returncode,0)
+        self.assertFalse((self.root/'forbidden').exists())
+        self.assertFalse((self.root/'.kelios').exists())
     def test_absent_status(self):
         rc, out = self.run_cli('status'); self.assertEqual(rc,0); self.assertIn('not initialized',out)
     def test_start_without_install(self):
@@ -165,6 +201,59 @@ with (root / 'docker-argv.jsonl').open('a') as out:
         prompts += [('Database mode','managed'),('Runtime theme',''),('Organization logo path',''),('Existing authentication key directory',str(keys)),('GLOBAL ADMIN Email',email),('Display name','Control fixture'),('Administrator password',password),('Confirm password',password)]
         return prompts,aes
 
+    def noninteractive_config(self):
+        prompts,_=self.managed_install_answers('script-admin@example.org')
+        cert=next(value for label,value in prompts if label=='TLS certificate path')
+        key=next(value for label,value in prompts if label=='TLS private-key path')
+        auth_keys=next(value for label,value in prompts if label=='Existing authentication key directory')
+        admin_password=self.root/'admin-password';admin_password.write_text('ControlFixture9!NotReal')
+        config=self.root/'input.conf'
+        config.write_text(f'TLS_CERTIFICATE={cert}\nTLS_PRIVATE_KEY={key}\nAUTH_KEYS_DIRECTORY={auth_keys}\nADMIN_EMAIL=script-admin@example.org\nADMIN_PASSWORD_FILE={admin_password}\n')
+        return config
+
+    def test_noninteractive_install_and_relocated_source(self):
+        config=self.noninteractive_config()
+        result=subprocess.run([str(self.root/'kelios'),'--state-dir',str(self.root/'.kelios'),'--config',str(config),'--non-interactive','install'],cwd=self.root/'bin',env=self.env,text=True,capture_output=True)
+        self.assertEqual(result.returncode,0,result.stderr)
+        self.assertIn('installation ready',result.stdout)
+        self.assertFalse(list((self.root/'tmp').iterdir()))
+        moved=self.root/'moved';moved.mkdir();shutil.copy2(self.root/'kelios',moved/'kelios')
+        result=subprocess.run([str(moved/'kelios'),'--state-dir',str(self.root/'.kelios'),'start'],cwd=self.root/'bin',env=self.env,text=True,capture_output=True)
+        self.assertEqual(result.returncode,0,result.stderr)
+        self.assertFalse(list((self.root/'tmp').iterdir()))
+        self.assertIn('PHASE=initialized',(self.root/'.kelios/installation.conf').read_text())
+        recovery=subprocess.run([str(moved/'kelios'),'--state-dir',str(self.root/'.kelios'),'--config',str(config),'--non-interactive','recover-admin'],cwd=self.root/'bin',env=self.env,text=True,capture_output=True)
+        self.assertEqual(recovery.returncode,0,recovery.stderr)
+        self.assertFalse(list((self.root/'tmp').iterdir()))
+        secret=(self.root/'admin-password').read_bytes()
+        calls=self.docker_calls()
+        self.assertTrue(all(secret.decode() not in ' '.join(call['argv']) for call in calls))
+        self.assertEqual([call['password_sha256'] for call in calls if 'password_sha256' in call], [hashlib.sha256(secret).hexdigest()]*2)
+    def test_failed_build_retains_diagnostic_and_cleans_workspace(self):
+        config=self.noninteractive_config();(self.root/'bin/fail-build').touch()
+        result=subprocess.run([str(self.root/'kelios'),'--state-dir',str(self.root/'.kelios'),'--config',str(config),'--non-interactive','install'],cwd=self.root,env=self.env,text=True,capture_output=True)
+        self.assertNotEqual(result.returncode,0)
+        self.assertIn('Image build failed',result.stderr)
+        self.assertFalse(list((self.root/'tmp').iterdir()))
+        self.assertTrue((self.root/'.kelios/diagnostics/build-output').exists())
+    def test_interrupted_operation_cleans_workspace(self):
+        config=self.noninteractive_config()
+        installed=subprocess.run([str(self.root/'kelios'),'--state-dir',str(self.root/'.kelios'),'--config',str(config),'--non-interactive','install'],cwd=self.root,env=self.env,text=True,capture_output=True)
+        self.assertEqual(installed.returncode,0,installed.stderr)
+        (self.root/'bin/sleep-config').touch()
+        process=subprocess.Popen([str(self.root/'kelios'),'--state-dir',str(self.root/'.kelios'),'start'],cwd=self.root,env=self.env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        try:
+            deadline=time.monotonic()+5
+            while not list((self.root/'tmp').iterdir()) and time.monotonic()<deadline:
+                time.sleep(.05)
+            self.assertTrue(list((self.root/'tmp').iterdir()))
+            process.send_signal(signal.SIGTERM)
+            self.assertEqual(process.wait(timeout=5),143)
+            self.assertFalse(list((self.root/'tmp').iterdir()))
+            self.assertFalse((self.root/'.kelios.lock').exists())
+        finally:
+            if process.poll() is None: process.kill();process.wait()
+
     def docker_calls(self):
         return [json.loads(line) for line in (self.root/'docker-argv.jsonl').read_text().splitlines()]
 
@@ -175,10 +264,10 @@ with (root / 'docker-argv.jsonl').open('a') as out:
         call=recovery[0]; args=call['argv']; prefix=args[:args.index('run')]
         state=dict(line.split('=',1) for line in (self.root/'.kelios/installation.conf').read_text().splitlines())
         self.assertEqual(prefix,['compose','--env-file',prefix[2],'-p',state['PROJECT'],'-f',str(self.root/'deploy/compose.yaml'),'-f',str(self.root/'deploy/compose.postgres.yaml'),'-f',str(self.root/'deploy/compose.auth.yaml')])
-        self.assertTrue(pathlib.Path(prefix[2]).is_relative_to(self.root/'.kelios/temporary'))
+        self.assertTrue(pathlib.Path(prefix[2]).is_relative_to(self.root/'tmp'))
         mount=args[args.index('-v')+1]; host=pathlib.Path(mount.rsplit(':',2)[0])
-        self.assertEqual(host.name,'password'); self.assertTrue(host.parent.name.startswith('recovery.'))
-        self.assertEqual(host.parent.parent,self.root/'.kelios/temporary')
+        self.assertEqual(host.name,'password'); self.assertEqual(host.parent.name,'recovery')
+        self.assertTrue(host.parent.parent.is_relative_to(self.root/'tmp'))
         self.assertEqual(args[len(prefix):],['run','--rm','--no-deps','-v',str(host)+':/run/secrets/kelios-recovery/password:ro','backend','--spring.main.web-application-type=none','--kelios.recovery.enabled=true','--kelios.recovery.email='+email,'--kelios.recovery.display-name=Control fixture','--kelios.recovery.password-file=/run/secrets/kelios-recovery/password'])
         self.assertEqual(call['password_sha256'],hashlib.sha256(password.encode()).hexdigest())
         self.assertEqual(call['password_mode'],0o444)
@@ -196,7 +285,7 @@ with (root / 'docker-argv.jsonl').open('a') as out:
                 for spelling in {email,email.strip(),email.strip().lower()}:
                     self.assertNotIn(spelling.encode(),persisted.read_bytes())
         self.assertTrue(all(password not in arg for item in calls for arg in item['argv']))
-        self.assertFalse(list((self.root/'.kelios/temporary').iterdir()))
+        self.assertFalse(list((self.root/'tmp').iterdir()))
         self.assertFalse((self.root/'.kelios.lock').exists())
 
     def test_supplied_versioned_keys_are_preserved(self):
@@ -212,7 +301,7 @@ with (root / 'docker-argv.jsonl').open('a') as out:
         self.assertEqual(branding['theme']['accentForeground'],'#8f2904')
         self.assertNotIn('logoUrl',branding)
         self.assertNotIn('organizationLogoUrl',branding)
-        self.assertFalse(list((self.root/'.kelios/temporary').glob('recovery.*')))
+        self.assertFalse(list((self.root/'tmp').iterdir()))
         self.assert_install_recovery('control-admin@example.org','ControlFixture9!NotReal',True)
         self.assertIn('KELIOS installation ready:',out)
 
@@ -243,7 +332,7 @@ with (root / 'docker-argv.jsonl').open('a') as out:
         calls=self.docker_calls(); self.assertFalse(any('run' in call['argv'] for call in calls))
         self.assertEqual([call['phase'] for call in calls if 'up' in call['argv']],['prepared'])
         self.assertIn('PHASE=prepared',(self.root/'.kelios/installation.conf').read_text())
-        self.assertFalse(list((self.root/'.kelios/temporary').iterdir()))
+        self.assertFalse(list((self.root/'tmp').iterdir()))
         self.assertFalse((self.root/'.kelios.lock').exists())
 
     def test_install_email_empty_has_no_default(self):
@@ -269,7 +358,7 @@ with (root / 'docker-argv.jsonl').open('a') as out:
         self.assertNotIn('ControlFixture9!NotReal',out); self.assertNotIn('DifferentFixture9!NotReal',out)
         self.assertFalse(any('run' in call['argv'] for call in self.docker_calls()))
         self.assertIn('PHASE=prepared',(self.root/'.kelios/installation.conf').read_text())
-        self.assertFalse(list((self.root/'.kelios/temporary').iterdir()))
+        self.assertFalse(list((self.root/'tmp').iterdir()))
 
     def initialized_recover_admin_fixture(self):
         # Reuse accepted fake install to obtain valid private keys/initialized state.
@@ -282,7 +371,7 @@ with (root / 'docker-argv.jsonl').open('a') as out:
         state=self.root/'.kelios'
         self.assertEqual({str(path.relative_to(state)):path.read_bytes() for path in state.rglob('*') if path.is_file()},before)
         self.assertIn('PHASE=initialized',(state/'installation.conf').read_text())
-        self.assertFalse(list((state/'temporary').iterdir()))
+        self.assertFalse(list((self.root/'tmp').iterdir()))
         self.assertFalse((self.root/'.kelios.lock').exists())
         calls=self.docker_calls()[start:]
         self.assertEqual([call['phase'] for call in calls if 'up' in call['argv']],['initialized'])
@@ -292,10 +381,10 @@ with (root / 'docker-argv.jsonl').open('a') as out:
             call=recoveries[0];args=call['argv'];prefix=args[:args.index('run')]
             configuration=dict(line.split('=',1) for line in (state/'installation.conf').read_text().splitlines())
             self.assertEqual(prefix,['compose','--env-file',prefix[2],'-p',configuration['PROJECT'],'-f',str(self.root/'deploy/compose.yaml'),'-f',str(self.root/'deploy/compose.postgres.yaml'),'-f',str(self.root/'deploy/compose.auth.yaml')])
-            self.assertTrue(pathlib.Path(prefix[2]).is_relative_to(state/'temporary'))
+            self.assertTrue(pathlib.Path(prefix[2]).is_relative_to(self.root/'tmp'))
             mount=args[args.index('-v')+1];source=pathlib.Path(mount.rsplit(':',2)[0])
-            self.assertEqual(source.name,'password');self.assertTrue(source.parent.name.startswith('recovery.'))
-            self.assertEqual(source.parent.parent,state/'temporary')
+            self.assertEqual(source.name,'password');self.assertEqual(source.parent.name,'recovery')
+            self.assertTrue(source.parent.parent.is_relative_to(self.root/'tmp'))
             self.assertEqual(args[len(prefix):],['run','--rm','--no-deps','-v',str(source)+':/run/secrets/kelios-recovery/password:ro','backend','--spring.main.web-application-type=none','--kelios.recovery.enabled=true','--kelios.recovery.email='+email,'--kelios.recovery.display-name=Recovery fixture','--kelios.recovery.password-file=/run/secrets/kelios-recovery/password'])
             self.assertEqual(call['phase'],'initialized')
             self.assertEqual(call['password_sha256'],hashlib.sha256(password.encode()).hexdigest())

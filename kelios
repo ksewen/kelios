@@ -1,46 +1,135 @@
 #!/bin/sh
-# Guided local deployment only. Application policy remains in the backend.
+# Deployment orchestration only. Application policy remains in the backend.
 set -eu
 set +x
 # Remove inherited export attributes before assigning any private input.
 unset PASSWORD FIRST DB_PASSWORD encoded
 umask 077
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
-STATE=$ROOT/.kelios
-LOCK=$ROOT/.kelios.lock
+STATE=${XDG_DATA_HOME:-$HOME/.local/share}/kelios/default
+INPUT_CONFIG=
+NONINTERACTIVE=0
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --state-dir|--config) [ "$#" -ge 2 ] || { printf 'Missing value for %s\n' "$1" >&2; exit 1; }; if [ "$1" = --state-dir ]; then STATE=$2; else INPUT_CONFIG=$2; fi; shift 2;;
+    --non-interactive) NONINTERACTIVE=1; shift;;
+    *) break;;
+  esac
+done
+while [ "${STATE%/}" != "$STATE" ]; do STATE=${STATE%/}; done
+case "$STATE" in /*) ;; *) printf 'State directory must be absolute.\n' >&2; exit 1;; esac
+case "$STATE" in /|*/./*|*/../*|*/.|*/..) printf 'State directory must identify one installation directory without dot segments.\n' >&2; exit 1;; esac
+case "$STATE" in *[\'\"\$\`\\]*) printf 'State directory contains unsupported characters.\n' >&2; exit 1;; esac
+NEWLINE='
+'
+CR=$(printf '\r')
+case "$STATE" in *"$NEWLINE"*|*"$CR"*|*:*) printf 'State directory contains unsupported characters.\n' >&2; exit 1;; esac
+LOCK=$STATE.lock
 LOCKED=0
 ECHO_OFF=0
 TEMP=
 ENV_FILE=
+WORK=
 fail() { printf 'KELIOS: %s\n' "$*" >&2; exit 1; }
 cleanup() {
   if [ "$ECHO_OFF" = 1 ]; then stty echo </dev/tty 2>/dev/null || :; fi
-  if [ -n "$TEMP" ] && [ -d "$TEMP" ]; then rm -f "$TEMP/password" "$TEMP/compose.yaml" "$TEMP/output"; rmdir "$TEMP" 2>/dev/null || :; fi
-  if [ -n "$ENV_FILE" ]; then rm -f "$ENV_FILE"; fi
+  if [ -n "$WORK" ] && [ -d "$WORK" ]; then
+    rm -f "$WORK/compose.env" "$WORK/recovery/password" "$WORK/recovery/output"
+    rmdir "$WORK/recovery" 2>/dev/null || :
+    rmdir "$WORK" 2>/dev/null || :
+  fi
   if [ "$LOCKED" = 1 ]; then rmdir "$LOCK" 2>/dev/null || :; fi
 }
 trap cleanup 0
 trap 'exit 130' INT
 trap 'exit 143' TERM HUP
-usage() { printf 'Usage: ./kelios {install|start|stop|status|config|uninstall|recover-admin}\n'; }
+usage() { printf 'Usage: ./kelios [--state-dir ABSOLUTE_PATH] [--config FILE] [--non-interactive] {doctor|install|start|stop|status|config|uninstall|recover-admin}\n'; }
 [ "$#" = 1 ] || { usage; exit 1; }
 COMMAND=$1
-case "$COMMAND" in install|start|stop|status|config|uninstall|recover-admin) ;; *) usage; exit 1;; esac
+case "$COMMAND" in doctor|install|start|stop|status|config|uninstall|recover-admin) ;; *) usage; exit 1;; esac
 case "$ROOT" in *[\'\"\$\`\\]* ) fail 'Repository path contains unsupported quoting characters.';; esac
 [ ! -L "$STATE" ] || fail 'Installation directory must not be a symlink.'
+workspace() {
+  [ -n "$WORK" ] && return
+  local_tmp=${TMPDIR:-/tmp}
+  case "$local_tmp" in /*) ;; *) fail 'Temporary directory must be absolute.';; esac
+  case "$local_tmp" in *"$NEWLINE"*|*"$CR"*|*:*) fail 'Temporary directory contains unsupported characters.';; esac
+  [ -d "$local_tmp" ] || fail 'Temporary directory is unavailable.'
+  WORK=$(mktemp -d "$local_tmp/kelios.XXXXXXXX") || fail 'Cannot create private temporary workspace.'
+}
+read_config() {
+  [ -z "$INPUT_CONFIG" ] && return
+  [ -f "$INPUT_CONFIG" ] && [ ! -L "$INPUT_CONFIG" ] || fail 'Input configuration file is unavailable or unsafe.'
+  CONFIG_SEEN='|'
+  while IFS='=' read -r key value || [ -n "$key" ]; do
+    [ -n "$key" ] || continue
+    case "$CONFIG_SEEN" in *"|$key|"*) fail 'Duplicate input configuration field.';; esac
+    CONFIG_SEEN=$CONFIG_SEEN$key'|'
+    case "$key" in
+      BIND) C_BIND=$value;; HTTP_PORT) C_HTTP_PORT=$value;; HTTPS_PORT) C_HTTPS_PORT=$value;; BROWSER_HOST) C_BROWSER_HOST=$value;;
+      TLS_CERTIFICATE) C_TLS_CERTIFICATE=$value;; TLS_PRIVATE_KEY) C_TLS_PRIVATE_KEY=$value;;
+      MODE) C_MODE=$value;; DB_HOST) C_DB_HOST=$value;; DB_PORT) C_DB_PORT=$value;; DB_NAME) C_DB_NAME=$value;; DB_USER) C_DB_USER=$value;;
+      DB_PASSWORD_FILE) C_DB_PASSWORD_FILE=$value;; THEME) C_THEME=$value;; ORGANIZATION_LOGO) C_ORGANIZATION_LOGO=$value;; AUTH_KEYS_DIRECTORY) C_AUTH_KEYS_DIRECTORY=$value;;
+      ADMIN_EMAIL) C_ADMIN_EMAIL=$value;; ADMIN_DISPLAY_NAME) C_ADMIN_DISPLAY_NAME=$value;; ADMIN_PASSWORD_FILE) C_ADMIN_PASSWORD_FILE=$value;;
+      *) fail "Unknown input configuration field: $key";;
+    esac
+  done < "$INPUT_CONFIG"
+}
+validate_input_config() {
+  [ -z "${C_BIND-}" ] || bind "$C_BIND"
+  [ -z "${C_HTTP_PORT-}" ] || port "$C_HTTP_PORT"
+  [ -z "${C_HTTPS_PORT-}" ] || port "$C_HTTPS_PORT"
+  [ -z "${C_BROWSER_HOST-}" ] || host "$C_BROWSER_HOST"
+  [ -z "${C_DB_HOST-}" ] || host "$C_DB_HOST"
+  [ -z "${C_DB_PORT-}" ] || port "$C_DB_PORT"
+  [ -z "${C_DB_NAME-}" ] || identifier "$C_DB_NAME"
+  [ -z "${C_DB_USER-}" ] || identifier "$C_DB_USER"
+  case "${C_MODE-}" in ''|managed|external) ;; *) fail 'Database mode must be managed or external.';; esac
+  case "${C_THEME-}" in ''|orange|green|blue) ;; *) fail 'Theme must be orange, green or blue.';; esac
+}
 prerequisites() {
   command -v docker >/dev/null 2>&1 || fail 'Install Docker with Docker Compose first.'
   docker info >/dev/null 2>&1 || fail 'Docker daemon is unavailable.'
   docker compose version >/dev/null 2>&1 || fail 'Docker Compose v2 is required.'
   command -v openssl >/dev/null 2>&1 || fail 'OpenSSL is required for key generation and validation.'
 }
+doctor() {
+  validate_input_config
+  case "$(uname -s)" in Linux|Darwin) ;; *) fail 'Unsupported host OS. Use a tested Linux server or macOS development host.';; esac
+  case "$(uname -m)" in x86_64|aarch64|arm64) ;; *) fail 'Unsupported CPU architecture. Use AMD64 or ARM64.';; esac
+  command -v docker >/dev/null 2>&1 || fail 'Docker Engine is absent. Install Docker Engine before deploying KELIOS.'
+  docker compose version >/dev/null 2>&1 || fail 'Docker Compose v2 is absent. Install the Compose plugin.'
+  if ! docker info >/dev/null 2>&1; then
+    if [ -S /var/run/docker.sock ] && [ ! -w /var/run/docker.sock ]; then
+      fail 'Docker socket access denied. The operator account needs authorized Docker access; this grants high-privilege host control.'
+    fi
+    fail 'Docker daemon is unavailable. Start the installed Docker daemon and check its context.'
+  fi
+  command -v openssl >/dev/null 2>&1 || fail 'OpenSSL is absent. Install OpenSSL before deploying KELIOS.'
+  if [ -e "$STATE" ]; then load; files; printf 'KELIOS doctor: basic prerequisites and saved files present.\n'; else printf 'KELIOS doctor: basic prerequisites available; no installation at %s.\n' "$STATE"; fi
+}
 lock() {
   [ ! -L "$LOCK" ] || fail 'Unsafe installation lock.'
+  if [ "$COMMAND" = install ]; then mkdir -p "$(dirname "$STATE")" || fail 'Cannot create state parent.'; fi
   mkdir "$LOCK" 2>/dev/null || fail 'Another operation or an abandoned .kelios.lock exists. Inspect before removing the lock.'
   LOCKED=1
 }
 terminal() { [ -t 0 ] && [ -t 1 ] || fail 'This command requires an interactive terminal.'; }
 prompt() {
+  configured=
+  case "$1" in
+    'Listen address') configured=${C_BIND-};; 'HTTP technical/health port') configured=${C_HTTP_PORT-};; 'HTTPS application port') configured=${C_HTTPS_PORT-};;
+    'Browser hostname (certificate must cover it)') configured=${C_BROWSER_HOST-};; 'TLS certificate path (required)') configured=${C_TLS_CERTIFICATE-};; 'TLS private-key path (required)') configured=${C_TLS_PRIVATE_KEY-};;
+    'Database mode: managed or external') configured=${C_MODE-};; 'Database host (container localhost is not the host machine)') configured=${C_DB_HOST-};; 'Database port') configured=${C_DB_PORT-};; 'Database name') configured=${C_DB_NAME-};; 'Database username') configured=${C_DB_USER-};;
+    'Runtime theme: orange, blue or green') configured=${C_THEME-};; 'Organization logo path (empty for neutral mark)') configured=${C_ORGANIZATION_LOGO-};; 'Existing authentication key directory (empty for a new database)') configured=${C_AUTH_KEYS_DIRECTORY-};;
+    'GLOBAL ADMIN Email') configured=${C_ADMIN_EMAIL-};; 'Display name') configured=${C_ADMIN_DISPLAY_NAME-};;
+  esac
+  if [ -n "$configured" ]; then ANSWER=$configured; return; fi
+  if [ "$NONINTERACTIVE" = 1 ]; then
+    case "$1" in 'Organization logo path (empty for neutral mark)'|'Existing authentication key directory (empty for a new database)') ANSWER=; return;; esac
+    [ -n "$2" ] || fail "Missing required input: $1"
+    ANSWER=$2; return
+  fi
   printf '%s [%s]: ' "$1" "$2"
   IFS= read -r ANSWER || fail 'Input interrupted.'
   [ -n "$ANSWER" ] || ANSWER=$2
@@ -123,9 +212,8 @@ branding() {
 compose_env() {
   case "$BIND" in *:*) PUBLISH_BIND=[$BIND];; *) PUBLISH_BIND=$BIND;; esac
   case "$DB_HOST" in *:*) JDBC_HOST=[$DB_HOST];; *) JDBC_HOST=$DB_HOST;; esac
-  [ -d "$STATE/temporary" ] && [ ! -L "$STATE/temporary" ] || fail 'Unsafe temporary directory.'
-  if [ -n "$ENV_FILE" ]; then rm -f "$ENV_FILE"; fi
-  ENV_FILE=$(mktemp "$STATE/temporary/compose.XXXXXXXX")
+  workspace
+  ENV_FILE=$WORK/compose.env
   { printf 'KELIOS_BIND_ADDRESS=%s\nKELIOS_HTTP_PORT=%s\nKELIOS_HTTPS_PORT=%s\n' "$PUBLISH_BIND" "$HTTP_PORT" "$HTTPS_PORT"
     printf 'KELIOS_DATABASE_URL=jdbc:postgresql://%s:%s/%s\nKELIOS_DATABASE_USER=%s\n' "$JDBC_HOST" "$DB_PORT" "$DB_NAME" "$DB_USER"
     printf "KELIOS_DB_PASSWORD_FILE='%s/secrets/db-password'\nKELIOS_AUTH_KEY_DIRECTORY='%s/secrets/auth'\nKELIOS_TLS_DIRECTORY='%s/secrets/tls'\nKELIOS_BRANDING_DIRECTORY='%s/branding'\nKELIOS_LOGO_DIRECTORY='%s/branding/logos'\n" "$STATE" "$STATE" "$STATE" "$STATE" "$STATE"
@@ -151,8 +239,8 @@ owned() {
   for id in $(docker ps -aq --filter "label=com.docker.compose.project=$PROJECT"); do
     label=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$id")
     [ "$label" = "$PROJECT" ] || fail 'Container ownership mismatch.'
-    wd=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$id")
-    [ "$wd" = "$ROOT/deploy" ] || fail 'Project identity is already used by another deployment directory.'
+    service=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.service"}}' "$id")
+    case "$service" in backend|frontend|postgres) ;; *) fail 'Project identity belongs to another deployment.';; esac
   done
 }
 files() {
@@ -160,7 +248,7 @@ files() {
     [ -f "$STATE/$f" ] && [ ! -L "$STATE/$f" ] || fail "Required installation file missing or unsafe: $f"
   done
   for f in "$LOGO" "$ORG_LOGO"; do [ -z "$f" ] || { [ -f "$STATE/branding/logos/$f" ] && [ ! -L "$STATE/branding/logos/$f" ]; } || fail 'Required logo file missing or unsafe.'; done
-  for dir in secrets secrets/auth secrets/tls branding branding/logos temporary; do [ -d "$STATE/$dir" ] && [ ! -L "$STATE/$dir" ] || fail "Unsafe directory: $dir"; done
+  for dir in secrets secrets/auth secrets/tls branding branding/logos; do [ -d "$STATE/$dir" ] && [ ! -L "$STATE/$dir" ] || fail "Unsafe directory: $dir"; done
 }
 crypto() {
   openssl pkey -in "$STATE/secrets/auth/main.private.pem" -passin pass: -check -noout >/dev/null 2>&1 || fail 'Signing private key unavailable/invalid.'
@@ -205,10 +293,16 @@ recovery() {
   case "$RECOVERY_EMAIL" in *[![:space:]]*) ;; *) fail 'GLOBAL ADMIN Email is required.';; esac
   prompt 'Display name' 'KELIOS Administrator'; DISPLAY=$ANSWER
   [ "${#DISPLAY}" -le 256 ] || fail 'Display name too long.'
-  password 'Administrator password'; FIRST=$PASSWORD
-  password 'Confirm password'; [ "$PASSWORD" = "$FIRST" ] || fail 'Passwords do not match.'
-  TEMP=$(mktemp -d "$STATE/temporary/recovery.XXXXXXXX")
-  printf '%s' "$FIRST" > "$TEMP/password"; unset FIRST PASSWORD
+  if [ "$NONINTERACTIVE" = 1 ]; then
+    [ -n "${C_ADMIN_PASSWORD_FILE-}" ] && [ -f "$C_ADMIN_PASSWORD_FILE" ] && [ ! -L "$C_ADMIN_PASSWORD_FILE" ] || fail 'ADMIN_PASSWORD_FILE must name a readable regular file.'
+    workspace; TEMP=$WORK/recovery; mkdir "$TEMP"
+    cp "$C_ADMIN_PASSWORD_FILE" "$TEMP/password"
+  else
+    password 'Administrator password'; FIRST=$PASSWORD
+    password 'Confirm password'; [ "$PASSWORD" = "$FIRST" ] || fail 'Passwords do not match.'
+    workspace; TEMP=$WORK/recovery; mkdir "$TEMP"
+    printf '%s' "$FIRST" > "$TEMP/password"; unset FIRST PASSWORD
+  fi
   chmod 444 "$TEMP/password"
   # Docker mounts this one file, not the private temporary directory or output.
   if compose run --rm --no-deps -v "$TEMP/password:/run/secrets/kelios-recovery/password:ro" backend --spring.main.web-application-type=none --kelios.recovery.enabled=true "--kelios.recovery.email=$RECOVERY_EMAIL" "--kelios.recovery.display-name=$DISPLAY" --kelios.recovery.password-file=/run/secrets/kelios-recovery/password > "$TEMP/output" 2>&1; then
@@ -233,8 +327,12 @@ theme() {
     blue) BACKGROUND='#f4f7ff'; FOREGROUND='#172033'; PRIMARY='#2458d3'; PRIMARY_FOREGROUND='#ffffff'; ACCENT='#e1eaff'; ACCENT_FOREGROUND='#243b75';; *) fail 'Select orange, blue or green.';; esac
 }
 install() {
-  terminal
+  if [ "$NONINTERACTIVE" != 1 ]; then terminal; fi
   [ ! -e "$STATE" ] || fail 'Installation state already exists; use start or recover-admin. Nothing was overwritten.'
+  if [ "$NONINTERACTIVE" = 1 ]; then
+    [ -n "${C_ADMIN_EMAIL-}" ] || fail 'ADMIN_EMAIL is required for noninteractive installation.'
+    [ -n "${C_ADMIN_PASSWORD_FILE-}" ] && [ -f "$C_ADMIN_PASSWORD_FILE" ] && [ -r "$C_ADMIN_PASSWORD_FILE" ] && [ ! -L "$C_ADMIN_PASSWORD_FILE" ] || fail 'ADMIN_PASSWORD_FILE must name a readable regular file.'
+  fi
   SCHEMA=1; PROJECT=kelios-local-$(openssl rand -hex 6); PHASE=prepared
   prompt 'Listen address' '127.0.0.1'; BIND=$ANSWER; bind "$BIND"
   case "$BIND" in 127.*|::1) ;; *) printf 'Warning: this bind may expose the local installation beyond this machine.\n';; esac
@@ -254,7 +352,9 @@ install() {
       prompt 'Database port' '5432'; DB_PORT=$ANSWER; port "$DB_PORT"
       prompt 'Database name' 'kelios'; DB_NAME=$ANSWER; identifier "$DB_NAME"
       prompt 'Database username' 'kelios'; DB_USER=$ANSWER; identifier "$DB_USER"
-      password 'Database password'; DB_PASSWORD=$PASSWORD; unset PASSWORD;; *) fail 'Select managed or external.';; esac
+      if [ "$NONINTERACTIVE" = 1 ]; then
+        [ -n "${C_DB_PASSWORD_FILE-}" ] && [ -f "$C_DB_PASSWORD_FILE" ] && [ ! -L "$C_DB_PASSWORD_FILE" ] || fail 'DB_PASSWORD_FILE must name a readable regular file.'
+      else password 'Database password'; DB_PASSWORD=$PASSWORD; unset PASSWORD; fi;; *) fail 'Select managed or external.';; esac
   prompt 'Runtime theme: orange, blue or green' 'orange'; BRAND=$ANSWER; theme "$BRAND"
   prompt 'Organization logo path (empty for neutral mark)' ''; ORG_LOGO_SOURCE=$ANSWER
   [ -z "$ORG_LOGO_SOURCE" ] || [ -f "$ORG_LOGO_SOURCE" ] || fail 'Organization logo is unavailable.'
@@ -263,9 +363,9 @@ install() {
     for f in main.private.pem main.public.pem main.aes; do [ -f "$SUPPLIED_KEYS/$f" ] || fail 'Supplied key directory incomplete.'; done
   fi
   mkdir "$STATE"; chmod 700 "$STATE"
-  mkdir -p "$STATE/secrets/auth" "$STATE/secrets/tls" "$STATE/branding/logos" "$STATE/temporary"
+  mkdir -p "$STATE/secrets/auth" "$STATE/secrets/tls" "$STATE/branding/logos" "$STATE/diagnostics"
   chmod 755 "$STATE/secrets/auth" "$STATE/secrets/tls" "$STATE/branding" "$STATE/branding/logos"
-  printf '%s' "$DB_PASSWORD" > "$STATE/secrets/db-password"; unset DB_PASSWORD
+  if [ "$MODE" = external ] && [ "$NONINTERACTIVE" = 1 ]; then cp "$C_DB_PASSWORD_FILE" "$STATE/secrets/db-password"; else printf '%s' "$DB_PASSWORD" > "$STATE/secrets/db-password"; unset DB_PASSWORD; fi
   cp "$CERT" "$STATE/secrets/tls/certificate.pem"; cp "$KEY" "$STATE/secrets/tls/private.pem"
   if [ -n "$SUPPLIED_KEYS" ]; then
     for supplied in "$SUPPLIED_KEYS/"*; do
@@ -289,8 +389,8 @@ install() {
   [ -z "$(docker ps -aq --filter "label=com.docker.compose.project=$PROJECT")" ] || fail 'Project identity already exists.'
   [ -z "$(docker volume ls -q --filter "label=com.docker.compose.project=$PROJECT")" ] || fail 'Project volume identity already exists.'
   printf 'Building the existing independent images; this may require registry/dependency network access.\n'
-  compose build > "$STATE/temporary/build-output" 2>&1 || fail 'Image build failed; private build-output is retained for local inspection. Run the maintained Docker build, then start/recover-admin to resume.'
-  rm -f "$STATE/temporary/build-output"
+  compose build > "$STATE/diagnostics/build-output" 2>&1 || fail 'Image build failed; private build-output is retained for local inspection. Run the maintained Docker build, then start/recover-admin to resume.'
+  rm -f "$STATE/diagnostics/build-output"
   if [ "$MODE" = managed ]; then
     compose pull --quiet postgres >/dev/null 2>&1 || fail 'Cannot obtain the maintained PostgreSQL image; installation state preserved.'
   fi
@@ -355,8 +455,11 @@ uninstall() {
   PHASE=data-deleted; save
   printf 'Managed database deleted. Configuration/keys preserved. Archive/remove .kelios explicitly before a fresh install.\n'
 }
+read_config
+if [ "$COMMAND" = doctor ]; then doctor; exit; fi
 prerequisites
 if [ "$COMMAND" = status ]; then status; exit; fi
+if [ "$COMMAND" != install ] && [ ! -d "$STATE" ]; then fail 'Installation is not initialized. Run ./kelios install.'; fi
 lock
 if [ "$COMMAND" = install ]; then install; exit; fi
 load
@@ -364,6 +467,9 @@ case "$COMMAND" in
   start) start_runtime; printf 'KELIOS: https://%s:%s\n' "$BROWSER_HOST" "$HTTPS_PORT";;
   stop) compose_env; owned; compose stop >/dev/null 2>&1 || fail 'Stop failed.'; printf 'Stopped; configuration, data and keys preserved.\n';;
   config) configure;;
-  recover-admin) terminal; printf 'Ensuring the configured runtime/database is available.\n'; start_runtime; recovery;;
+  recover-admin) if [ "$NONINTERACTIVE" != 1 ]; then terminal; else
+      [ -n "${C_ADMIN_EMAIL-}" ] || fail 'ADMIN_EMAIL is required for noninteractive recovery.'
+      [ -n "${C_ADMIN_PASSWORD_FILE-}" ] && [ -f "$C_ADMIN_PASSWORD_FILE" ] && [ -r "$C_ADMIN_PASSWORD_FILE" ] && [ ! -L "$C_ADMIN_PASSWORD_FILE" ] || fail 'ADMIN_PASSWORD_FILE must name a readable regular file.'
+    fi; printf 'Ensuring the configured runtime/database is available.\n'; start_runtime; recovery;;
   uninstall) uninstall;;
 esac

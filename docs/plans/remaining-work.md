@@ -1,6 +1,6 @@
 # Remaining work index
 
-The [Deployment Workflow v2 Plan](deployment-workflow-v2.md) has Gate 0 **HUMAN ACCEPTED / CLOSED** on 2026-10-22; Gate 1 implementation and verification are authorized and IN PROGRESS. Gates 2–7 are not authorized. It owns portable Linux deployment, certificate provisioning, data-preserving lifecycle, and mandatory active developer-path remediation. The separate Asset CSV worktree remains outside this scope.
+The [Deployment Workflow v2 Plan](deployment-workflow-v2.md) has Gates 0–1 **HUMAN ACCEPTED / CLOSED** on 2026-10-22. Gate 1 commit and Gate 2 implementation/verification are authorized; Gate 2 commit and Gates 3–7 are not authorized. It owns portable Linux deployment, certificate provisioning, data-preserving lifecycle, and mandatory active developer-path remediation. The separate Asset CSV worktree remains outside this scope.
 
 The [default brand, breadcrumb and Asset status palette Plan](default-brand-breadcrumb-status-palette.md) is **HUMAN ACCEPTED / CLOSED** across Gates 1–3 on 2026-10-21. Gate 1 was committed as `10cf777`; Gate 2 and its corrected orange/operator review setup were committed as `7dc2378`. The separate accepted Asset transition-loanability Gate 2 was committed as `445e1aa`. HUMAN accepted Gate 3's light semantic Asset and User badges and theme-aware Delete appearance with the Plan's preserved-data 8443 evidence and runtime limitations, and separately authorized a Gate 3-only commit. No next gate is authorized.
 

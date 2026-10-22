@@ -30,7 +30,9 @@ def fixture(name):
     return d
 
 def cli(d,command,answers=(),ok=True,timeout=900):
-    rc,out=control.conversation(d,command,answers,timeout=timeout)
+    env=dict(os.environ,TMPDIR=str(BASE/'tmp'))
+    (BASE/'tmp').mkdir(exist_ok=True)
+    rc,out=control.conversation(d,['--state-dir',str(d/'.kelios'),command],answers,env=env,timeout=timeout)
     if ok and rc: raise AssertionError('CLI failed: '+command+' (private transcript suppressed)')
     for secret in [PASSWORD, EXTERNAL_PASSWORD]:
         check_secret=secret not in out
@@ -107,7 +109,7 @@ try:
     browser(12443,'green')
     keys={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in (MANAGED/'.kelios/secrets/auth').iterdir()}
     check('repeat recovery refuses',cli(MANAGED,'recover-admin',recover_answers('refused-admin'),ok=False)[0]!=0)
-    check('temporary password/env removed',not list((MANAGED/'.kelios/temporary').glob('recovery.*')) and not list((MANAGED/'.kelios/temporary').glob('compose.*')))
+    check('temporary password/env removed',not list((BASE/'tmp').iterdir()))
     # Valid zero-admin condition via normal administration: promote a second admin;
     # second disables first, then the first's still-valid short Access disables second.
     token=session['accessToken']
