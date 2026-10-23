@@ -4,7 +4,7 @@ KELIOS is a Tenant-aware inventory application for school equipment. It provides
 
 ## Deploy KELIOS
 
-Use the [Deployment Workflow v2 operator guide](docs/operations/deployment.md) for prerequisites, first installation, configuration, updates, routine commands and data-safe recovery. The CLI resolves its own clean source checkout and stores persistent state outside it; no manual `.cache` preparation is needed. [Certificate operations](docs/operations/certificates.md), [Docker host access](docs/operations/docker-host-access.md), [authentication operations](docs/operations/authentication.md) and [runtime branding](docs/operations/runtime-branding.md) cover those boundaries. Linux AMD64 is the production target, with live host verification still outstanding. Real school IServ interoperability needs the [operator-controlled manual check](docs/operations/iserv-interoperability.md).
+Use the [Deployment Workflow v2 operator guide](docs/operations/deployment.md) for prerequisites, first installation, configuration, updates, routine commands and data-safe recovery. The CLI resolves its own clean source checkout and stores persistent state outside it; no manual `.cache` preparation is needed. [Certificate operations](docs/operations/certificates.md), [Docker host access](docs/operations/docker-host-access.md), [authentication operations](docs/operations/authentication.md) and [runtime branding](docs/operations/runtime-branding.md) cover those boundaries. Linux AMD64 container verification passed; real Linux server production acceptance is still outstanding. Real school IServ interoperability needs the [operator-controlled manual check](docs/operations/iserv-interoperability.md).
 
 ## Develop and verify
 

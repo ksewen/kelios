@@ -1,6 +1,6 @@
 # Deployment Workflow v2 operator guide
 
-This guide describes the Deployment Workflow v2 CLI in a clean KELIOS source checkout. Linux AMD64 production support still needs the disposable-server verification recorded in the [Plan](../plans/deployment-workflow-v2.md). Use an ordinary operator account with approved access to a **local** Docker Engine and its Compose v2 plugin. Docker socket access grants high-privilege control of the host. The CLI does not install Docker, change host permissions during normal operation, or require root. See [Docker host access](docker-host-access.md) before granting that access.
+This guide describes the Deployment Workflow v2 CLI in a clean KELIOS source checkout. Linux AMD64 production support still needs acceptance on a real Linux server; the [Plan](../plans/deployment-workflow-v2.md) records what a disposable Linux AMD64 container verified. Use an ordinary operator account with approved access to a **local** Docker Engine and its Compose v2 plugin. Docker socket access grants high-privilege control of the host. The CLI does not install Docker, change host permissions during normal operation, or require root. See [Docker host access](docker-host-access.md) before granting that access.
 
 The initial publishing profile is containerized Nginx with same-origin HTTPS. The HTTPS port serves the frontend, runtime branding, and `/api/` proxy. The separate HTTP port serves `/healthz` only. The operator provides a trusted certificate or explicitly trusts a [private-network certificate](certificates.md); the CLI does not issue a public certificate or renew one automatically. External reverse proxies, host Nginx, rootless runtimes, and public certificate automation are outside this profile.
 
@@ -8,13 +8,13 @@ The initial publishing profile is containerized Nginx with same-origin HTTPS. Th
 
 | Environment | Current status |
 |---|---|
-| Linux server, AMD64, local Docker Engine and Compose v2 | Intended first production target. Disposable Linux installation, update, HTTPS browser flow and Docker-access checks remain unverified; no distribution or version is yet certified for production. |
+| Linux server, AMD64, local Docker Engine and Compose v2 | Intended first production target. Linux AMD64 container shell, CLI controls, certificate generation, live install/update, managed-data and secret preservation, and HTTPS routing passed with a macOS Docker Desktop daemon. Native Linux host access, networking, privilege behavior, browser flow and deployment acceptance remain unverified; no distribution or version is yet certified for production. |
 | Linux server, ARM64 | Expected compatible with the independent images, but unverified. |
-| macOS, ARM64, Docker Desktop | Development verification only: Docker Engine 29.9.2 and Compose v5.6.1 were observed; isolated Nginx HTTPS and PostgreSQL recovery drills passed. No full v2 live installation was verified. |
+| macOS, ARM64, Docker Desktop | Development daemon host: Docker Engine 29.9.2 and Compose v5.6.1 were observed; isolated Nginx HTTPS and PostgreSQL recovery drills passed. A full v2 install/update was driven by a Linux AMD64 container against this daemon, not by the macOS CLI. |
 | macOS, AMD64 | Development use is unverified. |
 | Other operating systems, legacy `docker-compose`, rootless Docker/Podman and remote Docker contexts | Unsupported in v2. |
 
-The CLI uses POSIX `sh`, Git, OpenSSL and a local Docker daemon with the Compose v2 plugin. Initial image builds need registry and dependency access. Node and Maven are image build dependencies, not host installer requirements. Docker Engine/Compose minimum versions beyond the observed development host are unverified. Do not infer Linux production support from the macOS or fake-Docker controls; the [Plan](../plans/deployment-workflow-v2.md) records exact verification and remaining limits.
+The CLI uses POSIX `sh`, Git, OpenSSL and a local Docker daemon with the Compose v2 plugin. Initial image builds need registry and dependency access. Node and Maven are image build dependencies, not host installer requirements. Docker Engine/Compose minimum versions beyond the observed development host are unverified. The Linux container evidence does not establish production support on a real Linux host; the [Plan](../plans/deployment-workflow-v2.md) records exact verification and remaining limits.
 
 ## Source and persistent state
 

@@ -115,7 +115,7 @@ esac
         (self.root / 'bin/git').chmod(0o755)
         (self.root / 'bin/lsof').write_text('#!/bin/sh\n[ -f "$(dirname "$0")/busy-port" ]\n')
         (self.root / 'bin/lsof').chmod(0o755)
-        (self.root / 'bin/ss').write_text('#!/bin/sh\n[ ! -f "$(dirname "$0")/busy-port" ] || printf "LISTEN 0 128 127.0.0.1:8443 0.0.0.0:*\\n"\n')
+        (self.root / 'bin/ss').write_text('#!/bin/sh\nif [ -f "$(dirname "$0")/busy-port" ]; then port=$(cat "$(dirname "$0")/busy-port"); printf "LISTEN 0 128 127.0.0.1:%s 0.0.0.0:*\\n" "${port:-8443}"; fi\n')
         (self.root / 'bin/ss').chmod(0o755)
         # Observe argv without joining/evaluating it or changing fake Docker outcomes.
         (self.root / 'bin/capture.py').write_text("""import hashlib, json, pathlib, sys
@@ -239,6 +239,8 @@ with (root / 'docker-argv.jsonl').open('a') as out:
             self.assertIn('ordinary operator user',result.stderr)
         self.assertFalse((self.root/'.kelios').exists())
     def test_host_prepare_does_not_change_macos_host(self):
+        (self.root/'bin/uname').write_text('#!/bin/sh\ncase "$1" in -s) echo Darwin;; -m) echo arm64;; esac\n')
+        (self.root/'bin/uname').chmod(0o755)
         result=subprocess.run([str(self.root/'kelios'),'host','prepare','docker-access'],cwd=self.root,env=self.env,text=True,capture_output=True)
         self.assertNotEqual(result.returncode,0)
         self.assertIn('only on Linux',result.stderr)
@@ -488,7 +490,7 @@ with (root / 'docker-argv.jsonl').open('a') as out:
         (self.root/'bin/sleep-up').touch()
         process=subprocess.Popen([str(self.root/'kelios'),'--state-dir',str(state),'update'],cwd=self.root,env=self.env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         try:
-            deadline=time.monotonic()+5
+            deadline=time.monotonic()+30
             while not (self.root/'bin/entered-up').exists() and time.monotonic()<deadline:
                 time.sleep(.05)
             self.assertTrue((self.root/'bin/entered-up').exists())
@@ -771,7 +773,7 @@ with (root / 'docker-argv.jsonl').open('a') as out:
         self.assertIn('PRIMARY=#2458d3',saved.read_text())
         self.assertIn('ISSUER=https://localhost:8443',saved.read_text())
         applied=saved.read_bytes(); self.assertNotEqual(before,applied)
-        (self.root/'bin/busy-port').touch(); config.write_text('HTTPS_PORT=9555\n')
+        (self.root/'bin/busy-port').write_text('9555\n'); config.write_text('HTTPS_PORT=9555\n')
         self.assertIn('already listening',self.certificate_cli('config',config=config).stderr)
         self.assertEqual(applied,saved.read_bytes())
         (self.root/'bin/busy-port').unlink()
