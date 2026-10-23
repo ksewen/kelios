@@ -1,6 +1,6 @@
 # Deployment Workflow v2
 
-**Plan status:** Gates 0–6 HUMAN ACCEPTED / CLOSED; Gate 6 was accepted on 2026-10-23. Gate 7 IN PROGRESS, separately authorized for implementation and verification. Gates 1–5 were committed as `59a7798`, `7f97b5b`, `c9592d0`, `208054b`, and `696fb84`. Gate 6 commit is separately authorized. Gate 7 commit and push are not authorized.
+**Plan status:** Gates 0–7 HUMAN ACCEPTED / CLOSED; Gate 7 was accepted on 2026-10-23 with its recorded Linux evidence limits. Gates 1–6 were committed as `59a7798`, `7f97b5b`, `c9592d0`, `208054b`, `696fb84`, and `95b4605`. Gate 7 commit and branch push are separately authorized; Linux production acceptance remains a distinct HUMAN decision on a real Linux server.
 
 ## 1. Goal, ownership, and boundaries
 
@@ -45,7 +45,7 @@ The Gate 0 scan used `git grep -n -I` over all tracked files for `/Users/`, `Ide
 
 No tracked runtime deployment file contains the original `/Users/ksewen/...` checkout path. The path-dependent runtime defect is coupling state and Compose ownership to whichever source checkout invokes the CLI (`kelios:9–10`, `137–156`), not a literal developer path. `README.md` has repository-relative `.cache` development build commands; they are not an operator deployment dependency, but README must link the new operator guide when it exists. The smoke scripts and test verifier are the confirmed executable macOS assumptions. The CLI uses POSIX `sh`/`awk`/`mktemp` rather than a known BSD-only option; portability must still be verified on Linux, including OpenSSL and Docker behavior. No host Nginx path or systemd unit is currently assumed.
 
-## 3. V2 operator contract — proposed, pending review
+## 3. V2 operator contract — approved design and gate-limited implementation
 
 **Source and state.** Initially support a clean source checkout containing `kelios`, `deploy/`, `frontend/`, and `backend/`. The CLI resolves those from its own path and takes an optional `--state-dir`; the default instance root is `${XDG_DATA_HOME:-$HOME/.local/share}/kelios/default`. The source is replaceable. Within the instance root, keep validated non-secret configuration, private secrets (DB password, auth keys, TLS key), public branding, and generated deployment metadata distinct. PostgreSQL data stays in its named Docker volume; external PostgreSQL stays externally owned. Logs belong to Docker and private diagnostics, not the source tree. Generated Compose inputs are disposable, regenerated from validated state, and never become the operator's editable config. Use one instance initially; no instance manager.
 
@@ -145,6 +145,25 @@ Verification: `./scripts/test-deployment-cli.sh` passed **66/66** PTY/fake-Docke
 A disposable macOS ARM64 Docker Engine drill used the existing `postgres:17-alpine` image: it inserted `gate6-sentinel`, took a plain SQL dump to a private ignored temporary file, removed its dedicated source container/volume, restored into a second dedicated volume, and read back the exact sentinel. A third unrelated disposable volume remained present through the restore. The script trap removed all three test volumes/containers and its dump; a subsequent Docker volume listing found no `kelios-g6-` volumes. The first sandboxed attempt failed at Docker socket permission before creating resources; the authorized unsandboxed run exited 0. The drill was verification only, not a supported backup/restore CLI.
 
 **Evidence limit:** The real database drill verified PostgreSQL dump/restore and unrelated-volume isolation, but did not run a KELIOS application update, Flyway migration, live interrupted Compose switch, Linux AMD64 host, or production backup procedure. Fake-Docker controls do not prove real Docker timing or runtime health. No operator data or CSV worktree was touched. **HUMAN ACCEPTED / CLOSED: 2026-10-23**, with this evidence limit; Gate 6 commit separately authorized.
+
+### Gate 7 implementation and verification — 2026-10-23
+
+Baseline: accepted Gate 6 commit `95b4605`. Gate 7 updated the README entry point, v2 compatibility/limitations and authentication/branding cross-links; reduced the obsolete v1 local guide to a legacy pointer without operational commands; removed hardcoded Homebrew Node paths from four historical smoke scripts and the v1 live verifier; and added `scripts/check-portable-paths.sh`. The smoke scripts now require Node 24 and npm from `PATH`. The v1 verifier remains a historical fixture with other outdated v1 assumptions and is not Linux v2 acceptance evidence. No production CLI/Compose/runtime, business, CSV, operator-data or historical-result file changed.
+
+The final tracked-repository scan used `git grep -n -I -E` for Unix/macOS homes, the original checkout/workspace and Homebrew Node paths, plus Windows user-home and macOS/Docker Desktop indicators. The inventory of developer-local **absolute path** occurrences is complete at the matched-line level:
+
+| Classification | Tracked file and exact line(s) | Path value and disposition |
+|---|---|---|
+| Active v1 procedure, removed | `docs/operations/local-deployment.md:15,18,107` on the Gate 6 baseline | Original checkout and personal logo file. The procedure is now a legacy pointer to `deployment.md`; no current command uses those paths or manual cache preparation. |
+| Executable helper, removed | `scripts/smoke-phase1.sh:9`, `smoke-phase2.sh:13`, `smoke-phase3.sh:13`, `smoke-phase4.sh:16`, `verify-deployment-cli.py:78` on the Gate 6 baseline | Original Homebrew Node 24 binary location. Scripts use the caller's `PATH` and check Node 24/npm. The v1 verifier's Docker Desktop external-host assumption at current lines 87,179 and fake-Docker fixture at `scripts/test-deployment-cli.py:300` remain historical/test-only, not a supported Linux workflow. |
+| Accepted historical closeout, preserved | `docs/history/deployment-cli.md:71` | Exact disposable local checkout used for v1 evidence. |
+| Dated Plan verification, preserved | `docs/plans/asset-registration-detail-merge-tenant-refinement.md:26`; `default-brand-breadcrumb-status-palette.md:62`; `final-collection-detail-consistency.md:60,73,74,75,88,101`; `global-tenant-resource-authority.md:100,111,124,137,150`; `manufacturer-authority-and-search-reset.md:51,65,77,79,99,100,165,178,184,186,190` | Historical Homebrew executable, original checkout cache/Playwright fixture, and personal logo/download file paths. These are dated commands/results, not current operator instructions; exact evidence was not rewritten. |
+| This Plan's Gate 0 audit, preserved | This file: lines 36,40,41,42,43,46 | Original path values and patterns retained solely to explain the confirmed baseline and remediation. |
+| False positive, retained | `IMPLEMENTATION_STATUS.md:99` | `/Users/Audit` is an application route, not a filesystem location. Package namespace `com.github.ksewen` is source identity, not a home path. |
+
+The active-path regression check searches tracked source, scripts, examples, README, status, ADRs and operations/development documentation, excluding dated Plans/history and its own regex source. It returned **zero active matches**. `./scripts/check-portable-paths.sh`, shell syntax checks for that script and the four touched smoke scripts, Python compilation of the v1 verifier, and `git diff --check` exited 0. A link-target check of **86 local links across seven touched Markdown files** found no missing targets. The available host reports Node **v25.9.0**; a guarded `sh scripts/smoke-phase2.sh` exited **1** with `Node 24 must be on PATH` before Docker/resource changes. Full Node 24 smoke phases were not executed; their old phases can alter disposable Docker fixtures and do not validate v2 Linux deployment. The Linux/architecture/version support matrix in the [operator guide](../operations/deployment.md#compatibility-and-evidence) separates intended production target from observed macOS development evidence. The separate CSV worktree was not changed.
+
+**Evidence limit:** No disposable Linux AMD64 full install/update/HTTPS browser test, real Docker-access preparation, real KELIOS migration-preservation drill, or live v2 release verifier was available in this gate. Linux production support cannot yet be claimed. **HUMAN ACCEPTED / CLOSED: 2026-10-23**, with these evidence limits. Gate 7 commit and branch push were separately authorized; Linux production acceptance is deferred to HUMAN review on a real Linux server.
 
 ## 5. Open risks and acceptance limits
 

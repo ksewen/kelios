@@ -74,8 +74,10 @@ def login(port,user='cli-admin'):
     return client,result
 
 def browser(port,brand):
+    if not shutil.which('node') or not shutil.which('npm') or not subprocess.check_output(['node','--version'],text=True).startswith('v24.'):
+        raise RuntimeError('Node 24 and npm must be on PATH for browser verification')
     env=os.environ.copy()
-    env.update(PATH='/opt/homebrew/opt/node@24/bin:'+env['PATH'], KELIOS_BASE_URL=f'https://localhost:{port}', KELIOS_TEST_TLS='true',KELIOS_TEST_LOGIN='cli-admin',KELIOS_TEST_PASSWORD_FILE=str(BASE/'password'),KELIOS_EXPECTED_BRAND=brand,PLAYWRIGHT_BROWSERS_PATH=str(ROOT/'.cache/playwright'))
+    env.update(KELIOS_BASE_URL=f'https://localhost:{port}', KELIOS_TEST_TLS='true',KELIOS_TEST_LOGIN='cli-admin',KELIOS_TEST_PASSWORD_FILE=str(BASE/'password'),KELIOS_EXPECTED_BRAND=brand,PLAYWRIGHT_BROWSERS_PATH=str(ROOT/'.cache/playwright'))
     args=['npm','run','test:smoke','--','tests/runtime-branding.spec.ts']
     if brand=='green': args+=['tests/authentication.spec.ts','--grep','real HTTPS|real cookie|runtime|branding|logo|config|neutral|missing|malformed|timeout|theme']
     with (BASE/('browser-'+brand+'.log')).open('w') as out:

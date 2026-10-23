@@ -4,9 +4,10 @@ set -eu
 cd "$(dirname "$0")/.."
 mkdir -p .cache .cache/verification/phase1
 export BUILDX_CONFIG="$PWD/.cache/buildx"
+command -v node >/dev/null 2>&1 && command -v npm >/dev/null 2>&1 || { echo 'Node 24 and npm must be on PATH.' >&2; exit 1; }
+case "$(node --version)" in v24.*) ;; *) echo 'Node 24 must be on PATH.' >&2; exit 1;; esac
 ./scripts/smoke-phase0.sh
 cp .cache/docker-smoke.log .cache/verification/phase1/docker-smoke.txt
-export PATH="/opt/homebrew/opt/node@24/bin:$PATH"
 export PLAYWRIGHT_BROWSERS_PATH="$PWD/.cache/playwright"
 export TMPDIR="$PWD/.cache/tmp"
 export npm_config_cache="$PWD/.cache/npm"
