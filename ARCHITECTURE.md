@@ -170,6 +170,8 @@ At the original Phase 4 design date, Phases 0–3 were accepted and Phase 4 awai
 - Additive V6 is planned for one nullable Asset local_identifier string; no uniqueness or dedicated index/filter/sort, new tables or identifier locking. Preserve V1–V5 and history, with no value inference/backfill. Field validation belongs to the existing supported registration/metadata transaction boundaries, not a generic validation framework or trigger.
 - Stabilization includes invariant coverage mapping, full Phase 0–3 regressions, independent images/HTTPS/branding/documentation and a disposable isolated PostgreSQL backup/restore drill with externally supplied encryption-key availability. No backup subsystem, retention/RPO/RTO/HA policy, live-data destructive restore or new privacy policy.
 
+That exclusion describes the completed Phase 4 scope. The current deployment CLI supports [managed-instance recovery bundles](docs/operations/backup-restore.md); off-host storage, retention and external PostgreSQL recovery remain operator responsibilities.
+
 Concrete i18n dependency/resources, detection order, migration validation and test organization are documented in the Phase 4 plan. The user approved i18next/react-i18next implementation; compatible pinned versions and actual verification are recorded in ADR 0005 and Phase 4 evidence.
 
 ## 12. UI Identity and Rendering Stability

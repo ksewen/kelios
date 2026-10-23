@@ -1,4 +1,4 @@
-# Private-network certificates (Deployment Workflow v2, Gate 2)
+# Private-network certificates
 
 The CLI can create a self-signed certificate for a local or explicitly trusted private-network hostname before installation. It stores the hostname, certificate and key in the selected instance state directory. The default validity is **730 days**; there is no automatic renewal or certificate authority. Browsers and other clients must explicitly trust the certificate. For a publicly trusted service, supply an existing certificate and unencrypted private key during install instead. KELIOS does not manage ACME or public trust.
 
@@ -29,3 +29,5 @@ Replacement requires typing `REPLACE <persisted-hostname>` exactly. It generates
 To replace with an operator-managed PEM pair, set `TLS_CERTIFICATE=<absolute-path>` and `TLS_PRIVATE_KEY=<absolute-path>` in an input config and run `./kelios --config <config-file> certificate replace`. In unattended operation, add `--non-interactive --confirm-replace`. A missing, expired, mismatched or wrong-host pair is rejected before the active pointer changes. `BROWSER_HOST`, if supplied during replacement, must match the persisted identity. Certificate replacement does not change the application's hostname, JWT issuer, database or authentication keys.
 
 An interrupted initial provisioning attempt may leave an incomplete private state directory. Inspect it before retrying; the CLI will not delete or overwrite a state directory automatically. If a replacement fails, the previous active version remains selected. Check `./kelios status` and `./kelios doctor` after correction. Normal install, start, stop and administrator recovery do not rotate certificates.
+
+Managed bundle restore preserves this active certificate when the browser hostname is unchanged. Explicit hostname remapping during restore selects a newly generated 730-day private certificate or validated operator-supplied PEM pair; trust the new certificate on clients before use. The original backed-up TLS pair remains private in the recovered state, while authentication/encryption keys are preserved exactly. See [disaster recovery](backup-restore.md).

@@ -1,8 +1,6 @@
-# Legacy guided local deployment
+# Retired local deployment procedure
 
-This path previously described the source-local Deployment CLI v1. Its manual `.cache` preparation, `.kelios/` layout and seven-command procedure do not describe the current CLI. Do not use its historical commands with a v2 installation.
-
-For current installation, configuration, updating and routine operation, use the [Deployment Workflow v2 operator guide](deployment.md). See the [certificate procedure](certificates.md), [Docker host-access procedure](docker-host-access.md) and [recovery procedure](deployment-recovery.md) as needed. The [accepted v1 closeout](../history/deployment-cli.md) preserves dated results and limitations.
+The former source-local setup instructions have been retired. Use the [KELIOS deployment guide](deployment.md) for installation and routine operation, and the [backup and disaster-recovery guide](backup-restore.md) for managed recovery. This page remains so links in dated project records still reach the current operator procedures.
 
 ## Change the theme or organization logo
 

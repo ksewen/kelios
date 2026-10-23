@@ -1,6 +1,6 @@
-# Docker host access (Deployment Workflow v2, Gate 3)
+# Docker host access
 
-Run `./kelios` as the ordinary account that owns the instance state. The CLI requires an installed Docker Engine, a working `docker compose` plugin (v2 or later), and access to a **local Unix-socket** daemon. It does not install Docker, start the daemon, change the active Docker context, or run normal deployment commands through `sudo`. The current containerized Nginx profile uses unprivileged host ports; no host Nginx or systemd setup is required. Remote Docker contexts and rootless Docker/Podman are outside this version's tested contract because the deployment binds local instance files into containers.
+Run `./kelios` as the ordinary account that owns the instance state. The CLI requires an installed Docker Engine, a working `docker compose` plugin (Compose v2 or later), and access to a **local Unix-socket** daemon. It does not install Docker, start the daemon, change the active Docker context, or run normal deployment commands through `sudo`. The containerized Nginx profile uses unprivileged host ports; no host Nginx or systemd setup is required. Remote Docker contexts and rootless Docker/Podman are outside the tested deployment contract because the deployment binds local instance files into containers.
 
 Docker socket access grants high-privilege control of the host. [Docker's Linux post-installation guidance](https://docs.docker.com/engine/install/linux-postinstall/) calls Docker group access root-level privilege and documents the targeted `usermod -aG` step plus the need to log in again. Treat group membership accordingly. Use your host security policy to decide which operator account may receive it; do not add users merely to silence a permission error.
 

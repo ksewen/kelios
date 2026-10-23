@@ -10,9 +10,14 @@ STATE=${XDG_DATA_HOME:-$HOME/.local/share}/kelios/default
 INPUT_CONFIG=
 NONINTERACTIVE=0
 CONFIRM_REPLACE=0
+BACKUP_OUTPUT=
+RESTORE_BUNDLE=
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --state-dir|--config) [ "$#" -ge 2 ] || { printf 'Missing value for %s\n' "$1" >&2; exit 1; }; if [ "$1" = --state-dir ]; then STATE=$2; else INPUT_CONFIG=$2; fi; shift 2;;
+    --state-dir|--config|--output|--bundle)
+      [ "$#" -ge 2 ] || { printf 'Missing value for %s\n' "$1" >&2; exit 1; }
+      case "$1" in --state-dir) STATE=$2;; --config) INPUT_CONFIG=$2;; --output) BACKUP_OUTPUT=$2;; --bundle) RESTORE_BUNDLE=$2;; esac
+      shift 2;;
     --non-interactive) NONINTERACTIVE=1; shift;;
     --confirm-replace) CONFIRM_REPLACE=1; shift;;
     *) break;;
@@ -33,24 +38,28 @@ TEMP=
 ENV_FILE=
 WORK=
 STAGED_CERT=
+RESTORE_STAGE=
 fail() { printf 'KELIOS: %s\n' "$*" >&2; exit 1; }
 cleanup() {
   if [ "$ECHO_OFF" = 1 ]; then stty echo </dev/tty 2>/dev/null || :; fi
   if [ -n "$WORK" ] && [ -d "$WORK" ]; then
-    rm -f "$WORK/compose.env" "$WORK/logs-output" "$WORK/recovery/password" "$WORK/recovery/output" "$WORK/certificate.pem" "$WORK/private.pem"
+    rm -f "$WORK/compose.env" "$WORK/logs-output" "$WORK/recovery/password" "$WORK/recovery/output" "$WORK/certificate.pem" "$WORK/private.pem" "$WORK/database.dump" "$WORK/flyway"
     rmdir "$WORK/recovery" 2>/dev/null || :
     rmdir "$WORK" 2>/dev/null || :
   fi
   if [ -n "$STAGED_CERT" ] && [ -d "$STAGED_CERT" ]; then rm -f "$STAGED_CERT/certificate.pem" "$STAGED_CERT/private.pem"; rmdir "$STAGED_CERT" 2>/dev/null || :; fi
+  if [ -n "$RESTORE_STAGE" ] && [ -d "$RESTORE_STAGE" ] && [ ! -L "$RESTORE_STAGE" ]; then rm -rf -- "$RESTORE_STAGE"; fi
   if [ "$LOCKED" = 1 ]; then rmdir "$LOCK" 2>/dev/null || :; fi
 }
 trap cleanup 0
 trap 'exit 130' INT
 trap 'exit 143' TERM HUP
-usage() { printf 'Usage: ./kelios [--state-dir ABSOLUTE_PATH] [--config FILE] [--non-interactive] [--confirm-replace] {doctor|install|resume-install|update|start|stop|restart|status|logs|config|uninstall|recover-admin|certificate init|certificate replace|host prepare docker-access}\n'; }
-case "$*" in 'certificate init'|'certificate replace'|'host prepare docker-access') COMMAND=$*;; *) [ "$#" = 1 ] || { usage; exit 1; }; COMMAND=$1;; esac
-case "$COMMAND" in doctor|install|resume-install|update|start|stop|restart|status|logs|config|uninstall|recover-admin|'certificate init'|'certificate replace'|'host prepare docker-access') ;; *) usage; exit 1;; esac
+usage() { printf 'Usage: ./kelios [--state-dir ABSOLUTE_PATH] [--config FILE] [--output NEW_ABSOLUTE_DIRECTORY] [--bundle ABSOLUTE_DIRECTORY] [--non-interactive] [--confirm-replace] {doctor|install|resume-install|update|start|stop|restart|status|logs|config|uninstall|recover-admin|backup|restore|restore discard-incomplete|certificate init|certificate replace|host prepare docker-access}\n'; }
+case "$*" in 'certificate init'|'certificate replace'|'host prepare docker-access'|'restore discard-incomplete') COMMAND=$*;; *) [ "$#" = 1 ] || { usage; exit 1; }; COMMAND=$1;; esac
+case "$COMMAND" in doctor|install|resume-install|update|start|stop|restart|status|logs|config|uninstall|recover-admin|backup|restore|'restore discard-incomplete'|'certificate init'|'certificate replace'|'host prepare docker-access') ;; *) usage; exit 1;; esac
 [ "$CONFIRM_REPLACE" = 0 ] || [ "$COMMAND" = 'certificate replace' ] || fail '--confirm-replace is only valid for certificate replace.'
+[ -z "$BACKUP_OUTPUT" ] || [ "$COMMAND" = backup ] || fail '--output is only valid for backup.'
+[ -z "$RESTORE_BUNDLE" ] || [ "$COMMAND" = restore ] || fail '--bundle is only valid for restore.'
 case "$ROOT" in *[\'\"\$\`\\]* ) fail 'Repository path contains unsupported quoting characters.';; esac
 [ ! -L "$STATE" ] || fail 'Installation directory must not be a symlink.'
 workspace() {
@@ -162,7 +171,7 @@ host_prepare_docker_access() {
 }
 lock() {
   [ ! -L "$LOCK" ] || fail 'Unsafe installation lock.'
-  case "$COMMAND" in install|'certificate init') mkdir -p "$(dirname "$STATE")" || fail 'Cannot create state parent.';; esac
+  case "$COMMAND" in install|'certificate init'|restore) mkdir -p "$(dirname "$STATE")" || fail 'Cannot create state parent.';; esac
   mkdir "$LOCK" 2>/dev/null || fail 'Another operation or an abandoned .kelios.lock exists. Inspect before removing the lock.'
   LOCKED=1
 }
@@ -210,7 +219,7 @@ validate() {
   case "$PROJECT" in kelios-local-*) ;; *) fail 'Invalid installation identity.';; esac
   identifier "$PROJECT"
   case "$MODE" in managed|external) ;; *) fail 'Invalid database mode.';; esac
-  case "$PHASE" in prepared|initialized|data-deleted) ;; *) fail 'Invalid installation state.';; esac
+  case "$PHASE" in prepared|initialized|data-deleted|restoring) ;; *) fail 'Invalid installation state.';; esac
   case "$RELEASE" in phase0) ;; *) case "$RELEASE" in *[!0-9a-f]*|'') fail 'Invalid release identity.';; esac; [ "${#RELEASE}" = 12 ] || fail 'Invalid release identity.';; esac
   bind "$BIND"; port "$HTTP_PORT"; port "$HTTPS_PORT"
   [ "$HTTP_PORT" != "$HTTPS_PORT" ] || fail 'HTTP and HTTPS ports must differ.'
@@ -429,6 +438,10 @@ build_images() {
   compose build > "$STATE/diagnostics/build-output" 2>&1 || fail 'Image build failed; private build-output is retained for local inspection. Runtime and data were preserved.'
   rm -f "$STATE/diagnostics/build-output"
 }
+postgres_image() {
+  docker image inspect postgres:17-alpine >/dev/null 2>&1 && return
+  compose pull --quiet postgres >/dev/null 2>&1 || fail 'Cannot obtain the maintained PostgreSQL image; installation state was preserved.'
+}
 recovery() {
   prompt 'GLOBAL ADMIN Email' ''; RECOVERY_EMAIL=$ANSWER
   case "$RECOVERY_EMAIL" in *[![:space:]]*) ;; *) fail 'GLOBAL ADMIN Email is required.';; esac
@@ -545,7 +558,7 @@ install() {
   [ -z "$(docker volume ls -q --filter "label=com.docker.compose.project=$PROJECT")" ] || fail 'Project volume identity already exists.'
   build_images
   if [ "$MODE" = managed ]; then
-    compose pull --quiet postgres >/dev/null 2>&1 || fail 'Cannot obtain the maintained PostgreSQL image; installation state preserved.'
+    postgres_image
   fi
   start_runtime; recovery; start_runtime
   printf 'KELIOS installation ready: https://%s:%s\n' "$BROWSER_HOST" "$HTTPS_PORT"
@@ -560,7 +573,7 @@ resume_install() {
   [ "$RELEASE" = "$SAVED_RELEASE" ] || fail 'Resume the prepared install from its recorded source release.'
   files; crypto; compose_env; owned
   build_images
-  if [ "$MODE" = managed ]; then compose pull --quiet postgres >/dev/null 2>&1 || fail 'Cannot obtain the maintained PostgreSQL image; installation state preserved.'; fi
+  if [ "$MODE" = managed ]; then postgres_image; fi
   start_runtime; recovery; start_runtime
   printf 'KELIOS installation ready: https://%s:%s\n' "$BROWSER_HOST" "$HTTPS_PORT"
 }
@@ -574,6 +587,114 @@ update() {
   save
   start_runtime
   printf 'KELIOS updated to release %s. Database migrations, if any, are not automatically rolled back.\n' "$RELEASE"
+}
+flyway_history() {
+  compose exec -T postgres psql -X -v ON_ERROR_STOP=1 -U kelios -d kelios -Atc "SELECT coalesce(version,'')||'|'||coalesce(checksum::text,'')||'|'||CASE WHEN success THEN 't' ELSE 'f' END FROM flyway_schema_history ORDER BY installed_rank" 2>/dev/null
+}
+bundle_tool() {
+  command -v python3 >/dev/null 2>&1 || fail 'Python 3 is required for managed backup and restore.'
+  python3 -c 'import sys; sys.exit(sys.version_info < (3, 9))' || fail 'Python 3.9 or newer is required for managed backup and restore.'
+  python3 "$ROOT/deploy/recovery_bundle.py" "$@" || fail 'Private recovery bundle operation failed; no existing backup or initialized installation was overwritten.'
+}
+backup() {
+  [ -n "$BACKUP_OUTPUT" ] || fail 'Specify a new absolute backup directory with --output.'
+  [ -z "$INPUT_CONFIG" ] || fail 'backup does not accept an input configuration.'
+  [ "$MODE" = managed ] && [ "$PHASE" = initialized ] || fail 'Backup requires an initialized managed installation.'
+  files; crypto; compose_env; owned
+  docker volume inspect "${PROJECT}_postgres-data" >/dev/null 2>&1 || fail 'Managed database volume is missing; backup refused.'
+  [ ! -e "$BACKUP_OUTPUT" ] && [ ! -L "$BACKUP_OUTPUT" ] || fail 'Backup destination already exists; nothing was overwritten.'
+  for service in backend frontend postgres; do
+    id=$(compose ps --quiet "$service")
+    [ -n "$id" ] || fail 'Backup needs a healthy managed runtime.'
+    [ "$(docker inspect --format '{{.State.Status}}/{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$id")" = running/healthy ] || fail 'Backup needs a healthy managed runtime.'
+    if [ "$service" != postgres ]; then
+      [ "$(docker inspect --format '{{.Config.Image}}' "$id")" = "kelios-$service:$RELEASE" ] || fail 'Running application image differs from the saved release; finish or recover the update before backup.'
+    fi
+  done
+  flyway_history > "$WORK/flyway" || fail 'Cannot read successful Flyway history; backup refused.'
+  [ -s "$WORK/flyway" ] || fail 'Flyway history is empty; backup refused.'
+  compose exec -T postgres pg_dump -U kelios -d kelios -Fc > "$WORK/database.dump" 2>/dev/null || fail 'Managed PostgreSQL dump failed; no bundle was published.'
+  [ -s "$WORK/database.dump" ] || fail 'Managed PostgreSQL dump is empty; no bundle was published.'
+  compose exec -T postgres pg_restore --list < "$WORK/database.dump" >/dev/null 2>&1 || fail 'Managed PostgreSQL dump is unreadable; no bundle was published.'
+  bundle_tool pack "$STATE" "$WORK/database.dump" "$WORK/flyway" "$BACKUP_OUTPUT" "$ROOT"
+  printf 'Private managed recovery bundle ready: %s\n' "$BACKUP_OUTPUT"
+}
+restore() {
+  [ -n "$RESTORE_BUNDLE" ] || fail 'Specify a private recovery directory with --bundle.'
+  [ ! -e "$STATE" ] && [ ! -L "$STATE" ] || fail 'Restore target already exists; initialized or partial state is never overwritten.'
+  [ -z "$BACKUP_OUTPUT" ] || fail 'restore does not accept --output.'
+  for field in ${CONFIG_KEYS-}; do case "$field" in BIND|HTTP_PORT|HTTPS_PORT|BROWSER_HOST|TLS_CERTIFICATE|TLS_PRIVATE_KEY) ;; *) fail "Unsupported restore configuration field: $field";; esac; done
+  validate_input_config
+  workspace
+  RESTORE_STAGE=$(mktemp -d "$(dirname "$STATE")/.kelios-restore.XXXXXXXX") || fail 'Cannot stage private restoration.'
+  bundle_tool validate "$RESTORE_BUNDLE" "$RESTORE_STAGE"
+  TARGET_STATE=$STATE; STATE=$RESTORE_STAGE/instance
+  load; [ "$MODE" = managed ] && [ "$PHASE" = initialized ] || fail 'Restore accepts only an initialized managed bundle.'
+  SAVED_RELEASE=$RELEASE; source_release
+  [ "$RELEASE" = "$SAVED_RELEASE" ] || fail 'Restore requires the exact clean KELIOS source release recorded in the bundle; no implicit update or migration.'
+  files_restore; crypto
+  ORIGINAL_HOST=$BROWSER_HOST; ORIGINAL_HTTPS=$HTTPS_PORT
+  [ -z "${C_BIND-}" ] || BIND=$C_BIND
+  [ -z "${C_HTTP_PORT-}" ] || HTTP_PORT=$C_HTTP_PORT
+  [ -z "${C_HTTPS_PORT-}" ] || HTTPS_PORT=$C_HTTPS_PORT
+  [ -z "${C_BROWSER_HOST-}" ] || BROWSER_HOST=$C_BROWSER_HOST
+  validate
+  port_free "$HTTP_PORT"; port_free "$HTTPS_PORT"
+  if [ "$BROWSER_HOST" != "$ORIGINAL_HOST" ]; then
+    if [ -n "${C_TLS_CERTIFICATE-}${C_TLS_PRIVATE_KEY-}" ]; then
+      [ -n "${C_TLS_CERTIFICATE-}" ] && [ -n "${C_TLS_PRIVATE_KEY-}" ] || fail 'Provide both TLS PEM paths when remapping a hostname.'
+      certificate_store "$C_TLS_CERTIFICATE" "$C_TLS_PRIVATE_KEY"
+    else certificate_generate; fi
+  elif [ -n "${C_TLS_CERTIFICATE-}${C_TLS_PRIVATE_KEY-}" ]; then
+    [ -n "${C_TLS_CERTIFICATE-}" ] && [ -n "${C_TLS_PRIVATE_KEY-}" ] || fail 'Provide both TLS PEM paths.'
+    certificate_store "$C_TLS_CERTIFICATE" "$C_TLS_PRIVATE_KEY"
+  fi
+  [ "$BROWSER_HOST" = "$ORIGINAL_HOST" ] && [ "$HTTPS_PORT" = "$ORIGINAL_HTTPS" ] || ISSUER=https://$BROWSER_HOST:$HTTPS_PORT
+  PHASE=restoring
+  mkdir -p "$STATE/branding/logos" "$STATE/diagnostics"
+  save; branding; files; crypto; compose_env
+  docker network inspect "${PROJECT}_default" >/dev/null 2>&1 && fail 'Restore project network already exists.'
+  [ -z "$(docker ps -aq --filter "label=com.docker.compose.project=$PROJECT")" ] || fail 'Restore project containers already exist.'
+  [ -z "$(docker volume ls -q --filter "label=com.docker.compose.project=$PROJECT")" ] || fail 'Restore project volume already exists.'
+  docker volume inspect "${PROJECT}_postgres-data" >/dev/null 2>&1 && fail 'Restore project volume name already exists.'
+  compose config --quiet >/dev/null 2>&1 || fail 'Restored Compose configuration is invalid.'
+  postgres_image
+  docker run --rm --network none --user "$(id -u):$(id -g)" -v "$RESTORE_STAGE/database.dump:/bundle/database.dump:ro" postgres:17-alpine pg_restore --list /bundle/database.dump >/dev/null 2>&1 || fail 'Bundle PostgreSQL dump is unreadable; target state remains absent.'
+  build_images
+  bundle_tool promote "$STATE" "$TARGET_STATE"
+  STATE=$TARGET_STATE
+  compose_env
+  compose up -d --wait --wait-timeout 180 --no-build --pull never postgres >/dev/null 2>&1 || fail 'PostgreSQL restore target failed to initialize; partial state is retained for inspection.'
+  owned
+  compose exec -T postgres pg_restore -U kelios -d kelios --no-owner --no-privileges --exit-on-error --single-transaction < "$RESTORE_STAGE/database.dump" >/dev/null 2>&1 || fail 'Database import failed; partial restoration is retained and cannot start.'
+  flyway_history > "$WORK/flyway" || fail 'Cannot verify restored Flyway history; restoration remains incomplete.'
+  bundle_tool flyway-equal "$RESTORE_STAGE/manifest.json" "$WORK/flyway"
+  PHASE=initialized; save
+  printf 'Managed recovery restored. Run ./kelios start; update OIDC callback registrations if the public origin changed.\n'
+}
+files_restore() {
+  certificate_load
+  [ "$CERT_HOST" = "$BROWSER_HOST" ] || fail 'Bundle certificate identity differs from saved browser host.'
+  for f in secrets/db-password secrets/auth/main.private.pem secrets/auth/main.public.pem secrets/auth/main.aes; do [ -f "$STATE/$f" ] || fail 'Bundle is missing a required secret.'; done
+}
+discard_incomplete() {
+  [ "$PHASE" = restoring ] || fail 'Only an incomplete restore can be discarded; initialized deployments are protected.'
+  [ "$MODE" = managed ] || fail 'Only a managed incomplete restore can be discarded.'
+  [ "$NONINTERACTIVE" = 0 ] || fail 'Discarding an incomplete restore requires an interactive terminal.'
+  terminal; compose_env; owned
+  printf 'This deletes only incomplete recovery state and its owned managed database. The backup bundle is untouched.\n'
+  prompt "Type DISCARD INCOMPLETE $PROJECT exactly" ''
+  [ "$ANSWER" = "DISCARD INCOMPLETE $PROJECT" ] || fail 'Incomplete-restore discard canceled; nothing was deleted.'
+  compose down >/dev/null 2>&1 || fail 'Could not stop incomplete restoration resources.'
+  volume=${PROJECT}_postgres-data
+  if docker volume inspect "$volume" >/dev/null 2>&1; then
+    owned
+    [ -z "$(docker ps -aq --filter "volume=$volume")" ] || fail 'Incomplete database volume has consumers; refused deletion.'
+    docker volume rm "$volume" >/dev/null || fail 'Could not remove incomplete database volume.'
+  fi
+  [ ! -L "$STATE" ] && [ "$STATE" != / ] || fail 'Unsafe incomplete state path.'
+  rm -rf -- "$STATE"
+  printf 'Incomplete restoration discarded; backup bundle retained. Restore can be retried.\n'
 }
 status() {
   if [ ! -e "$STATE" ]; then printf 'KELIOS\n\nStatus: not initialized\n'; return; fi
@@ -589,8 +710,10 @@ status() {
 "
   done
   [ "$PHASE" != prepared ] || SUMMARY=installation-pending
+  [ "$PHASE" != restoring ] || SUMMARY=restoration-incomplete
   printf 'KELIOS\n\nStatus: %s\nRelease: %s\n\n%s\nURL: https://%s:%s\nDatabase: %s PostgreSQL\n' "$SUMMARY" "$RELEASE" "$ROWS" "$BROWSER_HOST" "$HTTPS_PORT" "$MODE"
   [ "$PHASE" != prepared ] || printf 'Installation incomplete: run resume-install from the recorded clean source release.\n'
+  [ "$PHASE" != restoring ] || printf 'Restore incomplete: inspect the failure; use restore discard-incomplete only after confirming this target is disposable.\n'
   [ "$PHASE" != data-deleted ] || printf 'Managed database permanently deleted.\n'
 }
 logs() {
@@ -676,20 +799,23 @@ case "$COMMAND" in status|logs) if [ ! -f "$STATE/installation.conf" ]; then "$C
 prerequisites
 if [ "$COMMAND" = status ]; then status; exit; fi
 if [ "$COMMAND" = logs ]; then logs; exit; fi
-if [ "$COMMAND" != install ] && [ ! -d "$STATE" ]; then fail 'Installation is not initialized. Run ./kelios install.'; fi
+if [ "$COMMAND" != install ] && [ "$COMMAND" != restore ] && [ ! -d "$STATE" ]; then fail 'Installation is not initialized. Run ./kelios install.'; fi
 lock
 if [ "$COMMAND" = install ]; then install; exit; fi
+if [ "$COMMAND" = restore ]; then restore; exit; fi
 load
 case "$COMMAND" in
-  start) [ "$PHASE" = initialized ] || fail 'Installation is prepared; use resume-install to finish it.'; start_runtime; printf 'KELIOS: https://%s:%s\n' "$BROWSER_HOST" "$HTTPS_PORT";;
-  restart) [ "$PHASE" = initialized ] || fail 'Installation is prepared; use resume-install to finish it.'; start_runtime restart; printf 'KELIOS restarted: https://%s:%s\n' "$BROWSER_HOST" "$HTTPS_PORT";;
+  start) [ "$PHASE" = initialized ] || fail 'Installation is not initialized; complete the prepared install or incomplete restore first.'; start_runtime; printf 'KELIOS: https://%s:%s\n' "$BROWSER_HOST" "$HTTPS_PORT";;
+  restart) [ "$PHASE" = initialized ] || fail 'Installation is not initialized; complete the prepared install or incomplete restore first.'; start_runtime restart; printf 'KELIOS restarted: https://%s:%s\n' "$BROWSER_HOST" "$HTTPS_PORT";;
   stop) compose_env; owned; compose stop >/dev/null 2>&1 || fail 'Stop failed.'; printf 'Stopped; configuration, data and keys preserved.\n';;
   resume-install) SAVED_RELEASE=$RELEASE; resume_install;;
   update) update;;
+  backup) backup;;
+  'restore discard-incomplete') discard_incomplete;;
   config) configure;;
   recover-admin) if [ "$NONINTERACTIVE" != 1 ]; then terminal; else
       [ -n "${C_ADMIN_EMAIL-}" ] || fail 'ADMIN_EMAIL is required for noninteractive recovery.'
       [ -n "${C_ADMIN_PASSWORD_FILE-}" ] && [ -f "$C_ADMIN_PASSWORD_FILE" ] && [ -r "$C_ADMIN_PASSWORD_FILE" ] && [ ! -L "$C_ADMIN_PASSWORD_FILE" ] || fail 'ADMIN_PASSWORD_FILE must name a readable regular file.'
     fi; printf 'Ensuring the configured runtime/database is available.\n'; start_runtime; recovery;;
-  uninstall) uninstall;;
+  uninstall) [ "$PHASE" != restoring ] || fail 'Incomplete restoration uses restore discard-incomplete after exact confirmation.'; uninstall;;
 esac

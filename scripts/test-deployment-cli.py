@@ -154,6 +154,36 @@ with (root / 'docker-argv.jsonl').open('a') as out:
 
     def test_unknown_command(self):
         rc, out = self.run_cli('unknown'); self.assertNotEqual(rc,0); self.assertIn('Usage:',out)
+    def test_backup_refuses_external_database_before_dump(self):
+        self.state(MODE='external')
+        output=self.root/'new-bundle'
+        result=subprocess.run([str(self.root/'kelios'),'--state-dir',str(self.root/'.kelios'),'--output',str(output),'backup'],cwd=self.root,env=self.env,text=True,capture_output=True)
+        self.assertNotEqual(result.returncode,0)
+        self.assertIn('initialized managed installation',result.stderr)
+        self.assertFalse(output.exists())
+        self.assertNotIn('pg_dump',(self.root/'docker-argv.jsonl').read_text() if (self.root/'docker-argv.jsonl').exists() else '')
+    def test_restore_refuses_existing_state_before_bundle_access(self):
+        self.state()
+        result=subprocess.run([str(self.root/'kelios'),'--state-dir',str(self.root/'.kelios'),'--bundle',str(self.root/'absent-bundle'),'restore'],cwd=self.root,env=self.env,text=True,capture_output=True)
+        self.assertNotEqual(result.returncode,0)
+        self.assertIn('Restore target already exists',result.stderr)
+        self.assertTrue((self.root/'.kelios/installation.conf').exists())
+    def test_discard_incomplete_requires_exact_confirmation_and_never_removes_initialized(self):
+        state=self.state(PHASE='restoring')
+        command=['--state-dir',str(state),'restore','discard-incomplete']
+        rc,out=conversation(self.root,command,[(r'Type DISCARD INCOMPLETE kelios-local-control exactly','wrong')],self.env)
+        self.assertNotEqual(rc,0)
+        self.assertTrue(state.exists())
+        self.assertFalse((self.root/'bin/deleted-volume').exists())
+        rc,out=conversation(self.root,command,[(r'Type DISCARD INCOMPLETE kelios-local-control exactly','DISCARD INCOMPLETE kelios-local-control')],self.env)
+        self.assertEqual(rc,0,out)
+        self.assertFalse(state.exists())
+        self.assertTrue((self.root/'bin/deleted-volume').exists())
+        state=self.state(PHASE='initialized')
+        rc,out=conversation(self.root,command,[],self.env)
+        self.assertNotEqual(rc,0)
+        self.assertIn('Only an incomplete restore',out)
+        self.assertTrue(state.exists())
     def test_default_state_is_outside_source(self):
         env=self.env.copy(); env['XDG_DATA_HOME']=str(self.root/'data')
         result=subprocess.run([str(self.root/'kelios'),'status'],cwd=self.root/'bin',env=env,text=True,capture_output=True)
