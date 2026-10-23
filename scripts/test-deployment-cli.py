@@ -85,7 +85,8 @@ case "$*" in
     case "$*" in *com.docker.compose.project*) if [ -f "$(dirname "$0")/wrong-network" ]; then echo other; else awk -F= '$1=="PROJECT" {print $2}' "$(dirname "$0")/../.kelios/installation.conf"; fi;; *com.docker.compose.network*) echo default;; esac
     exit 0;;
   *" build"*) if [ -f "$(dirname "$0")/fail-build" ]; then exit 1; fi;;
-  *" up "*) if [ -f "$(dirname "$0")/fail-up" ]; then exit 1; fi;;
+  *" up "*) if [ -f "$(dirname "$0")/sleep-up" ]; then touch "$(dirname "$0")/entered-up"; sleep 2; fi
+             if [ -f "$(dirname "$0")/fail-up" ]; then exit 1; fi;;
   *"config --quiet"*) if [ -f "$(dirname "$0")/bad-config" ]; then exit 1; fi
                        if [ -f "$(dirname "$0")/sleep-config" ]; then sleep 2; fi;;
   *"volume inspect"*) if [ -f "$(dirname "$0")/missing-volume" ]; then exit 1; fi;;
@@ -94,8 +95,10 @@ case "$*" in
   info|"compose version") exit 0;;
   *"config --images"*) awk -F= '$1=="KELIOS_BACKEND_IMAGE" || $1=="KELIOS_FRONTEND_IMAGE" {print $2}' "$3"; echo postgres:17-alpine; exit 0;;
   *"image inspect"*) [ ! -f "$(dirname "$0")/missing-image" ]; exit $?;;
-  *"volume inspect"*"com.docker.compose.project"*) awk -F= '$1=="PROJECT" {print $2}' "$(dirname "$0")/../.kelios/installation.conf"; exit 0;;
+  *"volume inspect"*"com.docker.compose.project"*) if [ -f "$(dirname "$0")/wrong-volume" ]; then echo unrelated; else awk -F= '$1=="PROJECT" {print $2}' "$(dirname "$0")/../.kelios/installation.conf"; fi; exit 0;;
   *"volume inspect"*"com.docker.compose.volume"*) echo postgres-data; exit 0;;
+  *"volume rm"*) touch "$(dirname "$0")/deleted-volume"; exit 0;;
+  *"ps -aq --filter volume="*) if [ -f "$(dirname "$0")/volume-consumer" ]; then echo fixture-container; fi; exit 0;;
   *" run "*) [ ! -f "$(dirname "$0")/refuse" ]; exit $?;;
   *" logs "*) echo 'frontend | /api/v1/auth/oidc/tenant/callback?code=fixture-secret&state=fixture-state'; echo 'backend | bounded fixture log'; exit 0;;
   *) exit 0;;
@@ -476,6 +479,29 @@ with (root / 'docker-argv.jsonl').open('a') as out:
         self.assertEqual(key_before,hashlib.sha256((state/'secrets/auth/main.aes').read_bytes()).hexdigest())
         self.assertTrue(any('kelios-backend:abcdef012345' in c['argv'] for c in self.docker_calls() if 'image' in c['argv']))
         self.assertFalse(any('down' in c['argv'] or 'volume rm' in ' '.join(c['argv']) for c in self.docker_calls()))
+    def test_interrupted_update_retains_target_and_private_state_for_start_retry(self):
+        config=self.noninteractive_config()
+        self.assertEqual(self.certificate_cli('install',config=config).returncode,0)
+        state=self.root/'.kelios'
+        original={str(p.relative_to(state)):hashlib.sha256(p.read_bytes()).hexdigest() for p in (state/'secrets').rglob('*') if p.is_file()}
+        (self.root/'bin/release').write_text('abcdef0123456789abcdef0123456789abcdef01\n')
+        (self.root/'bin/sleep-up').touch()
+        process=subprocess.Popen([str(self.root/'kelios'),'--state-dir',str(state),'update'],cwd=self.root,env=self.env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        try:
+            deadline=time.monotonic()+5
+            while not (self.root/'bin/entered-up').exists() and time.monotonic()<deadline:
+                time.sleep(.05)
+            self.assertTrue((self.root/'bin/entered-up').exists())
+            process.send_signal(signal.SIGTERM)
+            self.assertEqual(process.wait(timeout=5),143)
+        finally:
+            if process.poll() is None: process.kill();process.wait()
+        self.assertIn('RELEASE=abcdef012345',(state/'installation.conf').read_text())
+        self.assertEqual(original,{str(p.relative_to(state)):hashlib.sha256(p.read_bytes()).hexdigest() for p in (state/'secrets').rglob('*') if p.is_file()})
+        self.assertFalse(list((self.root/'tmp').iterdir()))
+        (self.root/'bin/sleep-up').unlink()
+        self.assertEqual(self.certificate_cli('start').returncode,0)
+        self.assertFalse(any('down' in c['argv'] or 'rm' in c['argv'] for c in self.docker_calls()))
     def test_restart_recreates_without_build_and_stop_preserves_state(self):
         config=self.noninteractive_config()
         self.assertEqual(self.certificate_cli('install',config=config).returncode,0)
@@ -791,6 +817,33 @@ with (root / 'docker-argv.jsonl').open('a') as out:
         d=self.state(); rc,_=self.run_cli('uninstall',[('preserving database/configuration/keys','yes'),('Permanently delete','no')]); self.assertEqual(rc,0); self.assertTrue((d/'secrets/auth/main.aes').exists()); self.assertIn('initialized',(d/'installation.conf').read_text())
     def test_wrong_destructive_confirmation_preserves_state(self):
         d=self.state(); rc,out=self.run_cli('uninstall',[('preserving database/configuration/keys','yes'),('Permanently delete','yes'),('Type DELETE','wrong')]); self.assertEqual(rc,0); self.assertIn('preserved',out); self.assertIn('initialized',(d/'installation.conf').read_text())
+        self.assertFalse(any('rm' in c['argv'] for c in self.docker_calls()))
+    def test_confirmed_delete_only_removes_owned_managed_volume_and_fails_closed(self):
+        d=self.state(); project=next(line.split('=',1)[1] for line in (d/'installation.conf').read_text().splitlines() if line.startswith('PROJECT='))
+        rc,out=self.run_cli('uninstall',[('preserving database/configuration/keys','yes'),('Permanently delete','yes'),('Type DELETE',f'DELETE {project}')])
+        self.assertEqual(rc,0,out)
+        self.assertIn('PHASE=data-deleted',(d/'installation.conf').read_text())
+        self.assertTrue((d/'secrets/auth/main.aes').exists())
+        removes=[c['argv'] for c in self.docker_calls() if 'rm' in c['argv']]
+        self.assertEqual(removes,[['volume','rm',f'{project}_postgres-data']])
+        self.assertNotEqual(self.run_cli('start')[0],0)
+    def test_confirmed_delete_refuses_foreign_or_in_use_volume(self):
+        self.assertEqual(self.certificate_cli('install',config=self.noninteractive_config()).returncode,0)
+        d=self.root/'.kelios'; project=next(line.split('=',1)[1] for line in (d/'installation.conf').read_text().splitlines() if line.startswith('PROJECT='))
+        for marker, message in [('wrong-volume','ownership mismatch'),('volume-consumer','still has consumers')]:
+            with self.subTest(marker=marker):
+                (self.root/'bin'/marker).touch()
+                try:
+                    if marker=='wrong-volume':
+                        result=self.certificate_cli('start')
+                        rc,out=result.returncode,result.stderr
+                    else:
+                        rc,out=self.run_cli('uninstall',[('preserving database/configuration/keys','yes'),('Permanently delete','yes'),('Type DELETE',f'DELETE {project}')])
+                    self.assertNotEqual(rc,0); self.assertIn(message,out.lower())
+                    self.assertIn('PHASE=initialized',(d/'installation.conf').read_text())
+                    self.assertFalse(any('rm' in c['argv'] for c in self.docker_calls()))
+                finally:
+                    (self.root/'bin'/marker).unlink()
     def test_external_uninstall_never_offers_deletion(self):
         self.state(MODE='external'); rc,out=self.run_cli('uninstall',[('preserving database/configuration/keys','yes')]); self.assertEqual(rc,0); self.assertNotIn('Permanently delete',out)
 

@@ -51,6 +51,8 @@ Use `./kelios certificate replace` for an explicit certificate change, then `./k
 
 ## Failure and removal
 
+Follow the [recovery procedure](deployment-recovery.md) for an interrupted install/update, missing volume, or partial runtime switch.
+
 `./kelios doctor` diagnoses prerequisites and saved deployment identity. A failed image build retains private output at `<state-dir>/diagnostics/build-output`; inspect it locally. A missing managed PostgreSQL volume on an initialized instance is a stop condition: the CLI refuses to create an empty replacement. If a prepared install's administrator may already have been created immediately before an interruption, inspect the database/account state before retrying recovery; the CLI does not force a second administrator.
 
 `./kelios uninstall` removes runtime containers and network only after confirmation. It preserves configuration, secrets, and the managed volume by default. Permanent managed-volume deletion is a separate, exact typed confirmation; it is irreversible. External PostgreSQL is never dropped. Use the [authentication procedure](authentication.md) for protected `recover-admin` eligibility. Do not rerun `install` as a repair or restart action.
