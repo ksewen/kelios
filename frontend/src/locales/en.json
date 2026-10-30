@@ -1,5 +1,9 @@
 {
   "csv": {
+    "exportTitle": "Export CSV",
+    "exportScope": "Download every Asset matching the applied search, filters and sort. The current page does not limit the export.",
+    "downloadExport": "Download CSV",
+    "preparingExport": "Preparing CSV…",
     "importTitle": "Import Asset CSV",
     "importScope": "Import legacy Assets for one Tenant. Existing Catalog and Place resources are never created automatically.",
     "fileSettings": "File and CSV settings",

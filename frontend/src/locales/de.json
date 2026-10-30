@@ -1,5 +1,9 @@
 {
   "csv": {
+    "exportTitle": "CSV exportieren",
+    "exportScope": "Alle Assets herunterladen, die zur angewendeten Suche, den Filtern und der Sortierung passen. Die aktuelle Seite begrenzt den Export nicht.",
+    "downloadExport": "CSV herunterladen",
+    "preparingExport": "CSV wird vorbereitet…",
     "importTitle": "Asset-CSV importieren",
     "importScope": "Legacy-Assets für einen Mandanten importieren. Bestehende Katalog- und Ortsdaten werden nicht automatisch erstellt.",
     "fileSettings": "Datei und CSV-Einstellungen",
