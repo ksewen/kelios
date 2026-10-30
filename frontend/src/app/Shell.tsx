@@ -37,7 +37,7 @@ export function Shell({user,branding,logout}:{user:Identity;branding:Branding;lo
  else if(detail)content=<AssetDetail id={detail} admin={admin} exit={()=>navigate(scoped('assets'))} onTitle={setDetailTitle}/>;
  else if(page==='dashboard')content=<Dashboard tenant={tenant} tenantName={tenantName} tenantCount={ga?tenants?.length:undefined} user={user} navigate={navigate}/>;
  else if(page==='assets')content=<Assets tenant={tenant} admin={admin} globalAdmin={ga} tenantName={tenantName} tenants={tenants} navigate={navigate}/>;
- else if(page==='import'&&ga&&/^\/(?:tenants\/[0-9a-f-]+\/)?assets\/import$/i.test(screenPath))content=<AssetCsvImport contextTenant={tenant} tenants={tenants}/>;
+ else if(page==='import'&&ga&&/^\/(?:tenants\/[0-9a-f-]+\/)?assets\/import$/i.test(screenPath))content=<AssetCsvImport tenants={tenants}/>;
  else if(page==='new'&&tenant&&admin)content=<Registration tenant={tenant} open={id=>navigate(`/inventory/assets/${id}`)}/>;
  else if(page==='new'&&ga){const target=new URLSearchParams(location.search).get('tenantId')??'';const valid=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(target);content=valid?<Registration tenant={target} targetName={tenants?.find(item=>item.id===target)?.name??target} open={id=>navigate(`/inventory/assets/${id}`)}/>:<AssetRegistrationTenantChoice tenants={tenants} error={error} onChoose={id=>navigate(`/inventory/assets/new?tenantId=${encodeURIComponent(id)}`)}/>;}
  else if(['categories','manufacturers','products'].includes(page))content=<Management tenant={tenant} tenantName={tenantName} tenants={tenants} tenantsPending={tenantsPending} tenantsError={error} ownTenantPending={ownTenant.pending} ownTenantError={ownTenant.error} kind={page} user={user}/>;
