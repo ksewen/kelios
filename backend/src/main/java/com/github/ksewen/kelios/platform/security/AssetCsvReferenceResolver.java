@@ -8,7 +8,7 @@ import org.springframework.stereotype.Component;
 /** Exact, active, Tenant-visible lookup for import Preview; no fuzzy match or creation. */
 @Component
 public class AssetCsvReferenceResolver {
-    enum Kind { PRODUCT, CATEGORY, MANUFACTURER, LOCATION, OWNER }
+    enum Kind { TENANT, PRODUCT, CATEGORY, MANUFACTURER, LOCATION, OWNER }
     public record Candidate(UUID id,String name,UUID tenantId,UUID categoryId,UUID manufacturerId) {}
     public record Result(String status,UUID id,List<Candidate> candidates,boolean more) {}
     private final JdbcTemplate jdbc;
@@ -29,11 +29,14 @@ public class AssetCsvReferenceResolver {
         }
         if(chosen!=null){
             Candidate candidate=lookup(kind,tenant,chosen);
-            return candidate==null?new Result("UNRESOLVED",null,List.of(),false)
+            return candidate==null || !candidate.name().equalsIgnoreCase(value)?new Result("UNRESOLVED",null,List.of(),false)
                 :new Result("CHOSEN",candidate.id(),List.of(candidate),false);
         }
-        var matches=jdbc.query(select(kind)+" WHERE deleted_at IS NULL AND lower(name)=lower(?)"+scope(kind)+" ORDER BY name,id LIMIT 21",
-            (rs,n)->candidate(rs,kind),value,tenant);
+        var matches=kind==Kind.TENANT
+            ?jdbc.query(select(kind)+" WHERE lower(name)=lower(?) ORDER BY name,id LIMIT 21",
+                (rs,n)->candidate(rs,kind),value)
+            :jdbc.query(select(kind)+" WHERE deleted_at IS NULL AND lower(name)=lower(?)"+scope(kind)+" ORDER BY name,id LIMIT 21",
+                (rs,n)->candidate(rs,kind),value,tenant);
         if(matches.isEmpty())return new Result("UNRESOLVED",null,List.of(),false);
         boolean more=matches.size()>20;
         var candidates=List.copyOf(matches.subList(0,Math.min(20,matches.size())));
@@ -41,13 +44,16 @@ public class AssetCsvReferenceResolver {
             :new Result("AMBIGUOUS",null,candidates,more);
     }
     Candidate lookup(Kind kind,UUID tenant,UUID id){
-        var rows=jdbc.query(select(kind)+" WHERE id=? AND deleted_at IS NULL"+scope(kind),
-            (rs,n)->candidate(rs,kind),id,tenant);
+        var rows=kind==Kind.TENANT
+            ?jdbc.query(select(kind)+" WHERE id=?",(rs,n)->candidate(rs,kind),id)
+            :jdbc.query(select(kind)+" WHERE id=? AND deleted_at IS NULL"+scope(kind),
+                (rs,n)->candidate(rs,kind),id,tenant);
         return rows.isEmpty()?null:rows.getFirst();
     }
     private static String select(Kind kind){
         String table=kind.name().toLowerCase(Locale.ROOT);
-        return "SELECT id,name,tenant_id"+(kind==Kind.PRODUCT?",category_id,manufacturer_id":"")+" FROM "+table;
+        return "SELECT id,name,"+(kind==Kind.TENANT?"NULL::uuid AS tenant_id":"tenant_id")+
+            (kind==Kind.PRODUCT?",category_id,manufacturer_id":"")+" FROM "+table;
     }
     private static String scope(Kind kind){
         return kind==Kind.LOCATION||kind==Kind.OWNER?" AND tenant_id=?":" AND (tenant_id IS NULL OR tenant_id=?)";

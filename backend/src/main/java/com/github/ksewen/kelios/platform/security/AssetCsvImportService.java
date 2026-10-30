@@ -45,7 +45,7 @@ public class AssetCsvImportService {
                     "Preview is no longer importable: "+String.join("; ",row.issues()));
             }else{
                 try{
-                    var created=writer.write(new AssetCsvImportRowWriter.Input(input.preview().tenantId(),row.rowNumber(),
+                    var created=writer.write(new AssetCsvImportRowWriter.Input(row.tenantId(),row.rowNumber(),
                         row.normalized(),row.references()),identity.actor());
                     outcome=new Outcome(row.rowNumber(),"SUCCESS",created.id(),created.tag(),null);
                 }catch(BusinessFailure | DataIntegrityViolationException | org.hibernate.exception.ConstraintViolationException |

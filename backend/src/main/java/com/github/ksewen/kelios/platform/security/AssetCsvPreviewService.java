@@ -4,7 +4,6 @@ import com.github.ksewen.kelios.identity.auth.Authorization;
 import com.github.ksewen.kelios.inventory.ConditionState;
 import com.github.ksewen.kelios.inventory.LifecycleState;
 import com.github.ksewen.kelios.platform.BusinessFailure;
-import com.github.ksewen.kelios.tenancy.TenantService;
 import java.time.*;
 import java.time.format.*;
 import java.util.*;
@@ -17,24 +16,26 @@ import org.springframework.web.multipart.MultipartFile;
 /** Read-only, unreserved import Preview; execution must revalidate every row. */
 @Service
 public class AssetCsvPreviewService {
-    private static final Set<String> TARGETS=Set.of("localIdentifier","serialNumber","externalInventoryNumber","note",
+    private static final Set<String> TARGETS=Set.of("tenantId","tenantName","localIdentifier","serialNumber","externalInventoryNumber","note",
         "productId","productName","categoryId","categoryName","manufacturerId","manufacturerName",
         "locationId","locationName","ownerId","ownerName","lifecycle","condition","loanable","tagDate");
     private static final List<String> REFERENCES=List.of("product","category","manufacturer","location","owner");
-    public record Input(UUID tenantId,String sha256,String encoding,String delimiter,Map<String,String> columns,
-        Map<String,Map<String,String>> values,Map<String,Map<String,UUID>> choices) {}
-    public record Row(long rowNumber,String status,Map<String,String> source,Map<String,Object> normalized,
+    public record Choice(String target,UUID scopeTenantId,String raw,UUID selectedId) {}
+    public record Input(String sha256,String encoding,String delimiter,Map<String,String> columns,
+        Map<String,Map<String,String>> values,List<Choice> choices) {}
+    public record Row(long rowNumber,String status,UUID tenantId,String tenantName,Map<String,String> source,Map<String,Object> normalized,
         Map<String,UUID> references,List<String> issues) {}
+    public record Resolution(String target,UUID scopeTenantId,String raw,AssetCsvReferenceResolver.Result result) {}
     public record Preview(String sha256,String encoding,String delimiter,List<String> headers,long totalRows,
         long ready,long warnings,long errors,List<Row> rows,
-        Map<String,Map<String,AssetCsvReferenceResolver.Result>> referenceResolution) {}
+        List<Resolution> referenceResolution) {}
+    private record Key(String target,UUID scopeTenantId,String raw) {}
     private final AssetCsvParser parser;
     private final AssetCsvReferenceResolver resolver;
-    private final TenantService tenants;
     private final JdbcTemplate jdbc;
     private final Clock clock;
-    public AssetCsvPreviewService(AssetCsvParser parser,AssetCsvReferenceResolver resolver,TenantService tenants,JdbcTemplate jdbc,Clock clock){
-        this.parser=parser;this.resolver=resolver;this.tenants=tenants;this.jdbc=jdbc;this.clock=clock;
+    public AssetCsvPreviewService(AssetCsvParser parser,AssetCsvReferenceResolver resolver,JdbcTemplate jdbc,Clock clock){
+        this.parser=parser;this.resolver=resolver;this.jdbc=jdbc;this.clock=clock;
     }
     public AssetCsvParser.ParsePreview parsePreview(MultipartFile file,String encoding,String delimiter){
         Authorization.globalAdmin(CurrentIdentity.require());
@@ -43,14 +44,13 @@ public class AssetCsvPreviewService {
     @Transactional(readOnly=true,isolation=Isolation.REPEATABLE_READ)
     public Preview preview(MultipartFile file,Input input){
         Authorization.globalAdmin(CurrentIdentity.require());
-        if(input==null || input.tenantId()==null)throw BusinessFailure.invalid("Concrete Tenant required");
-        tenants.require(input.tenantId());
+        if(input==null)throw BusinessFailure.invalid("CSV import mapping required");
         var parsed=parser.parse(file,input.encoding(),input.delimiter());
         if(input.sha256()==null || !parsed.sha256().equalsIgnoreCase(input.sha256()))throw BusinessFailure.invalid("CSV file differs from parsed preview");
         var columns=validate(input,parsed.headers());
         var valueMaps=input.values()==null?Map.<String,Map<String,String>>of():input.values();
-        var choices=input.choices()==null?Map.<String,Map<String,UUID>>of():input.choices();
-        var resolved=new LinkedHashMap<String,Map<String,AssetCsvReferenceResolver.Result>>();
+        var choices=choiceMap(input.choices(),columns);
+        var resolved=new LinkedHashMap<Key,AssetCsvReferenceResolver.Result>();
         var rows=new ArrayList<Row>();
         var previous=new HashSet<List<String>>();
         for(var source:parsed.rows()){
@@ -62,11 +62,25 @@ public class AssetCsvPreviewService {
                 String value=value(source.values(),columns,text);
                 normalized.put(text,value==null || value.isBlank()?null:value.strip());
             }
+            boolean tenantById=columns.containsKey("tenantId");
+            String tenantTarget=tenantById?"tenantId":"tenantName";
+            String tenantRaw=value(source.values(),columns,tenantTarget);
+            UUID rowTenant=null;
+            String rowTenantName=null;
+            if(tenantRaw==null || tenantRaw.isBlank()){
+                issues.add("Missing Tenant reference");error=true;
+            }else{
+                var key=new Key(tenantTarget,null,tenantRaw.strip());
+                var result=resolved.computeIfAbsent(key,k->resolver.resolve(AssetCsvReferenceResolver.Kind.TENANT,
+                    null,tenantById,k.raw(),choices.get(k)));
+                if(result.id()==null){issues.add("Tenant "+result.status().toLowerCase(Locale.ROOT)+": "+key.raw());error=true;}
+                else{rowTenant=result.id();rowTenantName=result.candidates().getFirst().name();}
+            }
             String local=(String)normalized.get("localIdentifier");
             if(local!=null){
                 if(local.codePointCount(0,local.length())>128 || local.codePoints().anyMatch(c->Character.getType(c)==Character.CONTROL || c==0x2028 || c==0x2029)){
                     issues.add("Invalid local identifier");error=true;
-                }else if(Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM asset WHERE tenant_id=? AND deleted_at IS NULL AND local_identifier=?)",Boolean.class,input.tenantId(),local)))
+                }else if(rowTenant!=null && Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM asset WHERE tenant_id=? AND deleted_at IS NULL AND local_identifier=?)",Boolean.class,rowTenant,local)))
                     issues.add("Existing Asset has the same local identifier; review possible re-import");
             }
             for(String field:List.of("lifecycle","condition","loanable")){
@@ -100,6 +114,7 @@ public class AssetCsvPreviewService {
                 }catch(DateTimeException ex){issues.add("Invalid historical Tag date");error=true;}
             }
             for(String kind:REFERENCES){
+                if(rowTenant==null)break;
                 boolean byId=columns.containsKey(kind+"Id");
                 boolean byName=columns.containsKey(kind+"Name");
                 if(!byId && !byName)continue;
@@ -109,17 +124,18 @@ public class AssetCsvPreviewService {
                 if(raw==null || raw.isBlank()){issues.add("Missing "+kind+" reference");error=true;continue;}
                 String key=raw.strip();
                 var kindEnum=AssetCsvReferenceResolver.Kind.valueOf(kind.toUpperCase(Locale.ROOT));
-                UUID chosen=choices.getOrDefault(target,Map.of()).get(key);
-                var cache=resolved.computeIfAbsent(target,k->new LinkedHashMap<>());
-                var result=cache.computeIfAbsent(key,k->resolver.resolve(kindEnum,input.tenantId(),byId,k,chosen));
+                var resolutionKey=new Key(target,rowTenant,key);
+                UUID chosen=choices.get(resolutionKey);
+                UUID tenantScope=rowTenant;
+                var result=resolved.computeIfAbsent(resolutionKey,k->resolver.resolve(kindEnum,tenantScope,byId,k.raw(),chosen));
                 if(result.id()==null){
                     issues.add(kind+" "+result.status().toLowerCase(Locale.ROOT)+": "+key);error=true;
                 }else{
                     references.put(kind+"Id",result.id());
                     if(kind.equals("product")){
                         var product=result.candidates().getFirst();
-                        if(resolver.lookup(AssetCsvReferenceResolver.Kind.CATEGORY,input.tenantId(),product.categoryId())==null ||
-                           resolver.lookup(AssetCsvReferenceResolver.Kind.MANUFACTURER,input.tenantId(),product.manufacturerId())==null){
+                        if(resolver.lookup(AssetCsvReferenceResolver.Kind.CATEGORY,rowTenant,product.categoryId())==null ||
+                           resolver.lookup(AssetCsvReferenceResolver.Kind.MANUFACTURER,rowTenant,product.manufacturerId())==null){
                             issues.add("Product dependencies are not assignable");error=true;
                         }else{
                             references.put("categoryId",product.categoryId());
@@ -133,13 +149,15 @@ public class AssetCsvPreviewService {
                 && Boolean.TRUE.equals(normalized.get("loanable")))issues.add("Blocking state is marked loanable; review intentional legacy value");
             var signature=parsed.headers().stream().map(source.values()::get).toList();
             if(!previous.add(signature))issues.add("Duplicate source row in this file");
-            rows.add(new Row(source.rowNumber(),error?"ERROR":issues.isEmpty()?"READY":"WARNING",
+            rows.add(new Row(source.rowNumber(),error?"ERROR":issues.isEmpty()?"READY":"WARNING",rowTenant,rowTenantName,
                 source.values(),Collections.unmodifiableMap(new LinkedHashMap<>(normalized)),Map.copyOf(references),List.copyOf(issues)));
         }
         return new Preview(parsed.sha256(),parsed.encoding(),parsed.delimiter(),parsed.headers(),rows.size(),
             rows.stream().filter(r->r.status().equals("READY")).count(),
             rows.stream().filter(r->r.status().equals("WARNING")).count(),
-            rows.stream().filter(r->r.status().equals("ERROR")).count(),List.copyOf(rows),resolved);
+            rows.stream().filter(r->r.status().equals("ERROR")).count(),List.copyOf(rows),
+            resolved.entrySet().stream().map(entry->new Resolution(entry.getKey().target(),entry.getKey().scopeTenantId(),
+                entry.getKey().raw(),entry.getValue())).toList());
     }
     private static Map<String,String> validate(Input input,List<String> headers){
         if(input.columns()==null || input.columns().isEmpty() || !TARGETS.containsAll(input.columns().keySet())
@@ -147,6 +165,8 @@ public class AssetCsvPreviewService {
             throw BusinessFailure.invalid("Invalid or duplicate CSV column mapping");
         for(String kind:REFERENCES)if(input.columns().containsKey(kind+"Id") && input.columns().containsKey(kind+"Name"))
             throw BusinessFailure.invalid("UUID and Name modes are mutually exclusive");
+        if(input.columns().containsKey("tenantId")==input.columns().containsKey("tenantName"))
+            throw BusinessFailure.invalid("Exactly one Tenant UUID or Name column required");
         boolean product=input.columns().containsKey("productId")||input.columns().containsKey("productName");
         if(product && (input.columns().keySet().stream().anyMatch(k->k.startsWith("category")||k.startsWith("manufacturer"))))
             throw BusinessFailure.invalid("Product and direct Catalog modes are mutually exclusive");
@@ -155,9 +175,21 @@ public class AssetCsvPreviewService {
         if(!hasReference(input.columns(),"location"))throw BusinessFailure.invalid("Location required");
         if(input.values()!=null && (!Set.of("lifecycle","condition","loanable").containsAll(input.values().keySet())
             || input.values().values().stream().anyMatch(Objects::isNull)))throw BusinessFailure.invalid("Invalid value mapping");
-        if(input.choices()!=null && (input.choices().keySet().stream().anyMatch(k->!k.endsWith("Name") || !input.columns().containsKey(k))
-            || input.choices().values().stream().anyMatch(Objects::isNull)))throw BusinessFailure.invalid("Invalid reference choice");
+        choiceMap(input.choices(),input.columns());
         return input.columns();
+    }
+    private static Map<Key,UUID> choiceMap(List<Choice> choices,Map<String,String> columns){
+        if(choices==null)return Map.of();
+        var result=new HashMap<Key,UUID>();
+        for(var choice:choices){
+            if(choice==null || choice.target()==null || !choice.target().endsWith("Name") ||
+                !columns.containsKey(choice.target()) || choice.raw()==null || choice.raw().isBlank() ||
+                !choice.raw().equals(choice.raw().strip()) || choice.selectedId()==null ||
+                (choice.target().equals("tenantName")?choice.scopeTenantId()!=null:choice.scopeTenantId()==null) ||
+                result.putIfAbsent(new Key(choice.target(),choice.scopeTenantId(),choice.raw()),choice.selectedId())!=null)
+                throw BusinessFailure.invalid("Invalid or duplicate reference choice");
+        }
+        return result;
     }
     private static boolean hasReference(Map<String,String> columns,String kind){return columns.containsKey(kind+"Id")||columns.containsKey(kind+"Name");}
     private static String value(Map<String,String> source,Map<String,String> columns,String target){return columns.containsKey(target)?source.get(columns.get(target)):null;}

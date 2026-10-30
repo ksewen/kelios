@@ -982,7 +982,7 @@ paths:
     post:
       operationId: previewAssetCsvImport
       summary: Validate mapped legacy Asset rows without writing
-      description: ACTIVE GLOBAL ADMIN only. Requires the same file bytes as parse-preview and one concrete Tenant. Column targets are unique and reference UUID/Name modes are exclusive; Product mode excludes direct Manufacturer/Category mapping. Name matches are exact, active and Tenant-visible; ambiguous values require explicit choice. Preview does not reserve Tags or create resources. Every row is revalidated during later execution.
+      description: ACTIVE GLOBAL ADMIN only. Requires the same file bytes as parse-preview. Exactly one Tenant UUID or Name column is required; each row resolves an existing Tenant independently and may belong to a different Tenant. Missing or invalid Tenant values are row errors; duplicate Tenant names need an explicit choice. Other reference UUID/Name modes are exclusive and scoped by the resolved row Tenant; Product mode excludes direct Manufacturer/Category mapping. Choices are scoped by target, row Tenant and raw value. Preview does not reserve Tags or create resources. Every row is revalidated during later execution.
       security: *id008
       requestBody:
         required: true
@@ -995,9 +995,8 @@ paths:
                 file: {type: string, format: binary}
                 config:
                   type: object
-                  required: [tenantId, sha256, columns]
+                  required: [sha256, columns]
                   properties:
-                    tenantId: *id010
                     sha256: {type: string}
                     encoding: {type: string}
                     delimiter: {type: string}
@@ -1008,10 +1007,15 @@ paths:
                         type: object
                         additionalProperties: {type: string}
                     choices:
-                      type: object
-                      additionalProperties:
+                      type: array
+                      items:
                         type: object
-                        additionalProperties: *id010
+                        required: [target, raw, selectedId]
+                        properties:
+                          target: {type: string, enum: [tenantName, productName, categoryName, manufacturerName, locationName, ownerName]}
+                          scopeTenantId: {type: [string, 'null'], format: uuid, description: Null or omitted only for tenantName; resolved row Tenant UUID required for all other Name targets.}
+                          raw: {type: string}
+                          selectedId: *id010
       responses:
         '200':
           description: Read-only per-row Ready, Warning or Error classification and distinct reference candidates
@@ -1036,18 +1040,47 @@ paths:
                       properties:
                         rowNumber: {type: integer, format: int64}
                         status: {type: string, enum: [READY, WARNING, ERROR]}
+                        tenantId: {type: [string, 'null'], format: uuid, description: Resolved row Tenant; null when unresolved.}
+                        tenantName: {type: [string, 'null'], description: Readable resolved row Tenant; null when unresolved.}
                         source: {type: object, additionalProperties: {type: string}}
                         normalized: {type: object}
                         references: {type: object, additionalProperties: *id010}
                         issues: {type: array, items: {type: string}}
-                  referenceResolution: {type: object}
+                  referenceResolution:
+                    type: array
+                    description: Distinct resolutions keyed by target, resolved row Tenant scope and raw source value. Tenant resolution has null scope.
+                    items:
+                      type: object
+                      required: [target, raw, result]
+                      properties:
+                        target: {type: string}
+                        scopeTenantId: {type: [string, 'null'], format: uuid}
+                        raw: {type: string}
+                        result:
+                          type: object
+                          required: [status, candidates, more]
+                          properties:
+                            status: {type: string, enum: [MISSING, INVALID_UUID, UNRESOLVED, RESOLVED, AMBIGUOUS, CHOSEN]}
+                            id: {type: [string, 'null'], format: uuid}
+                            candidates:
+                              type: array
+                              items:
+                                type: object
+                                required: [id, name]
+                                properties:
+                                  id: *id010
+                                  name: {type: string}
+                                  tenantId: {type: [string, 'null'], format: uuid}
+                                  categoryId: {type: [string, 'null'], format: uuid}
+                                  manufacturerId: {type: [string, 'null'], format: uuid}
+                            more: {type: boolean}
         '413': {description: Upload exceeds configured limit}
         default: *id009
   /asset-csv/execute:
     post:
       operationId: executeAssetCsvImport
       summary: Import selected legacy Asset CSV rows independently
-      description: ACTIVE GLOBAL ADMIN only. Requires the original bounded CSV and concrete-Tenant Preview mapping with SHA-256 file identity, plus distinct selected logical row numbers. Current mapping and references are revalidated; selected rows that are no longer importable fail individually. Each successful row commits one Asset, a truthful REGISTERED initial snapshot with LEGACY_CSV origin, and sanitized ASSET_LEGACY_IMPORTED audit in one transaction. Later rows continue after a row failure. Unselected rows are skipped. No historical loan records are created. A repeated request can create duplicates because non-Tag identifiers are not unique; clients must not automatically retry after an uncertain response.
+      description: ACTIVE GLOBAL ADMIN only. Requires the original bounded CSV and per-row Tenant mapping with SHA-256 file identity, plus distinct selected logical row numbers. Current Tenant ownership, mapping and references are revalidated independently for each row; selected rows that are no longer importable fail individually. Each successful row commits one Asset, a truthful REGISTERED initial snapshot with LEGACY_CSV origin, and sanitized ASSET_LEGACY_IMPORTED audit attributed to that row Tenant in one transaction. Later rows continue after a row failure. Unselected rows are skipped. No historical loan records are created. A repeated request can create duplicates because non-Tag identifiers are not unique; clients must not automatically retry after an uncertain response.
       security: *id008
       requestBody:
         required: true
@@ -1064,9 +1097,8 @@ paths:
                   properties:
                     preview:
                       type: object
-                      required: [tenantId, sha256, columns]
+                      required: [sha256, columns]
                       properties:
-                        tenantId: *id010
                         sha256: {type: string}
                         encoding: {type: string}
                         delimiter: {type: string}
@@ -1077,10 +1109,15 @@ paths:
                             type: object
                             additionalProperties: {type: string}
                         choices:
-                          type: object
-                          additionalProperties:
+                          type: array
+                          items:
                             type: object
-                            additionalProperties: *id010
+                            required: [target, raw, selectedId]
+                            properties:
+                              target: {type: string, enum: [tenantName, productName, categoryName, manufacturerName, locationName, ownerName]}
+                              scopeTenantId: {type: [string, 'null'], format: uuid, description: Null or omitted only for tenantName; resolved row Tenant UUID required for all other Name targets.}
+                              raw: {type: string}
+                              selectedId: *id010
                     selectedRows:
                       type: array
                       minItems: 1
