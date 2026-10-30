@@ -6,9 +6,9 @@ Use **Assets** in the authenticated KELIOS application. CSV is administrative to
 
 1. Choose the desired operating Tenant in the top-level context selector, or keep Global to include all authorized Tenants.
 2. Apply text search with the search button, confirm any advanced filters, and choose the desired table sort. Unsubmitted text and draft filters are not part of the export.
-3. Choose **Export CSV**, select semicolon, comma, tab or a custom single-character delimiter, then choose **Download CSV**.
+3. Choose **Export CSV**. Select the desired fields; the nine primary Asset collection fields are selected by default. Check additional fields, including Note or Loan note if needed, and use the arrow buttons to set their CSV order. Keep at least one field selected. Select semicolon, comma, tab or a custom single-character delimiter, then choose **Download CSV**.
 
-The download includes every matching authorized Asset, not just the visible page. It is UTF-8 with a BOM for common spreadsheet software, has stable English column names, and includes readable associations alongside relevant IDs. The backend limits one export to 20,000 Assets and 20 MiB and escapes formula-like cells. If the limit is exceeded, narrow the collection query and try again. ACTIVE Asset readers may export only their authorized scope; TENANT identities remain bound to their signed Tenant.
+The download includes every matching authorized Asset, not just the visible page. Selected CSV headers and cells follow the chosen order. Names and UUIDs of references can be chosen independently. It is UTF-8 with a BOM for common spreadsheet software and uses stable English field-key headers. The backend limits one export to 20,000 Assets and 20 MiB and escapes formula-like cells, including selected notes. If the limit is exceeded, narrow the collection query and try again. ACTIVE Asset readers may export only their authorized scope; TENANT identities remain bound to their signed Tenant.
 
 ## Import legacy Assets
 

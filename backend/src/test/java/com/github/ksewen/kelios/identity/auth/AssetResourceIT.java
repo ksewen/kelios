@@ -84,8 +84,14 @@ class AssetResourceIT {
   assertEquals(200,status(response));assertTrue(response.getResponse().getContentType().startsWith("text/csv"));
   String csv=new String(response.getResponse().getContentAsByteArray(),java.nio.charset.StandardCharsets.UTF_8);
   assertTrue(csv.startsWith("\ufeffid;assetTag;"));assertEquals(104,csv.split("\r\n").length);
+  assertEquals(26,csv.split("\r\n")[0].split(";").length);
   assertTrue(csv.contains("Äpfel-0"));assertFalse(csv.contains("Äpfel foreign"));assertFalse(csv.contains(formula.id().toString()));
   assertTrue(csv.indexOf(created.getFirst().id().toString())<csv.indexOf(created.getLast().id().toString()));
+  var projected=request(user,get("/api/v1/asset-csv/export").param("q","Äpfel").param("page","4").param("size","1")
+      .param("sort","tag").param("direction","asc").param("columns","assetTag,localIdentifier"),null);
+  assertEquals(200,status(projected));String narrow=new String(projected.getResponse().getContentAsByteArray(),java.nio.charset.StandardCharsets.UTF_8);
+  assertTrue(narrow.startsWith("\ufeffassetTag;localIdentifier\r\n"));assertEquals(104,narrow.split("\r\n").length);
+  assertTrue(narrow.indexOf(created.getFirst().assetTag())<narrow.indexOf(created.getLast().assetTag()));assertFalse(narrow.contains("Äpfel foreign"));
   var forged=request(user,get("/api/v1/asset-csv/export").param("tenantId",other.toString()).param("q","Äpfel foreign"),null);
   assertEquals(200,status(forged));assertFalse(new String(forged.getResponse().getContentAsByteArray(),java.nio.charset.StandardCharsets.UTF_8).contains("Äpfel foreign"));
   assertEquals(401,status(request(null,get("/api/v1/asset-csv/export"),null)));
@@ -97,6 +103,32 @@ class AssetResourceIT {
   assertEquals(200,status(safe));assertTrue(new String(safe.getResponse().getContentAsByteArray(),java.nio.charset.StandardCharsets.UTF_8).contains("'=HYPERLINK(\"\"x\"\",\"\"y\"\")"));
   assertEquals(400,status(request(admin,get("/api/v1/asset-csv/export").param("delimiter","\n"),null)));
   assertEquals(400,status(request(admin,get("/api/v1/asset-csv/export").param("sort","tenantId"),null)));
+ }
+ @Test void csvExportSelectsOnlyOrderedAllowlistedFieldsWithoutChangingRowsOrScope()throws Exception{
+  var a=assets.register(tenant,new AssetService.Registration(new AssetService.ProductSelection(product),location,owner,true,"Äpfel","external","=HYPERLINK(\"note\")"),actor);
+  a=assets.condition(tenant,a.id(),a.version(),ConditionState.WORKING,null,actor);
+  a=assets.lifecycle(tenant,a.id(),a.version(),LifecycleState.DEPLOYED,null,null,actor);
+  assets.loan(tenant,a.id(),a.version(),"Borrower",clock.now.plusSeconds(86_400),"+loan note",actor);
+  var foreignLocation=places.create(PlaceService.Kind.LOCATION,other,"Other room",actor);
+  assets.register(other,new AssetService.Registration(new AssetService.ProductSelection(product),foreignLocation,null,false,"Äpfel foreign",null,"foreign secret"),actor);
+  var selected=request(admin,get("/api/v1/asset-csv/export").param("tenantId",tenant.toString()).param("q","Äpfel")
+      .param("columns","loanNote,tenantId,tenant,productId,product,manufacturerId,manufacturer,categoryId,category,locationId,location,ownerId,owner,note,assetTag")
+      .param("page","99").param("size","1").param("delimiter",";"),null);
+  assertEquals(200,status(selected));
+  String csv=new String(selected.getResponse().getContentAsByteArray(),java.nio.charset.StandardCharsets.UTF_8);
+  assertTrue(csv.startsWith("\ufeffloanNote;tenantId;tenant;productId;product;manufacturerId;manufacturer;categoryId;category;locationId;location;ownerId;owner;note;assetTag\r\n"));
+  assertEquals(2,csv.split("\r\n").length);
+  assertTrue(csv.contains("\"'+loan note\""));assertTrue(csv.contains("\"'=HYPERLINK(\"\"note\"\")\""));
+  assertTrue(csv.contains(tenant.toString()));assertTrue(csv.contains(product.toString()));assertTrue(csv.contains("\"Product\""));
+  var tenantUser=principal(Scope.TENANT,Role.USER,Status.ACTIVE);
+  var forged=request(tenantUser,get("/api/v1/asset-csv/export").param("tenantId",other.toString()).param("q","Äpfel").param("columns","note,loanNote"),null);
+  assertEquals(200,status(forged));String ownCsv=new String(forged.getResponse().getContentAsByteArray(),java.nio.charset.StandardCharsets.UTF_8);
+  assertTrue(ownCsv.contains("HYPERLINK"));assertFalse(ownCsv.contains("foreign secret"));
+  assertEquals(403,status(request(principal(Scope.TENANT,Role.USER,Status.PENDING),get("/api/v1/asset-csv/export").param("columns","note"),null)));
+ }
+ @Test void csvExportRejectsInvalidColumnSelections()throws Exception{
+  for(String columns:List.of("","assetTag,","assetTag,,note","assetTag,assetTag","unknown","note,secret"," note"))
+   assertEquals(400,status(request(admin,get("/api/v1/asset-csv/export").param("columns",columns),null)),columns);
  }
  @Test void legacyCsvPreviewRequiresGlobalAdminAndResolvesOnlyAuthorizedReferences()throws Exception{
   byte[] csv=tenantCsv("Kennung;Modell;Raum;Status;Zustand;Ausleihbar;Datum\nAlt-1;Product;Room;alt;kaputt;ja;01.02.2017\nAlt-2;Missing;Room;alt;kaputt;ja;01.02.2017\n",tenant);

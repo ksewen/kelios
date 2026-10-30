@@ -5,6 +5,9 @@ import com.github.ksewen.kelios.inventory.AssetQuery;
 import com.github.ksewen.kelios.inventory.AssetRead;
 import com.github.ksewen.kelios.platform.BusinessFailure;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
@@ -16,6 +19,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class AssetCsvExportService {
     private static final int PAGE_SIZE=100, MAX_ROWS=20_000, MAX_BYTES=20*1024*1024;
     private static final String HEADER="id,assetTag,localIdentifier,tenantId,tenant,productId,product,manufacturerId,manufacturer,categoryId,category,serialNumber,externalInventoryNumber,locationId,location,ownerId,owner,lifecycle,condition,loanable,loanedTo,loanedAt,expectedReturnAt,createdAt,createdBy,createdByDisplayName";
+    private static final List<String> DEFAULT_COLUMNS=List.of(HEADER.split(","));
+    private static final List<String> AVAILABLE_COLUMNS=List.of((HEADER+",note,loanNote").split(","));
     private final InventoryOperations inventory;
     public AssetCsvExportService(InventoryOperations inventory){this.inventory=inventory;}
 
@@ -24,6 +29,8 @@ public class AssetCsvExportService {
         var parameters=new java.util.LinkedHashMap<>(input);
         String delimiter=parameters.remove("delimiter");
         char separator=delimiter(delimiter);
+        var columns=columns(parameters.remove("columns"));
+        int[] indexes=columns.stream().mapToInt(AVAILABLE_COLUMNS::indexOf).toArray();
         UUID tenant=com.github.ksewen.kelios.platform.ListInput.uuid(parameters.remove("tenantId"));
         parameters.remove("page");
         parameters.remove("size");
@@ -31,7 +38,7 @@ public class AssetCsvExportService {
         var actor=CurrentIdentity.require();
         if(actor.scope()==Scope.TENANT)tenant=actor.tenantId();
         var output=new StringBuilder("\ufeff");
-        output.append(HEADER.replace(',',separator)).append("\r\n");
+        output.append(String.join(String.valueOf(separator),columns)).append("\r\n");
         long expected=-1;
         for(int page=0;;page++){
             var query=new AssetQuery(page,PAGE_SIZE,criteria.search(),criteria.lifecycle(),criteria.condition(),
@@ -41,7 +48,7 @@ public class AssetCsvExportService {
             var result=actor.scope()==Scope.GLOBAL?inventory.all(tenant,query):inventory.list(tenant,query);
             if(expected<0){expected=result.totalElements();if(expected>MAX_ROWS)throw BusinessFailure.invalid("CSV export exceeds 20000 Assets");}
             for(AssetRead item:result.items()){
-                append(output,separator,item);
+                append(output,separator,item,indexes);
                 if(output.length()>MAX_BYTES)throw BusinessFailure.invalid("CSV export exceeds 20 MiB");
             }
             if((long)(page+1)*PAGE_SIZE>=expected)break;
@@ -58,16 +65,23 @@ public class AssetCsvExportService {
             throw BusinessFailure.invalid("Invalid CSV delimiter");
         return value.charAt(0);
     }
-    private static void append(StringBuilder out,char separator,AssetRead row){
+    private static List<String> columns(String value){
+        if(value==null)return DEFAULT_COLUMNS;
+        var selected=Arrays.asList(value.split(",",-1));
+        if(selected.isEmpty() || new HashSet<>(selected).size()!=selected.size() || !AVAILABLE_COLUMNS.containsAll(selected))
+            throw BusinessFailure.invalid("Invalid CSV columns");
+        return selected;
+    }
+    private static void append(StringBuilder out,char separator,AssetRead row,int[] indexes){
         var a=row.state();
         Object[] fields={a.id(),a.assetTag(),a.localIdentifier(),a.tenantId(),name(row.tenant()),
             a.productId(),name(row.product()),a.manufacturerId(),name(row.manufacturer()),a.categoryId(),name(row.category()),
             a.serialNumber(),a.externalInventoryNumber(),a.locationId(),name(row.location()),a.ownerId(),name(row.owner()),
             a.lifecycle(),a.condition(),a.loanable(),a.loanedTo(),a.loanedAt(),a.expectedReturnAt(),a.createdAt(),a.createdBy(),
-            a.createdByDisplayName()};
-        for(int i=0;i<fields.length;i++){
+            a.createdByDisplayName(),a.note(),a.loanNote()};
+        for(int i=0;i<indexes.length;i++){
             if(i>0)out.append(separator);
-            cell(out,fields[i]);
+            cell(out,fields[indexes[i]]);
         }
         out.append("\r\n");
     }
