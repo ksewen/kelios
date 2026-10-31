@@ -24,8 +24,9 @@ public class AssetCsvController {
     }
     @PostMapping(value="/parse-preview",consumes=MediaType.MULTIPART_FORM_DATA_VALUE)
     public AssetCsvParser.ParsePreview parsePreview(@RequestPart("file") MultipartFile file,
-        @RequestParam(defaultValue="AUTO") String encoding,@RequestParam(defaultValue="AUTO") String delimiter){
-        return preview.parsePreview(file,encoding,delimiter);
+        @RequestParam(defaultValue="AUTO") String encoding,@RequestParam(defaultValue="AUTO") String delimiter,
+        @RequestParam(defaultValue="true") boolean headerPresent){
+        return preview.parsePreview(file,encoding,delimiter,headerPresent);
     }
     @PostMapping(value="/preview",consumes=MediaType.MULTIPART_FORM_DATA_VALUE)
     public AssetCsvPreviewService.Preview preview(@RequestPart("file") MultipartFile file,

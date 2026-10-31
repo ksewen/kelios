@@ -15,7 +15,7 @@ import org.springframework.web.multipart.MultipartFile;
 @Service
 public class AssetCsvImportService {
     public record Input(AssetCsvPreviewService.Input preview,List<Long> selectedRows) {}
-    public record Outcome(long rowNumber,String status,UUID assetId,String assetTag,String reason) {}
+    public record Outcome(long rowNumber,long lineNumber,String status,UUID assetId,String assetTag,String reason) {}
     public record Result(long successful,long failed,long skipped,List<Outcome> rows,String failureCsv) {}
     private final AssetCsvPreviewService preview;
     private final AssetCsvImportRowWriter writer;
@@ -38,19 +38,19 @@ public class AssetCsvImportService {
         for(var row:current.rows()){
             Outcome outcome;
             if(!selected.contains(row.rowNumber())){
-                outcome=new Outcome(row.rowNumber(),"SKIPPED",null,null,
+                outcome=new Outcome(row.rowNumber(),row.lineNumber(),"SKIPPED",null,null,
                     row.status().equals("ERROR")?String.join("; ",row.issues()):"Not selected");
             }else if(row.status().equals("ERROR")){
-                outcome=new Outcome(row.rowNumber(),"FAILED",null,null,
+                outcome=new Outcome(row.rowNumber(),row.lineNumber(),"FAILED",null,null,
                     "Preview is no longer importable: "+String.join("; ",row.issues()));
             }else{
                 try{
                     var created=writer.write(new AssetCsvImportRowWriter.Input(row.tenantId(),row.rowNumber(),
                         row.normalized(),row.references()),identity.actor());
-                    outcome=new Outcome(row.rowNumber(),"SUCCESS",created.id(),created.tag(),null);
+                    outcome=new Outcome(row.rowNumber(),row.lineNumber(),"SUCCESS",created.id(),created.tag(),null);
                 }catch(BusinessFailure | DataIntegrityViolationException | org.hibernate.exception.ConstraintViolationException |
                     OptimisticLockingFailureException ex){
-                    outcome=new Outcome(row.rowNumber(),"FAILED",null,null,reason(ex));
+                    outcome=new Outcome(row.rowNumber(),row.lineNumber(),"FAILED",null,null,reason(ex));
                 }
             }
             outcomes.add(outcome);
@@ -74,13 +74,15 @@ public class AssetCsvImportService {
         char separator=preview.delimiter().charAt(0);
         var format=CSVFormat.DEFAULT.builder().setDelimiter(separator).setRecordSeparator("\r\n").get();
         try(var csv=new CSVPrinter(output,format)){
-            var headers=new ArrayList<>(preview.headers());headers.add("KELIOS import-error");
+            var headers=new ArrayList<>(preview.headers());headers.add("KELIOS source-record");headers.add("KELIOS source-line");headers.add("KELIOS import-error");
             csv.printRecord(headers.stream().map(AssetCsvImportService::safeCell).toList());
             for(var outcome:outcomes){
                 var row=sources.get(outcome.rowNumber());
                 if(row==null)continue;
                 var cells=new ArrayList<String>();
                 for(String header:preview.headers())cells.add(safeCell(row.source().get(header)));
+                cells.add(String.valueOf(outcome.rowNumber()));
+                cells.add(String.valueOf(outcome.lineNumber()));
                 cells.add(safeCell(outcome.reason()));
                 csv.printRecord(cells);
             }

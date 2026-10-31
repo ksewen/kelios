@@ -165,6 +165,34 @@ class AssetResourceIT {
   var settings=new org.springframework.mock.web.MockMultipartFile("config","","application/json",json.writeValueAsBytes(config));
   return request(who,multipart("/api/v1/asset-csv/preview").file(file).file(settings),null);
  }
+ @Test void headerlessCsvImportsFirstRecordAndKeepsRowLocalErrors()throws Exception{
+  String local="headerless-"+UUID.randomUUID();
+  byte[] bytes=(tenant+";"+product+";"+location+";"+local+"\ninvalid-tenant;"+product+";"+location+";bad\n")
+      .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+  var file=new org.springframework.mock.web.MockMultipartFile("file","legacy.csv","text/csv",bytes);
+  var parsed=data(request(admin,multipart("/api/v1/asset-csv/parse-preview").file(file).param("headerPresent","false"),null));
+  assertEquals(List.of("column1","column2","column3","column4"),parsed.get("headers"));
+  assertEquals(2,((Number)parsed.get("totalRows")).intValue());
+  var config=new LinkedHashMap<String,Object>();
+  config.put("sha256",parsed.get("sha256"));config.put("encoding","UTF-8");config.put("delimiter",";");config.put("headerPresent",false);
+  config.put("columns",Map.of("tenantId","column1","productId","column2","locationId","column3","localIdentifier","column4"));
+  var preview=data(csvPreview(admin,file,config));
+  var rows=(List<Map<String,Object>>)preview.get("rows");
+  assertEquals(1,((Number)rows.getFirst().get("rowNumber")).intValue());
+  assertEquals(1,((Number)rows.getFirst().get("lineNumber")).intValue());
+  assertEquals("ERROR",rows.getLast().get("status"));
+  config.put("headerPresent",true);
+  assertEquals(400,status(csvPreview(admin,file,config)));
+  assertEquals(400,status(csvExecute(admin,file,config,List.of(1L))));
+  config.put("headerPresent",false);
+  var result=data(csvExecute(admin,file,config,List.of(1L,2L)));
+  assertEquals(1,((Number)result.get("successful")).intValue());
+  assertEquals(1,((Number)result.get("failed")).intValue());
+  assertEquals(tenant,jdbc.queryForObject("SELECT tenant_id FROM asset WHERE local_identifier=?",UUID.class,local));
+  assertTrue(((String)result.get("failureCsv")).contains("KELIOS source-line"));
+  assertEquals(2,((Number)((List<Map<String,Object>>)result.get("rows")).getLast().get("lineNumber")).intValue());
+  assertEquals(403,status(csvPreview(principal(Scope.TENANT,Role.ADMIN,Status.ACTIVE),file,config)));
+ }
  byte[] tenantCsv(String source,UUID target){
   var lines=source.stripTrailing().split("\\n");var mapped=new ArrayList<String>();
   for(int i=0;i<lines.length;i++)mapped.add(lines[i]+";"+(i==0?"Mandant":target));

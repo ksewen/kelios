@@ -21,9 +21,9 @@ public class AssetCsvPreviewService {
         "locationId","locationName","ownerId","ownerName","lifecycle","condition","loanable","tagDate");
     private static final List<String> REFERENCES=List.of("product","category","manufacturer","location","owner");
     public record Choice(String target,UUID scopeTenantId,String raw,UUID selectedId) {}
-    public record Input(String sha256,String encoding,String delimiter,Map<String,String> columns,
+    public record Input(String sha256,String encoding,String delimiter,Boolean headerPresent,Map<String,String> columns,
         Map<String,Map<String,String>> values,List<Choice> choices) {}
-    public record Row(long rowNumber,String status,UUID tenantId,String tenantName,Map<String,String> source,Map<String,Object> normalized,
+    public record Row(long rowNumber,long lineNumber,String status,UUID tenantId,String tenantName,Map<String,String> source,Map<String,Object> normalized,
         Map<String,UUID> references,List<String> issues) {}
     public record Resolution(String target,UUID scopeTenantId,String raw,AssetCsvReferenceResolver.Result result) {}
     public record Preview(String sha256,String encoding,String delimiter,List<String> headers,long totalRows,
@@ -37,15 +37,15 @@ public class AssetCsvPreviewService {
     public AssetCsvPreviewService(AssetCsvParser parser,AssetCsvReferenceResolver resolver,JdbcTemplate jdbc,Clock clock){
         this.parser=parser;this.resolver=resolver;this.jdbc=jdbc;this.clock=clock;
     }
-    public AssetCsvParser.ParsePreview parsePreview(MultipartFile file,String encoding,String delimiter){
+    public AssetCsvParser.ParsePreview parsePreview(MultipartFile file,String encoding,String delimiter,boolean headerPresent){
         Authorization.globalAdmin(CurrentIdentity.require());
-        return parser.parsePreview(file,encoding,delimiter);
+        return parser.parsePreview(file,encoding,delimiter,headerPresent);
     }
     @Transactional(readOnly=true,isolation=Isolation.REPEATABLE_READ)
     public Preview preview(MultipartFile file,Input input){
         Authorization.globalAdmin(CurrentIdentity.require());
         if(input==null)throw BusinessFailure.invalid("CSV import mapping required");
-        var parsed=parser.parse(file,input.encoding(),input.delimiter());
+        var parsed=parser.parse(file,input.encoding(),input.delimiter(),!Boolean.FALSE.equals(input.headerPresent()));
         if(input.sha256()==null || !parsed.sha256().equalsIgnoreCase(input.sha256()))throw BusinessFailure.invalid("CSV file differs from parsed preview");
         var columns=validate(input,parsed.headers());
         var valueMaps=input.values()==null?Map.<String,Map<String,String>>of():input.values();
@@ -149,7 +149,7 @@ public class AssetCsvPreviewService {
                 && Boolean.TRUE.equals(normalized.get("loanable")))issues.add("Blocking state is marked loanable; review intentional legacy value");
             var signature=parsed.headers().stream().map(source.values()::get).toList();
             if(!previous.add(signature))issues.add("Duplicate source row in this file");
-            rows.add(new Row(source.rowNumber(),error?"ERROR":issues.isEmpty()?"READY":"WARNING",rowTenant,rowTenantName,
+            rows.add(new Row(source.rowNumber(),source.lineNumber(),error?"ERROR":issues.isEmpty()?"READY":"WARNING",rowTenant,rowTenantName,
                 source.values(),Collections.unmodifiableMap(new LinkedHashMap<>(normalized)),Map.copyOf(references),List.copyOf(issues)));
         }
         return new Preview(parsed.sha256(),parsed.encoding(),parsed.delimiter(),parsed.headers(),rows.size(),

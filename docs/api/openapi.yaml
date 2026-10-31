@@ -929,7 +929,7 @@ paths:
     post:
       operationId: parseAssetCsv
       summary: Parse a bounded legacy Asset CSV file without writing
-      description: ACTIVE GLOBAL ADMIN only. CSV has a required header and at most 5 MiB, 5000 data rows, 64 columns and 32 KiB per decoded cell. AUTO encoding accepts valid UTF-8 only; ambiguous 8-bit encodings require explicit override. AUTO delimiter accepts an unambiguous semicolon, comma or tab. Response includes the first ten raw records and a SHA-256 file identity for later Preview. Logical row numbers include the header.
+      description: ACTIVE GLOBAL ADMIN only. The first record is a header by default; headerPresent=false treats it as data and supplies stable positional column keys. At most 5 MiB, 5000 data rows, 64 columns and 32 KiB per decoded cell. AUTO encoding accepts valid UTF-8 only; ambiguous 8-bit encodings require explicit override. AUTO delimiter accepts an unambiguous semicolon, comma or tab. Response includes the first ten raw data records and a SHA-256 file identity for later Preview. rowNumber is the original logical CSV record number and lineNumber is its starting physical line.
       security: *id008
       parameters:
       - name: encoding
@@ -944,6 +944,12 @@ paths:
         schema:
           type: string
           default: AUTO
+      - name: headerPresent
+        in: query
+        description: Whether the first CSV record supplies source headers; omission preserves the existing header-required interpretation.
+        schema:
+          type: boolean
+          default: true
       requestBody:
         required: true
         content:
@@ -975,6 +981,7 @@ paths:
                       type: object
                       properties:
                         rowNumber: {type: integer, format: int64}
+                        lineNumber: {type: integer, format: int64}
                         values: {type: object, additionalProperties: {type: string}}
         '413': {description: Upload exceeds configured limit}
         default: *id009
@@ -982,7 +989,7 @@ paths:
     post:
       operationId: previewAssetCsvImport
       summary: Validate mapped legacy Asset rows without writing
-      description: ACTIVE GLOBAL ADMIN only. Requires the same file bytes as parse-preview. Exactly one Tenant UUID or Name column is required; each row resolves an existing Tenant independently and may belong to a different Tenant. Missing or invalid Tenant values are row errors; duplicate Tenant names need an explicit choice. Other reference UUID/Name modes are exclusive and scoped by the resolved row Tenant; Product mode excludes direct Manufacturer/Category mapping. Choices are scoped by target, row Tenant and raw value. Preview does not reserve Tags or create resources. Every row is revalidated during later execution.
+      description: ACTIVE GLOBAL ADMIN only. Requires the same file bytes and headerPresent mode as parse-preview; omitted mode means the first record is a header. Exactly one Tenant UUID or Name column is required; each row resolves an existing Tenant independently and may belong to a different Tenant. Missing or invalid Tenant values are row errors; duplicate Tenant names need an explicit choice. Other reference UUID/Name modes are exclusive and scoped by the resolved row Tenant; Product mode excludes direct Manufacturer/Category mapping. Choices are scoped by target, row Tenant and raw value. Preview does not reserve Tags or create resources. Every row is revalidated during later execution.
       security: *id008
       requestBody:
         required: true
@@ -1000,6 +1007,7 @@ paths:
                     sha256: {type: string}
                     encoding: {type: string}
                     delimiter: {type: string}
+                    headerPresent: {type: boolean, default: true}
                     columns: {type: object, additionalProperties: {type: string}}
                     values:
                       type: object
@@ -1039,6 +1047,7 @@ paths:
                       type: object
                       properties:
                         rowNumber: {type: integer, format: int64}
+                        lineNumber: {type: integer, format: int64}
                         status: {type: string, enum: [READY, WARNING, ERROR]}
                         tenantId: {type: [string, 'null'], format: uuid, description: Resolved row Tenant; null when unresolved.}
                         tenantName: {type: [string, 'null'], description: Readable resolved row Tenant; null when unresolved.}
@@ -1102,6 +1111,7 @@ paths:
                         sha256: {type: string}
                         encoding: {type: string}
                         delimiter: {type: string}
+                        headerPresent: {type: boolean, default: true}
                         columns: {type: object, additionalProperties: {type: string}}
                         values:
                           type: object
@@ -1126,7 +1136,7 @@ paths:
                       items: {type: integer, format: int64}
       responses:
         '200':
-          description: Per-row result and UTF-8 BOM failure CSV containing original columns plus KELIOS import-error
+          description: Per-row result and UTF-8 BOM failure CSV containing source columns, original record/starting-line references and KELIOS import-error
           content:
             application/json:
               schema:
@@ -1143,6 +1153,7 @@ paths:
                       required: [rowNumber, status]
                       properties:
                         rowNumber: {type: integer, format: int64}
+                        lineNumber: {type: integer, format: int64}
                         status: {type: string, enum: [SUCCESS, FAILED, SKIPPED]}
                         assetId: *id010
                         assetTag: {type: string}
