@@ -19,23 +19,53 @@ async function setup(page:import('@playwright/test').Page,role:'ADMIN'|'USER'='A
  });return requests;
 }
 
+async function reachPreview(page:import('@playwright/test').Page){
+ await page.goto('/assets/import');await page.getByLabel(en.csv.file).setInputFiles(file);await page.getByRole('button',{name:en.csv.next}).click();
+ const mapping=page.getByRole('heading',{name:en.csv.columnMapping}).locator('..');
+ await mapping.locator('select').nth(0).selectOption('tenantId');await mapping.locator('select').nth(1).selectOption('localIdentifier');
+ await mapping.locator('select').nth(2).selectOption('productName');await mapping.locator('select').nth(3).selectOption('locationName');
+ await page.getByRole('button',{name:en.csv.next}).click();await page.getByRole('button',{name:en.csv.next}).click();
+ await expect(page.getByRole('heading',{name:en.csv.previewTitle})).toBeFocused();
+}
+
 for(const language of ['de','en'] as const)for(const width of [390,1440])test(`${language}/${width} CSV import mapping, confirmation and partial result`,async({page})=>{
  const text=language==='de'?de:en;await page.setViewportSize({width,height:900});await page.addInitScript(value=>localStorage.setItem('kelios.ui.language',value),language);const requests=await setup(page);
  await page.goto('/assets/import');await expect(page.getByRole('heading',{name:text.csv.importTitle})).toBeVisible();await expect(page.getByRole('combobox',{name:text.csv.tenant})).toHaveCount(0);
  await expect(page.getByRole('checkbox',{name:text.csv.headerPresent})).toBeChecked();
- await page.getByLabel(text.csv.file).setInputFiles(file);await page.getByRole('button',{name:text.csv.parseFile}).click();await expect(page.getByText('ä-1',{exact:true})).toBeVisible();
- const mapping=page.getByRole('heading',{name:text.csv.columnMapping}).locator('..');await expect(mapping.getByText(`${text.csv.sampleValues}: ä-1 · ä-2`)).toBeVisible();await page.getByRole('button',{name:text.csv.showPreview}).click();await expect(mapping.getByRole('alert')).toContainText(text.csv.tenant);await expect(mapping.getByRole('alert')).toBeFocused();expect(requests.filter(item=>item.path.endsWith('/preview'))).toHaveLength(0);
+ await page.getByLabel(text.csv.file).setInputFiles(file);await page.getByRole('button',{name:text.csv.next}).click();
+ const mapping=page.getByRole('heading',{name:text.csv.columnMapping}).locator('..');await expect(mapping.getByText(`${text.csv.sampleValues}: ä-1 · ä-2`)).toBeVisible();await page.getByRole('button',{name:text.csv.next}).click();await expect(mapping.getByRole('alert')).toContainText(text.csv.tenant);await expect(mapping.getByRole('alert')).toBeFocused();expect(requests.filter(item=>item.path.endsWith('/preview'))).toHaveLength(0);
  await mapping.locator('select').nth(0).focus();await expect(mapping.locator('select').nth(0)).toBeFocused();await page.keyboard.press('Tab');await expect(mapping.locator('select').nth(1)).toBeFocused();
  await mapping.locator('select').nth(0).selectOption('tenantId');
  await mapping.locator('select').nth(1).selectOption('localIdentifier');await mapping.locator('select').nth(2).selectOption('productName');await mapping.locator('select').nth(3).selectOption('locationName');
  await expect(mapping.locator('select').nth(0).locator('option[value="tenantName"]')).toBeEnabled();await expect(mapping.locator('select').nth(1).locator('option[value="tenantName"]')).toHaveAttribute('disabled','');await expect(mapping.locator('select').nth(0).locator('option[value="productId"]')).toHaveAttribute('disabled','');await expect(mapping.locator('select').nth(0).locator('option[value="categoryName"]')).toHaveAttribute('disabled','');
- await page.getByRole('button',{name:text.csv.showPreview}).click();await expect(page.getByRole('heading',{name:text.csv.previewTitle})).toBeVisible();
+ await page.getByRole('button',{name:text.csv.next}).click();await expect(page.getByRole('heading',{name:text.csv.resolveValues})).toBeFocused();await page.getByRole('button',{name:text.csv.next}).click();await expect(page.getByRole('heading',{name:text.csv.previewTitle})).toBeFocused();
  await expect(page.getByRole('cell',{name:`Workspace · ${tenant}`})).toBeVisible();await expect(page.getByRole('cell',{name:`Other · ${other}`})).toBeVisible();
  await expect(page.getByRole('checkbox',{name:text.csv.selectNumber.replace('{{number}}','3')})).toBeDisabled();await expect(page.getByRole('checkbox',{name:text.csv.selectNumber.replace('{{number}}','2')})).toBeChecked();
  await page.getByRole('button',{name:text.csv.importSelected.replace('{{count}}','1')}).click();await expect(page.getByRole('alertdialog')).toBeVisible();await page.getByRole('alertdialog').getByRole('button',{name:text.redesign.cancel}).click();await expect(page.getByRole('button',{name:text.csv.importSelected.replace('{{count}}','1')})).toBeFocused();expect(requests.filter(item=>item.path.endsWith('/execute'))).toHaveLength(0);
- await page.getByRole('button',{name:text.csv.importSelected.replace('{{count}}','1')}).focus();await page.keyboard.press('Enter');await page.getByRole('alertdialog').getByRole('button',{name:text.redesign.confirm,exact:true}).click();await expect(page.getByRole('heading',{name:text.csv.resultTitle})).toBeVisible();expect(requests.filter(item=>item.path.endsWith('/execute'))).toHaveLength(1);const download=page.waitForEvent('download');await page.getByRole('button',{name:text.csv.downloadFailures}).click();expect((await download).suggestedFilename()).toBe('kelios-import-errors.csv');
+ await page.getByRole('button',{name:text.csv.importSelected.replace('{{count}}','1')}).focus();await page.keyboard.press('Enter');await page.getByRole('alertdialog').getByRole('button',{name:text.redesign.confirm,exact:true}).click();await expect(page.getByRole('heading',{name:text.csv.resultTitle})).toBeFocused();expect(requests.filter(item=>item.path.endsWith('/execute'))).toHaveLength(1);await expect(page.getByRole('button',{name:text.csv.next})).toHaveCount(0);await expect(page.getByRole('button',{name:text.csv.back})).toHaveCount(0);const download=page.waitForEvent('download');await page.getByRole('button',{name:text.csv.downloadFailures}).click();expect((await download).suggestedFilename()).toBe('kelios-import-errors.csv');
  expect(requests.find(item=>item.path.endsWith('/preview'))?.body).toContain('"tenantId":"Mandant"');expect(requests.find(item=>item.path.endsWith('/preview'))?.body).not.toContain(`"tenantId":"${tenant}"`);expect(requests.find(item=>item.path.endsWith('/execute'))?.body).toContain('selectedRows');
+ await page.getByRole('button',{name:text.csv.newImport}).click();await expect(page.getByRole('heading',{name:text.csv.fileSettings})).toBeFocused();await expect(page.getByLabel(text.csv.file)).toHaveValue('');await expect(page.getByRole('heading',{name:text.csv.resultTitle})).toHaveCount(0);
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});
+
+test('one execution remains locked until its confirmed result and cannot be restored with Back',async({page})=>{
+ const requests=await setup(page);let executions=0;
+ await page.route('**/api/v1/asset-csv/execute',async route=>{executions++;await new Promise(resolve=>setTimeout(resolve,400));await route.fulfill({json:{successful:1,failed:0,skipped:1,rows:[],failureCsv:''}});});
+ await reachPreview(page);
+ await page.evaluate(()=>{const button=[...document.querySelectorAll('button')].find(item=>item.textContent?.includes('Import 1 rows'));button?.click();button?.click();});
+ await expect(page.getByRole('alertdialog')).toBeVisible();await page.getByRole('alertdialog').getByRole('button',{name:en.redesign.confirm,exact:true}).click();
+ await expect(page.getByRole('button',{name:en.csv.executing})).toBeDisabled();await expect(page.getByRole('button',{name:en.csv.back})).toBeDisabled();
+ await expect(page.getByRole('heading',{name:en.csv.resultTitle})).toBeFocused();expect(executions).toBe(1);expect(requests.filter(item=>item.path.endsWith('/execute'))).toHaveLength(0);
+ await expect(page.getByRole('button',{name:en.csv.back})).toHaveCount(0);await expect(page.getByRole('button',{name:en.csv.next})).toHaveCount(0);
+ await page.getByRole('link',{name:en.csv.toAssets}).click();await expect(page.getByRole('heading',{name:en.ui.assets})).toBeVisible();await page.goBack();await expect(page.getByRole('heading',{name:en.csv.fileSettings})).toBeVisible();await expect(page.getByLabel(en.csv.file)).toHaveValue('');await expect(page.getByRole('heading',{name:en.csv.resultTitle})).toHaveCount(0);
+});
+
+test('uncertain execute response is terminal and is never retried automatically',async({page})=>{
+ await setup(page);let executions=0;await page.route('**/api/v1/asset-csv/execute',route=>{executions++;return route.abort('failed');});
+ await reachPreview(page);await page.getByRole('button',{name:en.csv.importSelected.replace('{{count}}','1')}).click();await page.getByRole('alertdialog').getByRole('button',{name:en.redesign.confirm,exact:true}).click();
+ await expect(page.getByRole('heading',{name:en.csv.unknownTitle})).toBeFocused();await expect(page.getByText(en.csv.unknownOutcome)).toBeVisible();
+ await expect(page.getByRole('heading',{name:en.csv.resultTitle})).toHaveCount(0);await expect(page.getByRole('button',{name:en.csv.back})).toHaveCount(0);expect(executions).toBe(1);
+ await page.reload();await expect(page.getByRole('heading',{name:en.csv.fileSettings})).toBeVisible();await expect(page.getByLabel(en.csv.file)).toHaveValue('');expect(executions).toBe(1);
 });
 
 for(const language of ['de','en'] as const)for(const width of [390,1440])test(`${language}/${width} headerless mapping reparses and includes record one`,async({page})=>{
@@ -47,16 +77,18 @@ for(const language of ['de','en'] as const)for(const width of [390,1440])test(`$
  await page.route('**/api/v1/asset-csv/preview',route=>{seen.push({url:route.request().url(),body:route.request().postData()});return route.fulfill({json:{...preview,...noHeaders,ready:1,errors:0,rows:[{...preview.rows[0],rowNumber:1,lineNumber:1,source:noHeaders.rows[0].values}],referenceResolution:[]}});});
  await page.goto('/assets/import');await page.getByLabel(text.csv.file).setInputFiles({name:'old.csv',mimeType:'text/csv',buffer:Buffer.from(`${tenant};ä-1;Gerät;Room\n`)});
  await page.getByRole('checkbox',{name:text.csv.headerPresent}).uncheck();
+ await expect(page.getByRole('rowheader',{name:'1'})).toBeVisible();
+ await page.getByRole('button',{name:text.csv.next}).click();
  const mapping=page.getByRole('heading',{name:text.csv.columnMapping}).locator('..');await expect(mapping.getByText(text.csv.positionalColumn.replace('{{number}}','1'))).toBeVisible();
- await expect(mapping.getByText(`${text.csv.sampleValues}: ä-1`)).toBeVisible();await expect(page.getByRole('rowheader',{name:'1'})).toBeVisible();
+ await expect(mapping.getByText(`${text.csv.sampleValues}: ä-1`)).toBeVisible();
  await mapping.locator('select').nth(0).selectOption('tenantId');await mapping.locator('select').nth(1).selectOption('localIdentifier');await mapping.locator('select').nth(2).selectOption('productName');await mapping.locator('select').nth(3).selectOption('locationName');
- await expect(mapping.getByRole('status')).toHaveText(text.csv.mappingComplete);await page.getByRole('button',{name:text.csv.showPreview}).click();
+ await expect(mapping.getByRole('status')).toHaveText(text.csv.mappingComplete);await page.getByRole('button',{name:text.csv.next}).click();await page.getByRole('button',{name:text.csv.next}).click();
  await expect(page.getByRole('checkbox',{name:text.csv.selectNumber.replace('{{number}}','1')})).toBeChecked();
  expect(seen.find(item=>item.body?.includes('"headerPresent":false'))?.body).toContain('"tenantId":"column1"');
- await page.getByRole('checkbox',{name:text.csv.headerPresent}).check();await expect(mapping.locator('label[for="csv-source-0"]')).toHaveText('Mandant');
+ await page.getByRole('button',{name:text.csv.back}).click();await page.getByRole('button',{name:text.csv.back}).click();await page.getByRole('button',{name:text.csv.back}).click();await page.getByRole('checkbox',{name:text.csv.headerPresent}).check();await page.getByRole('button',{name:text.csv.next}).click();await expect(mapping.locator('label[for="csv-source-0"]')).toHaveText('Mandant');
  await expect(page.getByRole('heading',{name:text.csv.previewTitle})).toHaveCount(0);
  await expect(mapping.locator('select').first()).toHaveValue('');
- expect(seen.filter(item=>item.url.includes('/parse-preview?'))).toHaveLength(2);
+ expect(seen.filter(item=>item.url.includes('/parse-preview?'))).toHaveLength(3);
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
 });
 
@@ -66,16 +98,16 @@ test('top-level Tenant switch asks before abandoning an in-progress import',asyn
 
 test('encoding and delimiter changes invalidate raw preview; leaving a draft asks before discarding',async({page})=>{
  const requests=await setup(page);await page.goto('/assets/import');await page.getByLabel(en.csv.file).setInputFiles(file);await page.getByRole('combobox',{name:en.csv.encoding}).selectOption('WINDOWS-1252');await page.getByRole('combobox',{name:en.csv.delimiter}).selectOption('COMMA');
- await page.getByRole('button',{name:en.csv.parseFile}).click();await expect(page.getByText('ä-1',{exact:true})).toBeVisible();expect(requests.find(item=>item.path.endsWith('/parse-preview'))?.path).toBe('/api/v1/asset-csv/parse-preview');
- await page.getByRole('combobox',{name:en.csv.delimiter}).selectOption('SEMICOLON');await expect(page.getByText('ä-1',{exact:true})).toHaveCount(0);await page.getByRole('navigation',{name:en.redesign.breadcrumb}).getByRole('link',{name:en.ui.assets}).click();await expect(page.getByRole('alertdialog')).toBeVisible();await page.getByRole('alertdialog').getByRole('button',{name:en.redesign.cancel}).click();await expect(page).toHaveURL(/assets\/import$/);
+ await page.getByRole('button',{name:en.csv.parseFile}).click();await page.getByRole('button',{name:en.csv.next}).click();await expect(page.getByRole('heading',{name:en.csv.columnMapping})).toBeVisible();expect(requests.find(item=>item.path.endsWith('/parse-preview'))?.path).toBe('/api/v1/asset-csv/parse-preview');
+ await page.getByRole('button',{name:en.csv.back}).click();await page.getByRole('combobox',{name:en.csv.delimiter}).selectOption('SEMICOLON');await expect(page.getByRole('button',{name:en.csv.next})).toBeDisabled();await page.getByRole('button',{name:en.csv.parseFile}).click();await page.getByRole('button',{name:en.csv.next}).click();await expect(page.getByRole('heading',{name:en.csv.columnMapping})).toBeVisible();await page.getByRole('navigation',{name:en.redesign.breadcrumb}).getByRole('link',{name:en.ui.assets}).click();await expect(page.getByRole('alertdialog')).toBeVisible();await page.getByRole('alertdialog').getByRole('button',{name:en.redesign.cancel}).click();await expect(page).toHaveURL(/assets\/import$/);
  await page.getByRole('navigation',{name:en.redesign.breadcrumb}).getByRole('link',{name:en.ui.assets}).click();await page.getByRole('alertdialog').getByRole('button',{name:en.redesign.confirm,exact:true}).click();await expect(page).toHaveURL(/\/assets$/);
 });
 
 test('ambiguous Name reference requires explicit choice and a fresh preview',async({page})=>{
  await setup(page);let previews=0;await page.route('**/api/v1/asset-csv/preview',route=>{previews++;const chosen=route.request().postData()?.includes(`\"selectedId\":\"${tenant}\"`);return route.fulfill({json:{...preview,ready:chosen?1:0,errors:chosen?0:1,rows:[{...preview.rows[0],status:chosen?'READY':'ERROR',issues:chosen?[]:['product ambiguous: Gerät']}],referenceResolution:[{target:'productName',scopeTenantId:tenant,raw:'Gerät',result:{status:chosen?'CHOSEN':'AMBIGUOUS',id:chosen?tenant:null,candidates:[{id:tenant,name:'Gerät',tenantId:null}],more:false}}]}});});
  await page.route(`**/api/v1/tenants/${tenant}/catalog/products?*`,route=>route.fulfill({json:{items:[{id:tenant,name:'Gerät',tenant:null}],page:0,size:20,totalElements:1}}));
- await page.goto('/assets/import');await page.getByLabel(en.csv.file).setInputFiles(file);await page.getByRole('button',{name:en.csv.parseFile}).click();const mapping=page.getByRole('heading',{name:en.csv.columnMapping}).locator('..');await mapping.locator('select').nth(0).selectOption('tenantId');await mapping.locator('select').nth(1).selectOption('localIdentifier');await mapping.locator('select').nth(2).selectOption('productName');await mapping.locator('select').nth(3).selectOption('locationId');await page.getByRole('button',{name:en.csv.showPreview}).click();
- await expect(page.getByText(en.csv.resolutionAMBIGUOUS)).toBeVisible();const choose=page.getByRole('combobox',{name:en.csv.chooseExisting});await choose.fill('Gerät');await page.getByRole('listbox').getByRole('option').first().click();await expect(page.getByText(en.csv.revalidateNeeded)).toBeVisible();await page.getByRole('button',{name:en.csv.revalidate}).click();await expect(page.getByRole('checkbox',{name:en.csv.selectNumber.replace('{{number}}','2')})).toBeChecked();expect(previews).toBe(2);
+ await page.goto('/assets/import');await page.getByLabel(en.csv.file).setInputFiles(file);await page.getByRole('button',{name:en.csv.next}).click();const mapping=page.getByRole('heading',{name:en.csv.columnMapping}).locator('..');await mapping.locator('select').nth(0).selectOption('tenantId');await mapping.locator('select').nth(1).selectOption('localIdentifier');await mapping.locator('select').nth(2).selectOption('productName');await mapping.locator('select').nth(3).selectOption('locationId');await page.getByRole('button',{name:en.csv.next}).click();
+ await expect(page.getByText(en.csv.resolutionAMBIGUOUS)).toBeVisible();const choose=page.getByRole('combobox',{name:en.csv.chooseExisting});await choose.fill('Gerät');await page.getByRole('listbox').getByRole('option').first().click();await page.getByRole('button',{name:en.csv.next}).click();await expect(page.getByRole('checkbox',{name:en.csv.selectNumber.replace('{{number}}','2')})).toBeChecked();expect(previews).toBe(2);
 });
 
 test('ambiguous Tenant Name needs an explicit existing-Tenant choice',async({page})=>{
@@ -86,25 +118,25 @@ test('ambiguous Tenant Name needs an explicit existing-Tenant choice',async({pag
   previews++;const chosen=route.request().postData()?.includes(`\"selectedId\":\"${other}\"`);
   return route.fulfill({json:{...preview,rows:[{...preview.rows[0],tenantId:chosen?other:null,tenantName:chosen?'Shared':null,status:chosen?'READY':'ERROR',issues:chosen?[]:['Tenant ambiguous: Shared']}],ready:chosen?1:0,errors:chosen?0:1,referenceResolution:[{target:'tenantName',scopeTenantId:null,raw:'Shared',result:{status:chosen?'CHOSEN':'AMBIGUOUS',id:chosen?other:null,candidates:[{id:tenant,name:'Shared',tenantId:null},{id:other,name:'Shared',tenantId:null}],more:false}}]}});
  });
- await page.goto('/assets/import');await page.getByLabel(en.csv.file).setInputFiles(file);await page.getByRole('button',{name:en.csv.parseFile}).click();
+ await page.goto('/assets/import');await page.getByLabel(en.csv.file).setInputFiles(file);await page.getByRole('button',{name:en.csv.next}).click();
  const mapping=page.getByRole('heading',{name:en.csv.columnMapping}).locator('..');await mapping.locator('select').nth(0).selectOption('tenantName');await mapping.locator('select').nth(1).selectOption('localIdentifier');await mapping.locator('select').nth(2).selectOption('productId');await mapping.locator('select').nth(3).selectOption('locationId');
- await page.getByRole('button',{name:en.csv.showPreview}).click();await expect(page.getByText(en.csv.resolutionAMBIGUOUS)).toBeVisible();await expect(page.getByText(en.csv.tenantMustExist)).toHaveCount(0);
- const chooser=page.getByRole('combobox',{name:en.csv.chooseTenant});await chooser.selectOption(other);await expect(page.getByText(en.csv.revalidateNeeded)).toBeVisible();await page.getByRole('button',{name:en.csv.revalidate}).click();
+ await page.getByRole('button',{name:en.csv.next}).click();await expect(page.getByText(en.csv.resolutionAMBIGUOUS)).toBeVisible();await expect(page.getByText(en.csv.tenantMustExist)).toHaveCount(0);
+ const chooser=page.getByRole('combobox',{name:en.csv.chooseTenant});await chooser.selectOption(other);await page.getByRole('button',{name:en.csv.next}).click();
  await expect(page.getByRole('cell',{name:`Shared · ${other}`})).toBeVisible();expect(previews).toBe(2);
 });
 
 test('unresolved Tenant cannot be created inside Import',async({page})=>{
  await setup(page);await page.route('**/api/v1/asset-csv/preview',route=>route.fulfill({json:{...preview,ready:0,errors:1,rows:[{...preview.rows[0],tenantId:null,tenantName:null,status:'ERROR',issues:['Tenant unresolved']}],referenceResolution:[{target:'tenantName',scopeTenantId:null,raw:'Missing',result:{status:'UNRESOLVED',id:null,candidates:[],more:false}}]}}));
- await page.goto('/assets/import');await page.getByLabel(en.csv.file).setInputFiles(file);await page.getByRole('button',{name:en.csv.parseFile}).click();
- const mapping=page.getByRole('heading',{name:en.csv.columnMapping}).locator('..');await mapping.locator('select').nth(0).selectOption('tenantName');await mapping.locator('select').nth(2).selectOption('productId');await mapping.locator('select').nth(3).selectOption('locationId');await page.getByRole('button',{name:en.csv.showPreview}).click();
- await expect(page.getByText(en.csv.tenantMustExist)).toBeVisible();await expect(page.getByRole('link',{name:/Create Tenant/i})).toHaveCount(0);await expect(page.getByRole('checkbox',{name:en.csv.selectNumber.replace('{{number}}','2')})).toBeDisabled();
+ await page.goto('/assets/import');await page.getByLabel(en.csv.file).setInputFiles(file);await page.getByRole('button',{name:en.csv.next}).click();
+ const mapping=page.getByRole('heading',{name:en.csv.columnMapping}).locator('..');await mapping.locator('select').nth(0).selectOption('tenantName');await mapping.locator('select').nth(2).selectOption('productId');await mapping.locator('select').nth(3).selectOption('locationId');await page.getByRole('button',{name:en.csv.next}).click();
+ await expect(page.getByText(en.csv.tenantMustExist)).toBeVisible();await expect(page.getByRole('link',{name:/Create Tenant/i})).toHaveCount(0);await page.getByRole('button',{name:en.csv.next}).click();await expect(page.getByRole('checkbox',{name:en.csv.selectNumber.replace('{{number}}','2')})).toBeDisabled();
 });
 
 test('direct Catalog mapping reports both conditional requirements before Preview',async({page})=>{
- const requests=await setup(page);await page.goto('/assets/import');await page.getByLabel(en.csv.file).setInputFiles(file);await page.getByRole('button',{name:en.csv.parseFile}).click();
- const mapping=page.getByRole('heading',{name:en.csv.columnMapping}).locator('..');await mapping.locator('select').nth(0).selectOption('tenantId');await mapping.locator('select').nth(3).selectOption('locationName');await page.getByRole('button',{name:en.csv.showPreview}).click();
+ const requests=await setup(page);await page.goto('/assets/import');await page.getByLabel(en.csv.file).setInputFiles(file);await page.getByRole('button',{name:en.csv.next}).click();
+ const mapping=page.getByRole('heading',{name:en.csv.columnMapping}).locator('..');await mapping.locator('select').nth(0).selectOption('tenantId');await mapping.locator('select').nth(3).selectOption('locationName');await page.getByRole('button',{name:en.csv.next}).click();
  await expect(mapping.getByRole('alert')).toContainText(en.ui.category);await expect(mapping.getByRole('alert')).toContainText(en.ui.manufacturer);expect(requests.filter(item=>item.path.endsWith('/preview'))).toHaveLength(0);
- await mapping.locator('select').nth(1).selectOption('categoryName');await mapping.locator('select').nth(2).selectOption('manufacturerName');await expect(mapping.getByRole('alert')).toHaveCount(0);await page.getByRole('button',{name:en.csv.showPreview}).click();expect(requests.filter(item=>item.path.endsWith('/preview'))).toHaveLength(1);
+ await mapping.locator('select').nth(1).selectOption('categoryName');await mapping.locator('select').nth(2).selectOption('manufacturerName');await expect(mapping.getByRole('alert')).toHaveCount(0);await page.getByRole('button',{name:en.csv.next}).click();expect(requests.filter(item=>item.path.endsWith('/preview'))).toHaveLength(1);
 });
 
 test('same reference Name remains isolated by row Tenant and creation uses that Tenant',async({page})=>{
@@ -117,9 +149,9 @@ test('same reference Name remains isolated by row Tenant and creation uses that 
   ]}});
  });
  await page.route(`**/api/v1/tenants/${tenant}/locations?*`,route=>route.fulfill({json:{items:[{id:tenant,name:'Room',tenant:{id:tenant,name:'Workspace'}}],page:0,size:20,totalElements:1}}));
- await page.goto(`/tenants/${tenant}/assets/import`);await page.getByLabel(en.csv.file).setInputFiles(file);await page.getByRole('button',{name:en.csv.parseFile}).click();
+ await page.goto(`/tenants/${tenant}/assets/import`);await page.getByLabel(en.csv.file).setInputFiles(file);await page.getByRole('button',{name:en.csv.next}).click();
  const mapping=page.getByRole('heading',{name:en.csv.columnMapping}).locator('..');await mapping.locator('select').nth(0).selectOption('tenantId');await mapping.locator('select').nth(1).selectOption('localIdentifier');await mapping.locator('select').nth(2).selectOption('productId');await mapping.locator('select').nth(3).selectOption('locationName');
- await page.getByRole('button',{name:en.csv.showPreview}).click();const create=page.getByRole('link',{name:en.csv.openCreation.replace('{{resource}}',`${en.ui.location} · ${en.csv.nameMode}`)});await expect(create).toHaveAttribute('href',`/tenants/${other}/locations`);
- const pick=page.getByRole('combobox',{name:en.csv.chooseExisting});await pick.fill('Room');await page.getByRole('listbox').getByRole('option').first().click();await page.getByRole('button',{name:en.csv.revalidate}).click();
+ await page.getByRole('button',{name:en.csv.next}).click();const create=page.getByRole('link',{name:en.csv.openCreation.replace('{{resource}}',`${en.ui.location} · ${en.csv.nameMode}`)});await expect(create).toHaveAttribute('href',`/tenants/${other}/locations`);
+ const pick=page.getByRole('combobox',{name:en.csv.chooseExisting});await pick.fill('Room');await page.getByRole('listbox').getByRole('option').first().click();await page.getByRole('button',{name:en.csv.next}).click();
  expect(seen.at(-1)).toContain(`\"scopeTenantId\":\"${tenant}\"`);expect(seen.at(-1)).not.toContain(`\"scopeTenantId\":\"${other}\"`);await expect(page.getByRole('checkbox',{name:en.csv.selectNumber.replace('{{number}}','3')})).toBeDisabled();
 });
