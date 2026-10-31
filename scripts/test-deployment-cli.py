@@ -3,14 +3,15 @@
 import hashlib, json, os, pathlib, pty, re, select, shutil, signal, subprocess, termios, time, unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-BASE = ROOT / '.cache/deployment-cli/control'
+BASE = ROOT / '.cache/deployment-cli' / f'control-{os.getpid()}'
 
 
 def conversation(directory, command, answers, env=None, timeout=15):
     pid, fd = pty.fork()
     if pid == 0:
         os.chdir(directory)
-        os.execve(str(directory / 'kelios'), [str(directory / 'kelios'), command], env or os.environ.copy())
+        args=command if isinstance(command,list) else [command]
+        os.execve(str(directory / 'kelios'), [str(directory / 'kelios'), *args], env or os.environ.copy())
     transcript = b''
     cursor = 0
     deadline = time.monotonic() + timeout
@@ -74,19 +75,48 @@ class CliControlTests(unittest.TestCase):
 if [ -n "${PASSWORD+x}${FIRST+x}${DB_PASSWORD+x}${encoded+x}" ]; then exit 42; fi
 python3 "$(dirname "$0")/capture.py" "$@" || exit $?
 case "$*" in
+  info) if [ -f "$(dirname "$0")/deny-info" ]; then echo 'permission denied while connecting to the Docker daemon socket' >&2; exit 1; fi
+        if [ -f "$(dirname "$0")/fail-info" ]; then exit 1; fi;;
+  *"info --format"*) if [ -f "$(dirname "$0")/rootless-info" ]; then echo 'name=rootless'; fi; exit 0;;
+  *"compose version"*) [ ! -f "$(dirname "$0")/missing-compose" ]; exit $?;;
+  *"context inspect"*) if [ -f "$(dirname "$0")/remote-context" ]; then echo tcp://remote:2375; else echo unix:///var/run/docker.sock; fi; exit 0;;
+  *"network inspect"*)
+    [ -f "$(dirname "$0")/network-exists" ] || exit 1
+    case "$*" in *com.docker.compose.project*) if [ -f "$(dirname "$0")/wrong-network" ]; then echo other; else awk -F= '$1=="PROJECT" {print $2}' "$(dirname "$0")/../.kelios/installation.conf"; fi;; *com.docker.compose.network*) echo default;; esac
+    exit 0;;
+  *" build"*) if [ -f "$(dirname "$0")/fail-build" ]; then exit 1; fi;;
+  *" up "*) if [ -f "$(dirname "$0")/sleep-up" ]; then touch "$(dirname "$0")/entered-up"; sleep 2; fi
+             if [ -f "$(dirname "$0")/fail-up" ]; then exit 1; fi;;
+  *"config --quiet"*) if [ -f "$(dirname "$0")/bad-config" ]; then exit 1; fi
+                       if [ -f "$(dirname "$0")/sleep-config" ]; then sleep 2; fi;;
   *"volume inspect"*) if [ -f "$(dirname "$0")/missing-volume" ]; then exit 1; fi;;
 esac
 case "$*" in
   info|"compose version") exit 0;;
-  *"config --images"*) echo kelios-backend:phase0; echo kelios-frontend:phase0; echo postgres:17-alpine; exit 0;;
+  *"config --images"*) awk -F= '$1=="KELIOS_BACKEND_IMAGE" || $1=="KELIOS_FRONTEND_IMAGE" {print $2}' "$3"; echo postgres:17-alpine; exit 0;;
   *"image inspect"*) [ ! -f "$(dirname "$0")/missing-image" ]; exit $?;;
-  *"volume inspect"*"com.docker.compose.project"*) awk -F= '$1=="PROJECT" {print $2}' .kelios/installation.conf; exit 0;;
+  *"volume inspect"*"com.docker.compose.project"*) if [ -f "$(dirname "$0")/wrong-volume" ]; then echo unrelated; else awk -F= '$1=="PROJECT" {print $2}' "$(dirname "$0")/../.kelios/installation.conf"; fi; exit 0;;
   *"volume inspect"*"com.docker.compose.volume"*) echo postgres-data; exit 0;;
+  *"volume rm"*) touch "$(dirname "$0")/deleted-volume"; exit 0;;
+  *"ps -aq --filter volume="*) if [ -f "$(dirname "$0")/volume-consumer" ]; then echo fixture-container; fi; exit 0;;
   *" run "*) [ ! -f "$(dirname "$0")/refuse" ]; exit $?;;
+  *" logs "*) echo 'frontend | /api/v1/auth/oidc/tenant/callback?code=fixture-secret&state=fixture-state'; echo 'backend | bounded fixture log'; exit 0;;
   *) exit 0;;
 esac
 ''')
         docker.chmod(0o755)
+        (self.root / 'bin/git').write_text('''#!/bin/sh
+case "$*" in
+  *"status --porcelain"*) [ ! -f "$(dirname "$0")/dirty-source" ] || echo ' M kelios';;
+  *"rev-parse --verify HEAD"*) if [ -f "$(dirname "$0")/release" ]; then cat "$(dirname "$0")/release"; else echo 0123456789abcdef0123456789abcdef01234567; fi;;
+  *) exit 1;;
+esac
+''')
+        (self.root / 'bin/git').chmod(0o755)
+        (self.root / 'bin/lsof').write_text('#!/bin/sh\n[ -f "$(dirname "$0")/busy-port" ]\n')
+        (self.root / 'bin/lsof').chmod(0o755)
+        (self.root / 'bin/ss').write_text('#!/bin/sh\nif [ -f "$(dirname "$0")/busy-port" ]; then port=$(cat "$(dirname "$0")/busy-port"); printf "LISTEN 0 128 127.0.0.1:%s 0.0.0.0:*\\n" "${port:-8443}"; fi\n')
+        (self.root / 'bin/ss').chmod(0o755)
         # Observe argv without joining/evaluating it or changing fake Docker outcomes.
         (self.root / 'bin/capture.py').write_text("""import hashlib, json, pathlib, sys
 root = pathlib.Path(__file__).resolve().parents[1]
@@ -103,26 +133,177 @@ with (root / 'docker-argv.jsonl').open('a') as out:
 """)
         self.env = os.environ.copy()
         self.env['PATH'] = str(self.root / 'bin') + ':' + self.env['PATH']
+        (self.root / 'tmp').mkdir(exist_ok=True)
+        self.env['TMPDIR'] = str(self.root / 'tmp')
 
     def run_cli(self, command, answers=()):
-        return conversation(self.root, command, answers, self.env)
+        return conversation(self.root, ['--state-dir',str(self.root/'.kelios'),command], answers, self.env)
 
     def state(self, **changes):
         values = dict(SCHEMA='1', PROJECT='kelios-local-control', MODE='managed', PHASE='initialized', BIND='127.0.0.1', HTTP_PORT='8080', HTTPS_PORT='8443', BROWSER_HOST='localhost', ISSUER='https://localhost:8443', DB_HOST='postgres', DB_PORT='5432', DB_NAME='kelios', DB_USER='kelios', BACKGROUND='#f2faf5', FOREGROUND='#16372b', PRIMARY='#087f5b', PRIMARY_FOREGROUND='#ffffff', ACCENT='#d8f2e4', ACCENT_FOREGROUND='#14543c', LOGO='logo.svg')
         values.update(changes)
         d = self.root / '.kelios'
         d.mkdir(exist_ok=True)
-        for sub in ['temporary', 'secrets/auth', 'secrets/tls', 'branding/logos']:
+        for sub in ['temporary', 'secrets/auth', 'secrets/tls/0123456789ab', 'branding/logos']:
             (d / sub).mkdir(parents=True, exist_ok=True)
+        (d / 'certificate.conf').write_text('HOST=localhost\nVERSION=0123456789ab\n')
         (d / 'installation.conf').write_text(''.join(f'{k}={v}\n' for k,v in values.items()))
-        for f in ['secrets/db-password', 'secrets/auth/main.private.pem', 'secrets/auth/main.public.pem', 'secrets/auth/main.aes', 'secrets/tls/certificate.pem', 'secrets/tls/private.pem', 'branding/config.json', 'branding/logos/logo.svg']:
+        for f in ['secrets/db-password', 'secrets/auth/main.private.pem', 'secrets/auth/main.public.pem', 'secrets/auth/main.aes', 'secrets/tls/0123456789ab/certificate.pem', 'secrets/tls/0123456789ab/private.pem', 'branding/config.json', 'branding/logos/logo.svg']:
             (d / f).write_text('fixture-not-a-secret')
         return d
 
     def test_unknown_command(self):
-        rc, out = self.run_cli('restart'); self.assertNotEqual(rc,0); self.assertIn('Usage:',out)
+        rc, out = self.run_cli('unknown'); self.assertNotEqual(rc,0); self.assertIn('Usage:',out)
+    def test_backup_refuses_external_database_before_dump(self):
+        self.state(MODE='external')
+        output=self.root/'new-bundle'
+        result=subprocess.run([str(self.root/'kelios'),'--state-dir',str(self.root/'.kelios'),'--output',str(output),'backup'],cwd=self.root,env=self.env,text=True,capture_output=True)
+        self.assertNotEqual(result.returncode,0)
+        self.assertIn('initialized managed installation',result.stderr)
+        self.assertFalse(output.exists())
+        self.assertNotIn('pg_dump',(self.root/'docker-argv.jsonl').read_text() if (self.root/'docker-argv.jsonl').exists() else '')
+    def test_restore_refuses_existing_state_before_bundle_access(self):
+        self.state()
+        result=subprocess.run([str(self.root/'kelios'),'--state-dir',str(self.root/'.kelios'),'--bundle',str(self.root/'absent-bundle'),'restore'],cwd=self.root,env=self.env,text=True,capture_output=True)
+        self.assertNotEqual(result.returncode,0)
+        self.assertIn('Restore target already exists',result.stderr)
+        self.assertTrue((self.root/'.kelios/installation.conf').exists())
+    def test_discard_incomplete_requires_exact_confirmation_and_never_removes_initialized(self):
+        state=self.state(PHASE='restoring')
+        command=['--state-dir',str(state),'restore','discard-incomplete']
+        rc,out=conversation(self.root,command,[(r'Type DISCARD INCOMPLETE kelios-local-control exactly','wrong')],self.env)
+        self.assertNotEqual(rc,0)
+        self.assertTrue(state.exists())
+        self.assertFalse((self.root/'bin/deleted-volume').exists())
+        rc,out=conversation(self.root,command,[(r'Type DISCARD INCOMPLETE kelios-local-control exactly','DISCARD INCOMPLETE kelios-local-control')],self.env)
+        self.assertEqual(rc,0,out)
+        self.assertFalse(state.exists())
+        self.assertTrue((self.root/'bin/deleted-volume').exists())
+        state=self.state(PHASE='initialized')
+        rc,out=conversation(self.root,command,[],self.env)
+        self.assertNotEqual(rc,0)
+        self.assertIn('Only an incomplete restore',out)
+        self.assertTrue(state.exists())
+    def test_default_state_is_outside_source(self):
+        env=self.env.copy(); env['XDG_DATA_HOME']=str(self.root/'data')
+        result=subprocess.run([str(self.root/'kelios'),'status'],cwd=self.root/'bin',env=env,text=True,capture_output=True)
+        self.assertEqual(result.returncode,0)
+        self.assertIn('not initialized',result.stdout)
+        self.assertFalse((self.root/'.kelios').exists())
+        self.assertFalse((self.root/'data').exists())
+        invalid=subprocess.run([str(self.root/'kelios'),'--state-dir','relative','status'],cwd=self.root/'bin',env=env,text=True,capture_output=True)
+        self.assertNotEqual(invalid.returncode,0)
+        self.assertIn('must be absolute',invalid.stderr)
+        trailing=subprocess.run([str(self.root/'kelios'),'--state-dir',str(self.root/'.kelios')+'/', 'status'],cwd=self.root/'bin',env=env,text=True,capture_output=True)
+        self.assertEqual(trailing.returncode,0,trailing.stderr)
+    def test_doctor_reports_daemon_failure_without_mutation(self):
+        (self.root/'bin/fail-info').touch()
+        result=subprocess.run([str(self.root/'kelios'),'--state-dir',str(self.root/'.kelios'),'doctor'],cwd=self.root,env=self.env,text=True,capture_output=True)
+        self.assertNotEqual(result.returncode,0)
+        self.assertIn('Start the installed Docker daemon',result.stderr)
+        self.assertFalse((self.root/'.kelios').exists())
+    def test_doctor_validates_input_without_mutation(self):
+        config=self.root/'input.conf';config.write_text('HTTP_PORT=0\n')
+        result=subprocess.run([str(self.root/'kelios'),'--state-dir',str(self.root/'.kelios'),'--config',str(config),'doctor'],cwd=self.root,env=self.env,text=True,capture_output=True)
+        self.assertNotEqual(result.returncode,0)
+        self.assertIn('Port must be an integer',result.stderr)
+        self.assertFalse((self.root/'.kelios').exists())
+    def test_docker_preflight_distinguishes_plugin_socket_and_context(self):
+        for flag, message in [('missing-compose','Compose plugin is absent'),('deny-info','Docker socket access denied'),('fail-info','Docker daemon is unavailable'),('remote-context','local Unix-socket Docker context'),('rootless-info','Rootless Docker is outside')]:
+            marker=self.root/'bin'/flag;marker.touch()
+            result=subprocess.run([str(self.root/'kelios'),'--state-dir',str(self.root/'.kelios'),'doctor'],cwd=self.root,env=self.env,text=True,capture_output=True)
+            self.assertNotEqual(result.returncode,0,flag)
+            self.assertIn(message,result.stderr)
+            marker.unlink()
+        self.assertFalse((self.root/'.kelios').exists())
+        env=self.env.copy();env['DOCKER_HOST']='unix:///var/run/docker.sock';env['DOCKER_CONTEXT']='remote'
+        ambiguous=subprocess.run([str(self.root/'kelios'),'doctor'],cwd=self.root,env=env,text=True,capture_output=True)
+        self.assertIn('both set',ambiguous.stderr)
+    def test_missing_docker_reports_prerequisite(self):
+        minimal=self.root/'minimal-bin';minimal.mkdir()
+        for name in ['dirname','id','uname']:
+            (minimal/name).symlink_to(shutil.which(name))
+        env=self.env.copy();env['PATH']=str(minimal)
+        result=subprocess.run([str(self.root/'kelios'),'--state-dir',str(self.root/'.kelios'),'doctor'],cwd=self.root,env=env,text=True,capture_output=True)
+        self.assertNotEqual(result.returncode,0)
+        self.assertIn('Docker Engine is absent',result.stderr)
+        self.assertFalse((self.root/'.kelios').exists())
+    def test_busy_ports_refused_before_install_state_or_build(self):
+        (self.root/'bin/busy-port').touch()
+        config=self.noninteractive_config()
+        result=subprocess.run([str(self.root/'kelios'),'--state-dir',str(self.root/'.kelios'),'--config',str(config),'--non-interactive','install'],cwd=self.root,env=self.env,text=True,capture_output=True)
+        self.assertNotEqual(result.returncode,0)
+        self.assertIn('already listening',result.stderr)
+        self.assertFalse((self.root/'.kelios').exists())
+        self.assertFalse(any('build' in call['argv'] for call in self.docker_calls()))
+    def test_linux_port_probe_and_network_collision(self):
+        (self.root/'bin/uname').write_text('#!/bin/sh\ncase "$1" in -s) echo Linux;; -m) echo x86_64;; esac\n')
+        (self.root/'bin/uname').chmod(0o755)
+        (self.root/'bin/busy-port').touch()
+        result=subprocess.run([str(self.root/'kelios'),'--state-dir',str(self.root/'.kelios'),'doctor'],cwd=self.root,env=self.env,text=True,capture_output=True)
+        self.assertIn('already listening',result.stderr)
+        (self.root/'bin/busy-port').unlink()
+        config=self.noninteractive_config();(self.root/'bin/network-exists').touch()
+        result=subprocess.run([str(self.root/'kelios'),'--state-dir',str(self.root/'.kelios'),'--config',str(config),'--non-interactive','install'],cwd=self.root,env=self.env,text=True,capture_output=True)
+        self.assertNotEqual(result.returncode,0)
+        self.assertIn('network identity already exists',result.stderr)
+        self.assertFalse(any('build' in call['argv'] for call in self.docker_calls()))
+    def test_existing_network_ownership_mismatch_refused(self):
+        self.state();(self.root/'bin/network-exists').touch();(self.root/'bin/wrong-network').touch()
+        rc,out=self.run_cli('stop')
+        self.assertNotEqual(rc,0)
+        self.assertIn('network ownership mismatch',out)
+        self.assertFalse(any('stop' in call['argv'] for call in self.docker_calls()))
+    def test_compose_render_refused_before_build(self):
+        config=self.noninteractive_config();(self.root/'bin/bad-config').touch()
+        result=subprocess.run([str(self.root/'kelios'),'--state-dir',str(self.root/'.kelios'),'--config',str(config),'--non-interactive','install'],cwd=self.root,env=self.env,text=True,capture_output=True)
+        self.assertNotEqual(result.returncode,0)
+        self.assertIn('Deployment configuration invalid',result.stderr)
+        self.assertFalse(any('build' in call['argv'] for call in self.docker_calls()))
+    def test_root_execution_refused_before_state(self):
+        (self.root/'bin/id').write_text('#!/bin/sh\n[ "$1" != -u ] || { echo 0; exit; }\n/usr/bin/id "$@"\n')
+        (self.root/'bin/id').chmod(0o755)
+        for args in [('doctor',),('certificate','init')]:
+            result=subprocess.run([str(self.root/'kelios'),'--state-dir',str(self.root/'.kelios'),*args],cwd=self.root,env=self.env,text=True,capture_output=True)
+            self.assertNotEqual(result.returncode,0)
+            self.assertIn('ordinary operator user',result.stderr)
+        self.assertFalse((self.root/'.kelios').exists())
+    def test_host_prepare_does_not_change_macos_host(self):
+        (self.root/'bin/uname').write_text('#!/bin/sh\ncase "$1" in -s) echo Darwin;; -m) echo arm64;; esac\n')
+        (self.root/'bin/uname').chmod(0o755)
+        result=subprocess.run([str(self.root/'kelios'),'host','prepare','docker-access'],cwd=self.root,env=self.env,text=True,capture_output=True)
+        self.assertNotEqual(result.returncode,0)
+        self.assertIn('only on Linux',result.stderr)
+        self.assertFalse((self.root/'.kelios').exists())
+    def test_normal_doctor_never_invokes_sudo(self):
+        (self.root/'bin/sudo').write_text('#!/bin/sh\ntouch "$(dirname "$0")/sudo-called"\nexit 1\n')
+        (self.root/'bin/sudo').chmod(0o755)
+        result=subprocess.run([str(self.root/'kelios'),'--state-dir',str(self.root/'.kelios'),'doctor'],cwd=self.root,env=self.env,text=True,capture_output=True)
+        self.assertEqual(result.returncode,0,result.stderr)
+        self.assertFalse((self.root/'bin/sudo-called').exists())
+    def test_config_rejects_shell_text_without_execution(self):
+        config=self.noninteractive_config();config.write_text(config.read_text()+'BROWSER_HOST=$(touch forbidden)\n')
+        result=subprocess.run([str(self.root/'kelios'),'--state-dir',str(self.root/'.kelios'),'--config',str(config),'--non-interactive','install'],cwd=self.root,env=self.env,text=True,capture_output=True)
+        self.assertNotEqual(result.returncode,0)
+        self.assertFalse((self.root/'forbidden').exists())
+        self.assertFalse((self.root/'.kelios').exists())
     def test_absent_status(self):
+        (self.root/'bin/fail-info').touch()
         rc, out = self.run_cli('status'); self.assertEqual(rc,0); self.assertIn('not initialized',out)
+        rc, out = self.run_cli('logs'); self.assertEqual(rc,0); self.assertIn('No installation logs',out)
+        self.assertFalse((self.root/'docker-argv.jsonl').exists())
+    def test_https_profile_keeps_auth_queries_out_of_proxy_access_log(self):
+        overlay=(ROOT/'deploy/compose.auth.yaml').read_text()
+        technical=(ROOT/'deploy/nginx/technical-http.conf').read_text()
+        tls=(ROOT/'deploy/nginx/phase2-tls.conf').read_text()
+        auth=re.search(r'location /api/v1/auth/ \{([^}]*)\}',tls)
+        self.assertIsNotNone(auth)
+        self.assertIn('access_log off;',auth.group(1))
+        self.assertIn('proxy_pass http://backend:8080;',auth.group(1))
+        self.assertIn('source: ./nginx/technical-http.conf',overlay)
+        self.assertIn('target: /etc/nginx/conf.d/default.conf',overlay)
+        self.assertIn('location = /healthz',technical)
+        self.assertIn('location / { return 404; }',technical)
     def test_start_without_install(self):
         rc, out = self.run_cli('start'); self.assertNotEqual(rc,0); self.assertIn('not initialized',out)
     def test_install_refuses_existing(self):
@@ -165,6 +346,225 @@ with (root / 'docker-argv.jsonl').open('a') as out:
         prompts += [('Database mode','managed'),('Runtime theme',''),('Organization logo path',''),('Existing authentication key directory',str(keys)),('GLOBAL ADMIN Email',email),('Display name','Control fixture'),('Administrator password',password),('Confirm password',password)]
         return prompts,aes
 
+    def noninteractive_config(self):
+        prompts,_=self.managed_install_answers('script-admin@example.org')
+        cert=next(value for label,value in prompts if label=='TLS certificate path')
+        key=next(value for label,value in prompts if label=='TLS private-key path')
+        auth_keys=next(value for label,value in prompts if label=='Existing authentication key directory')
+        admin_password=self.root/'admin-password';admin_password.write_text('ControlFixture9!NotReal')
+        config=self.root/'input.conf'
+        config.write_text(f'TLS_CERTIFICATE={cert}\nTLS_PRIVATE_KEY={key}\nAUTH_KEYS_DIRECTORY={auth_keys}\nADMIN_EMAIL=script-admin@example.org\nADMIN_PASSWORD_FILE={admin_password}\n')
+        return config
+
+    def certificate_cli(self, *args, config=None):
+        command=[str(self.root/'kelios'),'--state-dir',str(self.root/'.kelios')]
+        if config: command += ['--config',str(config)]
+        command += ['--non-interactive',*args]
+        return subprocess.run(command,cwd=self.root,env=self.env,text=True,capture_output=True)
+
+    def test_certificate_init_then_install_preserves_identity_and_keys(self):
+        config=self.noninteractive_config()
+        config.write_text('\n'.join(line for line in config.read_text().splitlines() if not line.startswith(('TLS_CERTIFICATE=', 'TLS_PRIVATE_KEY=', 'AUTH_KEYS_DIRECTORY=')))+'\nBROWSER_HOST=localhost\n')
+        init=self.certificate_cli('certificate','init',config=config)
+        self.assertEqual(init.returncode,0,init.stderr)
+        self.assertFalse((self.root/'docker-argv.jsonl').exists())
+        state=self.root/'.kelios'
+        cert=dict(line.split('=',1) for line in (state/'certificate.conf').read_text().splitlines())
+        material=state/'secrets/tls'/cert['VERSION']
+        original_cert=(material/'certificate.pem').read_bytes()
+        self.assertEqual(cert['HOST'],'localhost')
+        self.assertEqual((state.stat().st_mode & 0o777),0o700)
+        self.assertEqual((material/'private.pem').stat().st_mode & 0o777,0o444)
+        details=subprocess.check_output(['openssl','x509','-in',str(material/'certificate.pem'),'-noout','-ext','subjectAltName'],text=True)
+        self.assertIn('DNS:localhost',details); self.assertIn('IP Address:127.0.0.1',details)
+        self.assertEqual(subprocess.run(['openssl','x509','-in',str(material/'certificate.pem'),'-noout','-checkend',str(729*86400)],capture_output=True).returncode,0)
+        self.assertNotEqual(self.certificate_cli('certificate','init',config=config).returncode,0)
+        prepared=subprocess.run([str(self.root/'kelios'),'--state-dir',str(state),'status'],cwd=self.root,env=self.env,text=True,capture_output=True)
+        self.assertEqual(prepared.returncode,0,prepared.stderr)
+        self.assertIn('installation pending',prepared.stdout)
+        installed=self.certificate_cli('install',config=config)
+        self.assertEqual(installed.returncode,0,installed.stderr)
+        keys=(state/'secrets/auth/main.aes').read_bytes()
+        self.assertTrue((state/'secrets/auth/main.private.pem').exists())
+        self.assertNotEqual(self.certificate_cli('install',config=config).returncode,0)
+        self.assertEqual(original_cert,(material/'certificate.pem').read_bytes())
+        self.assertEqual(keys,(state/'secrets/auth/main.aes').read_bytes())
+
+    def test_certificate_replace_is_explicit_and_failed_import_preserves_active_version(self):
+        config=self.root/'cert.conf';config.write_text('BROWSER_HOST=127.0.0.1\n')
+        init=self.certificate_cli('certificate','init',config=config)
+        self.assertEqual(init.returncode,0,init.stderr)
+        state=self.root/'.kelios'
+        before=(state/'certificate.conf').read_bytes()
+        self.assertNotEqual(self.certificate_cli('certificate','replace',config=config).returncode,0)
+        wrong=self.root/'wrong.pem';wrong.write_text('not a certificate')
+        config.write_text(f'TLS_CERTIFICATE={wrong}\nTLS_PRIVATE_KEY={wrong}\n')
+        invalid=self.certificate_cli('--confirm-replace','certificate','replace',config=config)
+        self.assertNotEqual(invalid.returncode,0)
+        self.assertEqual(before,(state/'certificate.conf').read_bytes())
+        wrong_cert=self.root/'wrong-cert.pem';wrong_key=self.root/'wrong-key.pem'
+        subprocess.run(['openssl','req','-x509','-newkey','rsa:2048','-nodes','-days','1','-subj','/CN=elsewhere.internal','-addext','subjectAltName=DNS:elsewhere.internal','-keyout',str(wrong_key),'-out',str(wrong_cert)],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        config.write_text(f'TLS_CERTIFICATE={wrong_cert}\nTLS_PRIVATE_KEY={wrong_key}\n')
+        self.assertNotEqual(self.certificate_cli('--confirm-replace','certificate','replace',config=config).returncode,0)
+        self.assertEqual(before,(state/'certificate.conf').read_bytes())
+        active=state/'secrets/tls'/before.decode().split('VERSION=')[1].strip()
+        config.write_text(f'TLS_CERTIFICATE={active}/certificate.pem\nTLS_PRIVATE_KEY={wrong_key}\n')
+        self.assertNotEqual(self.certificate_cli('--confirm-replace','certificate','replace',config=config).returncode,0)
+        self.assertEqual(before,(state/'certificate.conf').read_bytes())
+        config.write_text('')
+        replaced=self.certificate_cli('--confirm-replace','certificate','replace',config=config)
+        self.assertEqual(replaced.returncode,0,replaced.stderr)
+        self.assertNotEqual(before,(state/'certificate.conf').read_bytes())
+        old_version=before.decode().split('VERSION=')[1].strip()
+        self.assertTrue((state/'secrets/tls'/old_version/'private.pem').exists())
+        self.assertFalse(list((self.root/'tmp').iterdir()))
+
+    def test_noninteractive_install_and_relocated_source(self):
+        config=self.noninteractive_config()
+        result=subprocess.run([str(self.root/'kelios'),'--state-dir',str(self.root/'.kelios'),'--config',str(config),'--non-interactive','install'],cwd=self.root/'bin',env=self.env,text=True,capture_output=True)
+        self.assertEqual(result.returncode,0,result.stderr)
+        self.assertIn('installation ready',result.stdout)
+        self.assertFalse(list((self.root/'tmp').iterdir()))
+        moved=self.root/'moved';moved.mkdir();shutil.copy2(self.root/'kelios',moved/'kelios');shutil.copytree(ROOT/'deploy',moved/'deploy')
+        result=subprocess.run([str(moved/'kelios'),'--state-dir',str(self.root/'.kelios'),'start'],cwd=self.root/'bin',env=self.env,text=True,capture_output=True)
+        self.assertEqual(result.returncode,0,result.stderr)
+        self.assertTrue(any(str(moved/'deploy/compose.yaml') in call['argv'] for call in self.docker_calls()))
+        self.assertFalse(list((self.root/'tmp').iterdir()))
+        self.assertIn('PHASE=initialized',(self.root/'.kelios/installation.conf').read_text())
+        secret_before=hashlib.sha256((self.root/'.kelios/secrets/auth/main.aes').read_bytes()).hexdigest()
+        db_before=hashlib.sha256((self.root/'.kelios/secrets/db-password').read_bytes()).hexdigest()
+        (self.root/'bin/release').write_text('abcdef0123456789abcdef0123456789abcdef01\n')
+        updated=subprocess.run([str(moved/'kelios'),'--state-dir',str(self.root/'.kelios'),'update'],cwd=self.root/'bin',env=self.env,text=True,capture_output=True)
+        self.assertEqual(updated.returncode,0,updated.stderr)
+        self.assertIn('RELEASE=abcdef012345',(self.root/'.kelios/installation.conf').read_text())
+        self.assertEqual(secret_before,hashlib.sha256((self.root/'.kelios/secrets/auth/main.aes').read_bytes()).hexdigest())
+        self.assertEqual(db_before,hashlib.sha256((self.root/'.kelios/secrets/db-password').read_bytes()).hexdigest())
+        recovery=subprocess.run([str(moved/'kelios'),'--state-dir',str(self.root/'.kelios'),'--config',str(config),'--non-interactive','recover-admin'],cwd=self.root/'bin',env=self.env,text=True,capture_output=True)
+        self.assertEqual(recovery.returncode,0,recovery.stderr)
+        self.assertFalse(list((self.root/'tmp').iterdir()))
+        secret=(self.root/'admin-password').read_bytes()
+        calls=self.docker_calls()
+        self.assertTrue(all(secret.decode() not in ' '.join(call['argv']) for call in calls))
+        self.assertEqual([call['password_sha256'] for call in calls if 'password_sha256' in call], [hashlib.sha256(secret).hexdigest()]*2)
+    def test_failed_build_retains_diagnostic_and_cleans_workspace(self):
+        config=self.noninteractive_config();(self.root/'bin/fail-build').touch()
+        result=subprocess.run([str(self.root/'kelios'),'--state-dir',str(self.root/'.kelios'),'--config',str(config),'--non-interactive','install'],cwd=self.root,env=self.env,text=True,capture_output=True)
+        self.assertNotEqual(result.returncode,0)
+        self.assertIn('Image build failed',result.stderr)
+        self.assertFalse(list((self.root/'tmp').iterdir()))
+        self.assertTrue((self.root/'.kelios/diagnostics/build-output').exists())
+    def test_prepared_install_resumes_without_regenerating_secrets(self):
+        config=self.noninteractive_config(); (self.root/'bin/fail-build').touch()
+        failed=self.certificate_cli('install',config=config)
+        self.assertNotEqual(failed.returncode,0)
+        state=self.root/'.kelios'
+        before={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in (state/'secrets/auth').iterdir()}
+        db_before=hashlib.sha256((state/'secrets/db-password').read_bytes()).hexdigest()
+        self.assertIn('PHASE=prepared',(state/'installation.conf').read_text())
+        self.assertNotEqual(self.certificate_cli('start').returncode,0)
+        (self.root/'bin/fail-build').unlink()
+        resumed=self.certificate_cli('resume-install',config=config)
+        self.assertEqual(resumed.returncode,0,resumed.stderr)
+        self.assertIn('PHASE=initialized',(state/'installation.conf').read_text())
+        self.assertEqual(before,{p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in (state/'secrets/auth').iterdir()})
+        self.assertEqual(db_before,hashlib.sha256((state/'secrets/db-password').read_bytes()).hexdigest())
+        self.assertNotEqual(self.certificate_cli('resume-install',config=config).returncode,0)
+    def test_update_build_failure_keeps_release_and_runtime(self):
+        config=self.noninteractive_config()
+        self.assertEqual(self.certificate_cli('install',config=config).returncode,0)
+        state=self.root/'.kelios'; before=(state/'installation.conf').read_bytes()
+        key_before=hashlib.sha256((state/'secrets/auth/main.aes').read_bytes()).hexdigest()
+        (self.root/'bin/release').write_text('abcdef0123456789abcdef0123456789abcdef01\n')
+        (self.root/'bin/missing-volume').touch()
+        calls_before=len(self.docker_calls())
+        missing=self.certificate_cli('update')
+        self.assertIn('database volume is missing',missing.stderr)
+        self.assertFalse(any('build' in c['argv'] for c in self.docker_calls()[calls_before:]))
+        (self.root/'bin/missing-volume').unlink()
+        (self.root/'bin/fail-build').touch()
+        calls_before=len(self.docker_calls())
+        failed=self.certificate_cli('update')
+        self.assertNotEqual(failed.returncode,0)
+        self.assertIn('Image build failed',failed.stderr)
+        self.assertEqual(before,(state/'installation.conf').read_bytes())
+        self.assertEqual(key_before,hashlib.sha256((state/'secrets/auth/main.aes').read_bytes()).hexdigest())
+        calls=self.docker_calls()[calls_before:]
+        self.assertFalse(any('up' in c['argv'] or 'down' in c['argv'] or 'volume rm' in ' '.join(c['argv']) for c in calls))
+    def test_update_switch_retry_and_source_cleanliness(self):
+        config=self.noninteractive_config()
+        self.assertEqual(self.certificate_cli('install',config=config).returncode,0)
+        state=self.root/'.kelios'
+        self.assertIn('RELEASE=0123456789ab',(state/'installation.conf').read_text())
+        (self.root/'bin/release').write_text('abcdef0123456789abcdef0123456789abcdef01\n')
+        (self.root/'bin/dirty-source').touch()
+        self.assertIn('clean checkout',self.certificate_cli('update').stderr)
+        (self.root/'bin/dirty-source').unlink()
+        key_before=hashlib.sha256((state/'secrets/auth/main.aes').read_bytes()).hexdigest()
+        (self.root/'bin/fail-up').touch()
+        failed=self.certificate_cli('update')
+        self.assertNotEqual(failed.returncode,0)
+        self.assertIn('RELEASE=abcdef012345',(state/'installation.conf').read_text())
+        self.assertIn('migrations may already have committed',failed.stderr.lower())
+        (self.root/'bin/fail-up').unlink()
+        retry=self.certificate_cli('start')
+        self.assertEqual(retry.returncode,0,retry.stderr)
+        self.assertEqual(key_before,hashlib.sha256((state/'secrets/auth/main.aes').read_bytes()).hexdigest())
+        self.assertTrue(any('kelios-backend:abcdef012345' in c['argv'] for c in self.docker_calls() if 'image' in c['argv']))
+        self.assertFalse(any('down' in c['argv'] or 'volume rm' in ' '.join(c['argv']) for c in self.docker_calls()))
+    def test_interrupted_update_retains_target_and_private_state_for_start_retry(self):
+        config=self.noninteractive_config()
+        self.assertEqual(self.certificate_cli('install',config=config).returncode,0)
+        state=self.root/'.kelios'
+        original={str(p.relative_to(state)):hashlib.sha256(p.read_bytes()).hexdigest() for p in (state/'secrets').rglob('*') if p.is_file()}
+        (self.root/'bin/release').write_text('abcdef0123456789abcdef0123456789abcdef01\n')
+        (self.root/'bin/sleep-up').touch()
+        process=subprocess.Popen([str(self.root/'kelios'),'--state-dir',str(state),'update'],cwd=self.root,env=self.env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        try:
+            deadline=time.monotonic()+30
+            while not (self.root/'bin/entered-up').exists() and time.monotonic()<deadline:
+                time.sleep(.05)
+            self.assertTrue((self.root/'bin/entered-up').exists())
+            process.send_signal(signal.SIGTERM)
+            self.assertEqual(process.wait(timeout=5),143)
+        finally:
+            if process.poll() is None: process.kill();process.wait()
+        self.assertIn('RELEASE=abcdef012345',(state/'installation.conf').read_text())
+        self.assertEqual(original,{str(p.relative_to(state)):hashlib.sha256(p.read_bytes()).hexdigest() for p in (state/'secrets').rglob('*') if p.is_file()})
+        self.assertFalse(list((self.root/'tmp').iterdir()))
+        (self.root/'bin/sleep-up').unlink()
+        self.assertEqual(self.certificate_cli('start').returncode,0)
+        self.assertFalse(any('down' in c['argv'] or 'rm' in c['argv'] for c in self.docker_calls()))
+    def test_restart_recreates_without_build_and_stop_preserves_state(self):
+        config=self.noninteractive_config()
+        self.assertEqual(self.certificate_cli('install',config=config).returncode,0)
+        state=self.root/'.kelios'; before=(state/'installation.conf').read_bytes()
+        calls_before=len(self.docker_calls())
+        self.assertEqual(self.certificate_cli('stop').returncode,0)
+        self.assertEqual(self.certificate_cli('start').returncode,0)
+        self.assertEqual(self.certificate_cli('restart').returncode,0)
+        calls=self.docker_calls()[calls_before:]
+        self.assertEqual(sum('stop' in c['argv'] for c in calls),1)
+        self.assertEqual(sum('--force-recreate' in c['argv'] for c in calls),1)
+        self.assertFalse(any('build' in c['argv'] or 'down' in c['argv'] for c in calls))
+        self.assertEqual(before,(state/'installation.conf').read_bytes())
+    def test_interrupted_operation_cleans_workspace(self):
+        config=self.noninteractive_config()
+        installed=subprocess.run([str(self.root/'kelios'),'--state-dir',str(self.root/'.kelios'),'--config',str(config),'--non-interactive','install'],cwd=self.root,env=self.env,text=True,capture_output=True)
+        self.assertEqual(installed.returncode,0,installed.stderr)
+        (self.root/'bin/sleep-config').touch()
+        process=subprocess.Popen([str(self.root/'kelios'),'--state-dir',str(self.root/'.kelios'),'start'],cwd=self.root,env=self.env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        try:
+            deadline=time.monotonic()+5
+            while not list((self.root/'tmp').iterdir()) and time.monotonic()<deadline:
+                time.sleep(.05)
+            self.assertTrue(list((self.root/'tmp').iterdir()))
+            process.send_signal(signal.SIGTERM)
+            self.assertEqual(process.wait(timeout=5),143)
+            self.assertFalse(list((self.root/'tmp').iterdir()))
+            self.assertFalse((self.root/'.kelios.lock').exists())
+        finally:
+            if process.poll() is None: process.kill();process.wait()
+
     def docker_calls(self):
         return [json.loads(line) for line in (self.root/'docker-argv.jsonl').read_text().splitlines()]
 
@@ -175,10 +575,10 @@ with (root / 'docker-argv.jsonl').open('a') as out:
         call=recovery[0]; args=call['argv']; prefix=args[:args.index('run')]
         state=dict(line.split('=',1) for line in (self.root/'.kelios/installation.conf').read_text().splitlines())
         self.assertEqual(prefix,['compose','--env-file',prefix[2],'-p',state['PROJECT'],'-f',str(self.root/'deploy/compose.yaml'),'-f',str(self.root/'deploy/compose.postgres.yaml'),'-f',str(self.root/'deploy/compose.auth.yaml')])
-        self.assertTrue(pathlib.Path(prefix[2]).is_relative_to(self.root/'.kelios/temporary'))
+        self.assertTrue(pathlib.Path(prefix[2]).is_relative_to(self.root/'tmp'))
         mount=args[args.index('-v')+1]; host=pathlib.Path(mount.rsplit(':',2)[0])
-        self.assertEqual(host.name,'password'); self.assertTrue(host.parent.name.startswith('recovery.'))
-        self.assertEqual(host.parent.parent,self.root/'.kelios/temporary')
+        self.assertEqual(host.name,'password'); self.assertEqual(host.parent.name,'recovery')
+        self.assertTrue(host.parent.parent.is_relative_to(self.root/'tmp'))
         self.assertEqual(args[len(prefix):],['run','--rm','--no-deps','-v',str(host)+':/run/secrets/kelios-recovery/password:ro','backend','--spring.main.web-application-type=none','--kelios.recovery.enabled=true','--kelios.recovery.email='+email,'--kelios.recovery.display-name=Control fixture','--kelios.recovery.password-file=/run/secrets/kelios-recovery/password'])
         self.assertEqual(call['password_sha256'],hashlib.sha256(password.encode()).hexdigest())
         self.assertEqual(call['password_mode'],0o444)
@@ -196,7 +596,7 @@ with (root / 'docker-argv.jsonl').open('a') as out:
                 for spelling in {email,email.strip(),email.strip().lower()}:
                     self.assertNotIn(spelling.encode(),persisted.read_bytes())
         self.assertTrue(all(password not in arg for item in calls for arg in item['argv']))
-        self.assertFalse(list((self.root/'.kelios/temporary').iterdir()))
+        self.assertFalse(list((self.root/'tmp').iterdir()))
         self.assertFalse((self.root/'.kelios.lock').exists())
 
     def test_supplied_versioned_keys_are_preserved(self):
@@ -212,7 +612,7 @@ with (root / 'docker-argv.jsonl').open('a') as out:
         self.assertEqual(branding['theme']['accentForeground'],'#8f2904')
         self.assertNotIn('logoUrl',branding)
         self.assertNotIn('organizationLogoUrl',branding)
-        self.assertFalse(list((self.root/'.kelios/temporary').glob('recovery.*')))
+        self.assertFalse(list((self.root/'tmp').iterdir()))
         self.assert_install_recovery('control-admin@example.org','ControlFixture9!NotReal',True)
         self.assertIn('KELIOS installation ready:',out)
 
@@ -243,7 +643,7 @@ with (root / 'docker-argv.jsonl').open('a') as out:
         calls=self.docker_calls(); self.assertFalse(any('run' in call['argv'] for call in calls))
         self.assertEqual([call['phase'] for call in calls if 'up' in call['argv']],['prepared'])
         self.assertIn('PHASE=prepared',(self.root/'.kelios/installation.conf').read_text())
-        self.assertFalse(list((self.root/'.kelios/temporary').iterdir()))
+        self.assertFalse(list((self.root/'tmp').iterdir()))
         self.assertFalse((self.root/'.kelios.lock').exists())
 
     def test_install_email_empty_has_no_default(self):
@@ -269,7 +669,7 @@ with (root / 'docker-argv.jsonl').open('a') as out:
         self.assertNotIn('ControlFixture9!NotReal',out); self.assertNotIn('DifferentFixture9!NotReal',out)
         self.assertFalse(any('run' in call['argv'] for call in self.docker_calls()))
         self.assertIn('PHASE=prepared',(self.root/'.kelios/installation.conf').read_text())
-        self.assertFalse(list((self.root/'.kelios/temporary').iterdir()))
+        self.assertFalse(list((self.root/'tmp').iterdir()))
 
     def initialized_recover_admin_fixture(self):
         # Reuse accepted fake install to obtain valid private keys/initialized state.
@@ -282,7 +682,7 @@ with (root / 'docker-argv.jsonl').open('a') as out:
         state=self.root/'.kelios'
         self.assertEqual({str(path.relative_to(state)):path.read_bytes() for path in state.rglob('*') if path.is_file()},before)
         self.assertIn('PHASE=initialized',(state/'installation.conf').read_text())
-        self.assertFalse(list((state/'temporary').iterdir()))
+        self.assertFalse(list((self.root/'tmp').iterdir()))
         self.assertFalse((self.root/'.kelios.lock').exists())
         calls=self.docker_calls()[start:]
         self.assertEqual([call['phase'] for call in calls if 'up' in call['argv']],['initialized'])
@@ -292,10 +692,10 @@ with (root / 'docker-argv.jsonl').open('a') as out:
             call=recoveries[0];args=call['argv'];prefix=args[:args.index('run')]
             configuration=dict(line.split('=',1) for line in (state/'installation.conf').read_text().splitlines())
             self.assertEqual(prefix,['compose','--env-file',prefix[2],'-p',configuration['PROJECT'],'-f',str(self.root/'deploy/compose.yaml'),'-f',str(self.root/'deploy/compose.postgres.yaml'),'-f',str(self.root/'deploy/compose.auth.yaml')])
-            self.assertTrue(pathlib.Path(prefix[2]).is_relative_to(state/'temporary'))
+            self.assertTrue(pathlib.Path(prefix[2]).is_relative_to(self.root/'tmp'))
             mount=args[args.index('-v')+1];source=pathlib.Path(mount.rsplit(':',2)[0])
-            self.assertEqual(source.name,'password');self.assertTrue(source.parent.name.startswith('recovery.'))
-            self.assertEqual(source.parent.parent,state/'temporary')
+            self.assertEqual(source.name,'password');self.assertEqual(source.parent.name,'recovery')
+            self.assertTrue(source.parent.parent.is_relative_to(self.root/'tmp'))
             self.assertEqual(args[len(prefix):],['run','--rm','--no-deps','-v',str(source)+':/run/secrets/kelios-recovery/password:ro','backend','--spring.main.web-application-type=none','--kelios.recovery.enabled=true','--kelios.recovery.email='+email,'--kelios.recovery.display-name=Recovery fixture','--kelios.recovery.password-file=/run/secrets/kelios-recovery/password'])
             self.assertEqual(call['phase'],'initialized')
             self.assertEqual(call['password_sha256'],hashlib.sha256(password.encode()).hexdigest())
@@ -376,10 +776,47 @@ with (root / 'docker-argv.jsonl').open('a') as out:
         self.assertNotEqual(self.run_cli('stop')[0],0)
     def test_config_cancel_preserves_manifest(self):
         d=self.state(); before=(d/'installation.conf').read_bytes(); rc,_=self.run_cli('config',[('Choice','2'),('HTTPS port','9443'),('Choice','0')]); self.assertEqual(rc,0); self.assertEqual(before,(d/'installation.conf').read_bytes())
+    def test_bounded_logs_are_project_scoped_and_read_only(self):
+        d=self.state(); before=(d/'installation.conf').read_bytes()
+        rc,out=self.run_cli('logs')
+        self.assertEqual(rc,0); self.assertIn('bounded fixture log',out)
+        self.assertIn('callback?[REDACTED]',out)
+        self.assertNotIn('fixture-secret',out)
+        self.assertFalse(list((self.root/'tmp').iterdir()))
+        self.assertEqual(before,(d/'installation.conf').read_bytes())
+        calls=self.docker_calls()
+        self.assertTrue(any(c['argv'][-4:]==['logs','--no-color','--tail','100'] and '-p' in c['argv'] for c in calls))
+        self.assertFalse(any('up' in c['argv'] or 'build' in c['argv'] for c in calls))
+    def test_prepared_status_names_resume_and_release(self):
+        self.state(PHASE='prepared')
+        rc,out=self.run_cli('status')
+        self.assertEqual(rc,0)
+        self.assertIn('Status: installation-pending',out)
+        self.assertIn('Release: phase0',out)
+        self.assertIn('resume-install',out)
+    def test_noninteractive_config_validates_port_and_origin(self):
+        d=self.state(); saved=d/'installation.conf'; before=saved.read_bytes()
+        config=self.root/'changes.conf'; config.write_text('HTTPS_PORT=9443\nTHEME=blue\n')
+        result=self.certificate_cli('config',config=config)
+        self.assertEqual(result.returncode,0,result.stderr)
+        self.assertIn('HTTPS_PORT=9443',saved.read_text())
+        self.assertIn('PRIMARY=#2458d3',saved.read_text())
+        self.assertIn('ISSUER=https://localhost:8443',saved.read_text())
+        applied=saved.read_bytes(); self.assertNotEqual(before,applied)
+        (self.root/'bin/busy-port').write_text('9555\n'); config.write_text('HTTPS_PORT=9555\n')
+        self.assertIn('already listening',self.certificate_cli('config',config=config).stderr)
+        self.assertEqual(applied,saved.read_bytes())
+        (self.root/'bin/busy-port').unlink()
+        config.write_text('HTTPS_PORT=8080\n')
+        self.assertIn('must differ',self.certificate_cli('config',config=config).stderr)
+        self.assertEqual(applied,saved.read_bytes())
+        config.write_text('BROWSER_HOST=example.invalid\n')
+        self.assertIn('Unsupported config update field',self.certificate_cli('config',config=config).stderr)
+        self.assertEqual(applied,saved.read_bytes())
     def test_legacy_logo_survives_start_and_new_organization_logo_can_be_added(self):
         self.test_supplied_versioned_keys_are_preserved()
         d=self.root/'.kelios'
-        saved='\n'.join('LOGO=logo.svg' if line=='LOGO=' else 'PRIMARY=#087f5b' if line=='PRIMARY=#cd3a06' else line for line in (d/'installation.conf').read_text().splitlines() if not line.startswith('ORG_LOGO='))+'\n'
+        saved='\n'.join('LOGO=logo.svg' if line=='LOGO=' else 'PRIMARY=#087f5b' if line=='PRIMARY=#cd3a06' else line for line in (d/'installation.conf').read_text().splitlines() if not line.startswith(('ORG_LOGO=', 'RELEASE=')))+'\n'
         (d/'installation.conf').write_text(saved)
         shutil.copy2(ROOT/'deploy/branding/green/logo.svg',d/'branding/logos/logo.svg')
         original=(d/'installation.conf').read_bytes()
@@ -412,6 +849,33 @@ with (root / 'docker-argv.jsonl').open('a') as out:
         d=self.state(); rc,_=self.run_cli('uninstall',[('preserving database/configuration/keys','yes'),('Permanently delete','no')]); self.assertEqual(rc,0); self.assertTrue((d/'secrets/auth/main.aes').exists()); self.assertIn('initialized',(d/'installation.conf').read_text())
     def test_wrong_destructive_confirmation_preserves_state(self):
         d=self.state(); rc,out=self.run_cli('uninstall',[('preserving database/configuration/keys','yes'),('Permanently delete','yes'),('Type DELETE','wrong')]); self.assertEqual(rc,0); self.assertIn('preserved',out); self.assertIn('initialized',(d/'installation.conf').read_text())
+        self.assertFalse(any('rm' in c['argv'] for c in self.docker_calls()))
+    def test_confirmed_delete_only_removes_owned_managed_volume_and_fails_closed(self):
+        d=self.state(); project=next(line.split('=',1)[1] for line in (d/'installation.conf').read_text().splitlines() if line.startswith('PROJECT='))
+        rc,out=self.run_cli('uninstall',[('preserving database/configuration/keys','yes'),('Permanently delete','yes'),('Type DELETE',f'DELETE {project}')])
+        self.assertEqual(rc,0,out)
+        self.assertIn('PHASE=data-deleted',(d/'installation.conf').read_text())
+        self.assertTrue((d/'secrets/auth/main.aes').exists())
+        removes=[c['argv'] for c in self.docker_calls() if 'rm' in c['argv']]
+        self.assertEqual(removes,[['volume','rm',f'{project}_postgres-data']])
+        self.assertNotEqual(self.run_cli('start')[0],0)
+    def test_confirmed_delete_refuses_foreign_or_in_use_volume(self):
+        self.assertEqual(self.certificate_cli('install',config=self.noninteractive_config()).returncode,0)
+        d=self.root/'.kelios'; project=next(line.split('=',1)[1] for line in (d/'installation.conf').read_text().splitlines() if line.startswith('PROJECT='))
+        for marker, message in [('wrong-volume','ownership mismatch'),('volume-consumer','still has consumers')]:
+            with self.subTest(marker=marker):
+                (self.root/'bin'/marker).touch()
+                try:
+                    if marker=='wrong-volume':
+                        result=self.certificate_cli('start')
+                        rc,out=result.returncode,result.stderr
+                    else:
+                        rc,out=self.run_cli('uninstall',[('preserving database/configuration/keys','yes'),('Permanently delete','yes'),('Type DELETE',f'DELETE {project}')])
+                    self.assertNotEqual(rc,0); self.assertIn(message,out.lower())
+                    self.assertIn('PHASE=initialized',(d/'installation.conf').read_text())
+                    self.assertFalse(any('rm' in c['argv'] for c in self.docker_calls()))
+                finally:
+                    (self.root/'bin'/marker).unlink()
     def test_external_uninstall_never_offers_deletion(self):
         self.state(MODE='external'); rc,out=self.run_cli('uninstall',[('preserving database/configuration/keys','yes')]); self.assertEqual(rc,0); self.assertNotIn('Permanently delete',out)
 
