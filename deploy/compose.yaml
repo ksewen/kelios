@@ -1,14 +1,14 @@
 name: kelios-phase0
 services:
   backend:
-    image: kelios-backend:phase0
+    image: ${KELIOS_BACKEND_IMAGE:-kelios-backend:phase0}
     build: ../backend
     environment:
       KELIOS_DATABASE_URL: ${KELIOS_DATABASE_URL:-jdbc:postgresql://postgres:5432/kelios}
       KELIOS_DATABASE_USER: ${KELIOS_DATABASE_USER:-kelios}
     secrets: [db-password]
   frontend:
-    image: kelios-frontend:phase0
+    image: ${KELIOS_FRONTEND_IMAGE:-kelios-frontend:phase0}
     build: ../frontend
     environment:
       KELIOS_CONFIG_FILE: /etc/kelios/branding/config.json

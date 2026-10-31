@@ -2,6 +2,8 @@
 # Actual Phase 0/1 deployment regressions and Phase 2 HTTPS/browser evidence.
 set -eu
 cd "$(dirname "$0")/.."
+command -v node >/dev/null 2>&1 && command -v npm >/dev/null 2>&1 || { echo 'Node 24 and npm must be on PATH.' >&2; exit 1; }
+case "$(node --version)" in v24.*) ;; *) echo 'Node 24 must be on PATH.' >&2; exit 1;; esac
 mkdir -p .cache/phase2-private .cache/tmp .cache/verification/phase2
 chmod 700 .cache/phase2-private
 # The host-only private parent is not mounted. Its readable child is mounted for the runtime UID.
@@ -10,7 +12,6 @@ if [ ! -d .cache/phase2-private/keys ] && [ -d .cache/phase2-secrets ]; then
 fi
 mkdir -p .cache/phase2-private/keys
 export BUILDX_CONFIG="$PWD/.cache/buildx"
-export PATH="/opt/homebrew/opt/node@24/bin:$PATH"
 export PLAYWRIGHT_BROWSERS_PATH="$PWD/.cache/playwright"
 export TMPDIR="$PWD/.cache/tmp"
 export npm_config_cache="$PWD/.cache/npm"

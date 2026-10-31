@@ -2,7 +2,7 @@
 
 Status: Product design approved; implementation authorized, 2026-10-11. Verification and user acceptance are recorded separately.
 
-**Current outcome:** CLI v1, O1 Email handoff and DCLI-B1 supported-install correction are HUMAN ACCEPTED / CLOSED; see the [deployment closeout](../history/deployment-cli.md) and [current operator guide](../operations/local-deployment.md). The original implementation-time status above is historical.
+**Current outcome:** This ADR describes the retired local prototype. O1 Email handoff and DCLI-B1 supported-install correction are HUMAN ACCEPTED / CLOSED; see the [deployment closeout](../history/deployment-cli.md) and the [current operator guide](../operations/deployment.md). The original implementation-time status above is historical.
 
 ## Context
 
@@ -20,4 +20,4 @@ At this ADR's date, Phases 0–4 and the subsequent UI redesign were the applica
 
 ## Consequences
 
-Local installation becomes guided while application architecture remains unchanged. The host private parent protects runtime-readable secret children required by non-root containers. Original AES keys must accompany an existing database containing encrypted OIDC configuration. No update/backup/restore/rotation/remote deployment subsystem, migrations or Phase 5. [Operator guide](../operations/local-deployment.md) documents lifecycle and limitations; [CLI evidence](../history/deployment-cli.md) records actual verification.
+Local installation becomes guided while application architecture remains unchanged. The host private parent protects runtime-readable secret children required by non-root containers. Original AES keys must accompany an existing database containing encrypted OIDC configuration. No update/backup/restore/rotation/remote deployment subsystem, migrations or Phase 5. The [retired procedure pointer](../operations/local-deployment.md) leads to current operations; [CLI evidence](../history/deployment-cli.md) records this dated verification.

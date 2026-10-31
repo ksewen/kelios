@@ -20,6 +20,11 @@ services:
     ports: ["${KELIOS_BIND_ADDRESS:-127.0.0.1}:${KELIOS_HTTPS_PORT:-8443}:8443"]
     volumes:
       - type: bind
+        source: ./nginx/technical-http.conf
+        target: /etc/nginx/conf.d/default.conf
+        read_only: true
+        bind: { create_host_path: false }
+      - type: bind
         source: ./nginx/phase2-tls.conf
         target: /etc/nginx/conf.d/phase2-tls.conf
         read_only: true

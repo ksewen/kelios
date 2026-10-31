@@ -30,7 +30,9 @@ def fixture(name):
     return d
 
 def cli(d,command,answers=(),ok=True,timeout=900):
-    rc,out=control.conversation(d,command,answers,timeout=timeout)
+    env=dict(os.environ,TMPDIR=str(BASE/'tmp'))
+    (BASE/'tmp').mkdir(exist_ok=True)
+    rc,out=control.conversation(d,['--state-dir',str(d/'.kelios'),command],answers,env=env,timeout=timeout)
     if ok and rc: raise AssertionError('CLI failed: '+command+' (private transcript suppressed)')
     for secret in [PASSWORD, EXTERNAL_PASSWORD]:
         check_secret=secret not in out
@@ -43,7 +45,8 @@ def config(d):
 def dc(d,*args):
     c=config(d); state=d/'.kelios'
     env=BASE/(d.name+'-verify.env')
-    env.write_text(f"KELIOS_DB_PASSWORD_FILE={state}/secrets/db-password\nKELIOS_BIND_ADDRESS={c['BIND']}\nKELIOS_HTTP_PORT={c['HTTP_PORT']}\nKELIOS_HTTPS_PORT={c['HTTPS_PORT']}\nKELIOS_DATABASE_URL=jdbc:postgresql://{c['DB_HOST']}:{c['DB_PORT']}/{c['DB_NAME']}\nKELIOS_DATABASE_USER={c['DB_USER']}\nKELIOS_AUTH_KEY_DIRECTORY={state}/secrets/auth\nKELIOS_TLS_DIRECTORY={state}/secrets/tls\nKELIOS_AUTH_PUBLIC_ORIGIN=https://{c['BROWSER_HOST']}:{c['HTTPS_PORT']}\nKELIOS_AUTH_ISSUER={c['ISSUER']}\nKELIOS_BRANDING_DIRECTORY={state}/branding\nKELIOS_LOGO_DIRECTORY={state}/branding/logos\n")
+    cert=dict(line.split('=',1) for line in (state/'certificate.conf').read_text().splitlines())
+    env.write_text(f"KELIOS_DB_PASSWORD_FILE={state}/secrets/db-password\nKELIOS_BIND_ADDRESS={c['BIND']}\nKELIOS_HTTP_PORT={c['HTTP_PORT']}\nKELIOS_HTTPS_PORT={c['HTTPS_PORT']}\nKELIOS_DATABASE_URL=jdbc:postgresql://{c['DB_HOST']}:{c['DB_PORT']}/{c['DB_NAME']}\nKELIOS_DATABASE_USER={c['DB_USER']}\nKELIOS_AUTH_KEY_DIRECTORY={state}/secrets/auth\nKELIOS_TLS_DIRECTORY={state}/secrets/tls/{cert['VERSION']}\nKELIOS_AUTH_PUBLIC_ORIGIN=https://{c['BROWSER_HOST']}:{c['HTTPS_PORT']}\nKELIOS_AUTH_ISSUER={c['ISSUER']}\nKELIOS_BRANDING_DIRECTORY={state}/branding\nKELIOS_LOGO_DIRECTORY={state}/branding/logos\n")
     files=['-f',str(d/'deploy/compose.yaml')]
     if c['MODE']=='managed': files+=['-f',str(d/'deploy/compose.postgres.yaml')]
     files+=['-f',str(d/'deploy/compose.auth.yaml')]
@@ -71,8 +74,10 @@ def login(port,user='cli-admin'):
     return client,result
 
 def browser(port,brand):
+    if not shutil.which('node') or not shutil.which('npm') or not subprocess.check_output(['node','--version'],text=True).startswith('v24.'):
+        raise RuntimeError('Node 24 and npm must be on PATH for browser verification')
     env=os.environ.copy()
-    env.update(PATH='/opt/homebrew/opt/node@24/bin:'+env['PATH'], KELIOS_BASE_URL=f'https://localhost:{port}', KELIOS_TEST_TLS='true',KELIOS_TEST_LOGIN='cli-admin',KELIOS_TEST_PASSWORD_FILE=str(BASE/'password'),KELIOS_EXPECTED_BRAND=brand,PLAYWRIGHT_BROWSERS_PATH=str(ROOT/'.cache/playwright'))
+    env.update(KELIOS_BASE_URL=f'https://localhost:{port}', KELIOS_TEST_TLS='true',KELIOS_TEST_LOGIN='cli-admin',KELIOS_TEST_PASSWORD_FILE=str(BASE/'password'),KELIOS_EXPECTED_BRAND=brand,PLAYWRIGHT_BROWSERS_PATH=str(ROOT/'.cache/playwright'))
     args=['npm','run','test:smoke','--','tests/runtime-branding.spec.ts']
     if brand=='green': args+=['tests/authentication.spec.ts','--grep','real HTTPS|real cookie|runtime|branding|logo|config|neutral|missing|malformed|timeout|theme']
     with (BASE/('browser-'+brand+'.log')).open('w') as out:
@@ -91,7 +96,7 @@ def recover_answers(user='cli-admin'):
 PASSWORD='Aa9!'+secrets.token_hex(20)
 EXTERNAL_PASSWORD=secrets.token_hex(32)
 (BASE/'password').write_text(PASSWORD); (BASE/'password').chmod(0o600)
-# Operator-supplied test fixture only: kelios itself NEVER issues certificates.
+# Operator-supplied PEM path fixture; separate certificate commands are tested by focused controls.
 if not (BASE/'tls-cert.pem').exists():
     run(['openssl','req','-x509','-newkey','rsa:3072','-noenc','-keyout',str(BASE/'tls-key.pem'),'-out',str(BASE/'tls-cert.pem'),'-days','2','-subj','/CN=localhost','-addext','subjectAltName=DNS:localhost,IP:127.0.0.1'])
 MANAGED=fixture('managed')
@@ -107,7 +112,7 @@ try:
     browser(12443,'green')
     keys={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in (MANAGED/'.kelios/secrets/auth').iterdir()}
     check('repeat recovery refuses',cli(MANAGED,'recover-admin',recover_answers('refused-admin'),ok=False)[0]!=0)
-    check('temporary password/env removed',not list((MANAGED/'.kelios/temporary').glob('recovery.*')) and not list((MANAGED/'.kelios/temporary').glob('compose.*')))
+    check('temporary password/env removed',not list((BASE/'tmp').iterdir()))
     # Valid zero-admin condition via normal administration: promote a second admin;
     # second disables first, then the first's still-valid short Access disables second.
     token=session['accessToken']

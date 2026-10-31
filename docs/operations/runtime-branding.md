@@ -1,6 +1,6 @@
 # Runtime branding
 
-For the supported operator steps to select or reset the theme and add or clear an organization logo, follow [Change the theme or organization logo](local-deployment.md#change-the-theme-or-organization-logo). Save through `./kelios config`, apply with `./kelios start`, then reload the browser; no image rebuild is needed. A saved theme survives restarts and upgrades until changed explicitly.
+For the supported operator steps to select or reset the theme and add or clear an organization logo, follow [Configuration and TLS](deployment.md#configuration-and-tls). Save through `./kelios config`, apply with `./kelios start`, then reload the browser; no image rebuild is needed. A saved theme survives restarts and upgrades until changed explicitly.
 
 The frontend serves root-path deployments. It fetches `/runtime/config.json` before rendering, without cache and with a three-second timeout. Branding is public client-side data: never include credentials or secrets.
 
