@@ -925,6 +925,316 @@ paths:
           type: string
           maxLength: 128
         description: Trimmed literal case-insensitive substring; blank means no predicate; wildcard characters are escaped.
+  /asset-csv/parse-preview:
+    post:
+      operationId: parseAssetCsv
+      summary: Parse a bounded legacy Asset CSV file without writing
+      description: ACTIVE GLOBAL ADMIN only. The first record is a header by default; headerPresent=false treats it as data and supplies stable positional column keys. At most 5 MiB, 5000 data rows, 64 columns and 32 KiB per decoded cell. AUTO encoding accepts valid UTF-8 only; ambiguous 8-bit encodings require explicit override. AUTO delimiter accepts an unambiguous semicolon, comma or tab. Response includes the first ten raw data records and a SHA-256 file identity for later Preview. rowNumber is the original logical CSV record number and lineNumber is its starting physical line.
+      security: *id008
+      parameters:
+      - name: encoding
+        in: query
+        schema:
+          type: string
+          enum: [AUTO, UTF-8, WINDOWS-1252, ISO-8859-1]
+          default: AUTO
+      - name: delimiter
+        in: query
+        description: AUTO, SEMICOLON, COMMA, TAB or a custom single character.
+        schema:
+          type: string
+          default: AUTO
+      - name: headerPresent
+        in: query
+        description: Whether the first CSV record supplies source headers; omission preserves the existing header-required interpretation.
+        schema:
+          type: boolean
+          default: true
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Parsed settings, source headers, row count and first ten raw rows
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [sha256, encoding, delimiter, headers, totalRows, rows]
+                properties:
+                  sha256: {type: string}
+                  encoding: {type: string}
+                  delimiter: {type: string}
+                  headers: {type: array, items: {type: string}}
+                  totalRows: {type: integer, format: int64}
+                  rows:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        rowNumber: {type: integer, format: int64}
+                        lineNumber: {type: integer, format: int64}
+                        values: {type: object, additionalProperties: {type: string}}
+        '413': {description: Upload exceeds configured limit}
+        default: *id009
+  /asset-csv/preview:
+    post:
+      operationId: previewAssetCsvImport
+      summary: Validate mapped legacy Asset rows without writing
+      description: ACTIVE GLOBAL ADMIN only. Requires the same file bytes and headerPresent mode as parse-preview; omitted mode means the first record is a header. Exactly one Tenant UUID or Name column is required; each row resolves an existing Tenant independently and may belong to a different Tenant. Missing or invalid Tenant values are row errors; duplicate Tenant names need an explicit choice. Other reference UUID/Name modes are exclusive and scoped by the resolved row Tenant; Product mode excludes direct Manufacturer/Category mapping. Choices are scoped by target, row Tenant and raw value. Preview does not reserve Tags or create resources. Every row is revalidated during later execution.
+      security: *id008
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, config]
+              properties:
+                file: {type: string, format: binary}
+                config:
+                  type: object
+                  required: [sha256, columns]
+                  properties:
+                    sha256: {type: string}
+                    encoding: {type: string}
+                    delimiter: {type: string}
+                    headerPresent: {type: boolean, default: true}
+                    columns: {type: object, additionalProperties: {type: string}}
+                    values:
+                      type: object
+                      additionalProperties:
+                        type: object
+                        additionalProperties: {type: string}
+                    choices:
+                      type: array
+                      items:
+                        type: object
+                        required: [target, raw, selectedId]
+                        properties:
+                          target: {type: string, enum: [tenantName, productName, categoryName, manufacturerName, locationName, ownerName]}
+                          scopeTenantId: {type: [string, 'null'], format: uuid, description: Null or omitted only for tenantName; resolved row Tenant UUID required for all other Name targets.}
+                          raw: {type: string}
+                          selectedId: *id010
+      responses:
+        '200':
+          description: Read-only per-row Ready, Warning or Error classification and distinct reference candidates
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [sha256, encoding, delimiter, headers, totalRows, ready, warnings, errors, rows, referenceResolution]
+                properties:
+                  sha256: {type: string}
+                  encoding: {type: string}
+                  delimiter: {type: string}
+                  headers: {type: array, items: {type: string}}
+                  totalRows: {type: integer, format: int64}
+                  ready: {type: integer, format: int64}
+                  warnings: {type: integer, format: int64}
+                  errors: {type: integer, format: int64}
+                  rows:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        rowNumber: {type: integer, format: int64}
+                        lineNumber: {type: integer, format: int64}
+                        status: {type: string, enum: [READY, WARNING, ERROR]}
+                        tenantId: {type: [string, 'null'], format: uuid, description: Resolved row Tenant; null when unresolved.}
+                        tenantName: {type: [string, 'null'], description: Readable resolved row Tenant; null when unresolved.}
+                        source: {type: object, additionalProperties: {type: string}}
+                        normalized: {type: object}
+                        references: {type: object, additionalProperties: *id010}
+                        issues: {type: array, items: {type: string}}
+                  referenceResolution:
+                    type: array
+                    description: Distinct resolutions keyed by target, resolved row Tenant scope and raw source value. Tenant resolution has null scope.
+                    items:
+                      type: object
+                      required: [target, raw, result]
+                      properties:
+                        target: {type: string}
+                        scopeTenantId: {type: [string, 'null'], format: uuid}
+                        raw: {type: string}
+                        result:
+                          type: object
+                          required: [status, candidates, more]
+                          properties:
+                            status: {type: string, enum: [MISSING, INVALID_UUID, UNRESOLVED, RESOLVED, AMBIGUOUS, CHOSEN]}
+                            id: {type: [string, 'null'], format: uuid}
+                            candidates:
+                              type: array
+                              items:
+                                type: object
+                                required: [id, name]
+                                properties:
+                                  id: *id010
+                                  name: {type: string}
+                                  tenantId: {type: [string, 'null'], format: uuid}
+                                  categoryId: {type: [string, 'null'], format: uuid}
+                                  manufacturerId: {type: [string, 'null'], format: uuid}
+                            more: {type: boolean}
+        '413': {description: Upload exceeds configured limit}
+        default: *id009
+  /asset-csv/execute:
+    post:
+      operationId: executeAssetCsvImport
+      summary: Import selected legacy Asset CSV rows independently
+      description: ACTIVE GLOBAL ADMIN only. Requires the original bounded CSV and per-row Tenant mapping with SHA-256 file identity, plus distinct selected logical row numbers. Current Tenant ownership, mapping and references are revalidated independently for each row; selected rows that are no longer importable fail individually. Each successful row commits one Asset, a truthful REGISTERED initial snapshot with LEGACY_CSV origin, and sanitized ASSET_LEGACY_IMPORTED audit attributed to that row Tenant in one transaction. Later rows continue after a row failure. Unselected rows are skipped. No historical loan records are created. A repeated request can create duplicates because non-Tag identifiers are not unique; clients must not automatically retry after an uncertain response.
+      security: *id008
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, config]
+              properties:
+                file: {type: string, format: binary}
+                config:
+                  type: object
+                  required: [preview, selectedRows]
+                  properties:
+                    preview:
+                      type: object
+                      required: [sha256, columns]
+                      properties:
+                        sha256: {type: string}
+                        encoding: {type: string}
+                        delimiter: {type: string}
+                        headerPresent: {type: boolean, default: true}
+                        columns: {type: object, additionalProperties: {type: string}}
+                        values:
+                          type: object
+                          additionalProperties:
+                            type: object
+                            additionalProperties: {type: string}
+                        choices:
+                          type: array
+                          items:
+                            type: object
+                            required: [target, raw, selectedId]
+                            properties:
+                              target: {type: string, enum: [tenantName, productName, categoryName, manufacturerName, locationName, ownerName]}
+                              scopeTenantId: {type: [string, 'null'], format: uuid, description: Null or omitted only for tenantName; resolved row Tenant UUID required for all other Name targets.}
+                              raw: {type: string}
+                              selectedId: *id010
+                    selectedRows:
+                      type: array
+                      minItems: 1
+                      maxItems: 5000
+                      uniqueItems: true
+                      items: {type: integer, format: int64}
+      responses:
+        '200':
+          description: Per-row result and UTF-8 BOM failure CSV containing source columns, original record/starting-line references and KELIOS import-error
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [successful, failed, skipped, rows, failureCsv]
+                properties:
+                  successful: {type: integer, format: int64}
+                  failed: {type: integer, format: int64}
+                  skipped: {type: integer, format: int64}
+                  rows:
+                    type: array
+                    items:
+                      type: object
+                      required: [rowNumber, status]
+                      properties:
+                        rowNumber: {type: integer, format: int64}
+                        lineNumber: {type: integer, format: int64}
+                        status: {type: string, enum: [SUCCESS, FAILED, SKIPPED]}
+                        assetId: *id010
+                        assetTag: {type: string}
+                        reason: {type: string}
+                  failureCsv:
+                    type: string
+                    description: Empty when every row succeeded; otherwise UTF-8 BOM CSV for download. Spreadsheet formula-like cells are prefixed safely.
+        '413': {description: Upload exceeds configured limit}
+        default: *id009
+  /asset-csv/export:
+    get:
+      operationId: exportAssetCsv
+      summary: Export all matching authorized Assets as UTF-8 CSV
+      description: ACTIVE Asset readers may export their authorized collection. Uses the same Asset filters, q and sort as /assets or the Tenant Asset list. page and size are ignored; the complete matching result is exported, up to 20000 rows and 20 MiB. GLOBAL readers may narrow with tenantId. TENANT readers are restricted to their signed Tenant. Optional columns selects and orders allowlisted Asset read fields without changing row selection or authorization; omission preserves the existing fixed export projection. The CSV begins with a UTF-8 BOM and prefixes formula-like cell values for spreadsheet safety.
+      security: *id008
+      parameters:
+      - name: page
+        in: query
+        description: Ignored for export; all matching rows are exported.
+        schema:
+          type: string
+      - name: size
+        in: query
+        description: Ignored for export; all matching rows are exported.
+        schema:
+          type: string
+      - *id013
+      - *id014
+      - *id015
+      - *id016
+      - *id017
+      - *id018
+      - *id019
+      - *id020
+      - *id021
+      - *id022
+      - *id023
+      - name: tenantId
+        in: query
+        schema: *id010
+      - name: loanable
+        in: query
+        schema:
+          type: boolean
+      - name: localIdentifier
+        in: query
+        schema:
+          type: string
+          maxLength: 128
+      - name: serialNumber
+        in: query
+        schema:
+          type: string
+          maxLength: 128
+      - name: externalInventoryNumber
+        in: query
+        schema:
+          type: string
+          maxLength: 128
+      - name: delimiter
+        in: query
+        description: One printable character or tab; defaults to semicolon.
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 1
+      - name: columns
+        in: query
+        description: Ordered comma-separated CSV field keys. At least one; duplicates, empty entries and unknown keys are rejected. Omission preserves the existing fixed export columns. Available keys are id, assetTag, localIdentifier, tenantId, tenant, productId, product, manufacturerId, manufacturer, categoryId, category, serialNumber, externalInventoryNumber, locationId, location, ownerId, owner, lifecycle, condition, loanable, loanedTo, loanedAt, expectedReturnAt, createdAt, createdBy, createdByDisplayName, note and loanNote. Selecting columns changes only CSV headers and cell projection.
+        schema:
+          type: string
+          minLength: 1
+      responses:
+        '200':
+          description: Complete matching CSV with stable English column names and readable association labels
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
+        default: *id009
   /assets/{id}:
     get:
       operationId: getAssetsId

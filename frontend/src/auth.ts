@@ -68,21 +68,21 @@ export class AuthSession {
     return fetch('/api/v1/auth/me', { credentials: 'same-origin', cache: 'no-store', headers: this.access ? { Authorization: `Bearer ${this.access}` } : {}, signal: AbortSignal.timeout(10000) });
   }
   /** Reads may refresh once; mutations are never replayed after an uncertain response. */
-  async request<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
+  async request<T>(path: string, method = 'GET', body?: unknown, responseType: 'json' | 'text' = 'json'): Promise<T> {
     const generation = this.generation;
     if (!path.startsWith('/api/v1/')) throw new ApiFailure(0, 'REQUEST_FAILED', 'Unsupported API path');
     if (!this.access || Date.now() >= this.expiresAt) await this.refresh();
     if (!this.access || generation !== this.generation) throw new ApiFailure(0, 'AUTHENTICATION_REQUIRED', 'Authentication required');
     const send = async () => {
       const headers: Record<string, string> = { Authorization: `Bearer ${this.access}` };
-      if (body !== undefined) headers['Content-Type'] = 'application/json';
+      if (body !== undefined && !(body instanceof FormData)) headers['Content-Type'] = 'application/json';
       if (path === '/api/v1/auth/local/password') {
         const csrf = await fetch('/api/v1/auth/csrf', { credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.timeout(10000) });
         if (!csrf.ok) throw new ApiFailure(0, 'AUTH_UNAVAILABLE', 'Authentication unavailable');
         headers['X-CSRF-Token'] = (await csrf.json() as { token: string }).token;
       }
       if (generation !== this.generation) throw new ApiFailure(0, 'SESSION_CHANGED', 'Session changed');
-      return fetch(path, { method, credentials: 'same-origin', cache: 'no-store', headers, signal: AbortSignal.timeout(15000), ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+      return fetch(path, { method, credentials: 'same-origin', cache: 'no-store', headers, signal: AbortSignal.timeout(path === '/api/v1/asset-csv/execute' ? 300000 : path.startsWith('/api/v1/asset-csv/export?') ? 120000 : path === '/api/v1/asset-csv/preview' ? 60000 : 15000), ...(body === undefined ? {} : { body: body instanceof FormData ? body : JSON.stringify(body) }) });
     };
     let response = await send();
     if (method === 'GET' && response.status === 401 && await this.refresh()) response = await send();
@@ -96,7 +96,7 @@ export class AuthSession {
       throw new ApiFailure(response.status, code, 'Request failed. Review before resubmitting.');
     }
     if (response.status === 204) return undefined as T;
-    const text = await response.text(); return text ? JSON.parse(text) as T : undefined as T;
+    const text = await response.text(); return responseType === 'text' ? text as T : text ? JSON.parse(text) as T : undefined as T;
   }
   async organizations(page = 0, q = ''): Promise<RoutingOrganizations> {
     const generation=this.generation,query=q.trim();

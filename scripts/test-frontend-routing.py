@@ -38,7 +38,7 @@ def get(path, status=200, mime=None):
     count += 1
     return body
 
-routes = ['/', '/assets', '/categories', '/manufacturers', '/products', '/locations', '/owners', '/tenants', '/users', '/audit', '/oidc', '/inventory/assets/00000000-0000-0000-0000-000000000001']
+routes = ['/', '/assets', '/assets/import', '/tenants/00000000-0000-0000-0000-000000000001/assets/import', '/categories', '/manufacturers', '/products', '/locations', '/owners', '/tenants', '/users', '/audit', '/oidc', '/inventory/assets/00000000-0000-0000-0000-000000000001']
 index = get('/', mime='text/html')
 for route in routes[1:]:
     assert get(route, mime='text/html') == index, f'{route}: not the SPA document'

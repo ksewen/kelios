@@ -6,7 +6,7 @@ import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.http.converter.HttpMessageNotReadableException;
-@RestControllerAdvice(assignableTypes={AssetController.class,CatalogController.class,PlaceController.class,AuditController.class})
+@RestControllerAdvice(assignableTypes={AssetController.class,AssetCsvController.class,CatalogController.class,PlaceController.class,AuditController.class})
 public class BusinessProblems {
  @ExceptionHandler(BusinessFailure.class) public ResponseEntity<ProblemDetail> business(BusinessFailure ex){return problem(switch(ex.code()){case "INVALID_INPUT"->400;case "NOT_FOUND"->404;default->409;},ex.code(),ex.getMessage());}
  @ExceptionHandler(AuthFailure.class) public ResponseEntity<ProblemDetail> auth(AuthFailure ex){return problem(ex.status(),ex.status()==401?"AUTHENTICATION_REQUIRED":"FORBIDDEN",ex.getMessage());}
@@ -15,5 +15,6 @@ public class BusinessProblems {
  @ExceptionHandler(DataIntegrityViolationException.class) public ResponseEntity<ProblemDetail> constraint(){return problem(409,"CONSTRAINT_CONFLICT","Operation conflicts with an integrity constraint");}
  @ExceptionHandler({DataAccessResourceFailureException.class,org.springframework.transaction.CannotCreateTransactionException.class}) public ResponseEntity<ProblemDetail> unavailable(){return problem(503,"SERVICE_UNAVAILABLE","Service temporarily unavailable");}
  @ExceptionHandler({IllegalArgumentException.class,MethodArgumentTypeMismatchException.class,HttpMessageNotReadableException.class}) public ResponseEntity<ProblemDetail> invalid(){return problem(400,"INVALID_INPUT","Invalid command or query");}
+ @ExceptionHandler(org.springframework.web.multipart.MaxUploadSizeExceededException.class) public ResponseEntity<ProblemDetail> uploadLimit(){return problem(413,"INVALID_INPUT","CSV upload exceeds limit");}
  private ResponseEntity<ProblemDetail> problem(int status,String code,String detail){var p=ProblemDetail.forStatusAndDetail(HttpStatusCode.valueOf(status),detail);p.setProperty("code",code);var r=ResponseEntity.status(status).cacheControl(CacheControl.noStore());if(status==401)r.header("WWW-Authenticate","Bearer");return r.body(p);}
 }

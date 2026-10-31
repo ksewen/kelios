@@ -254,7 +254,7 @@ class DomainFoundationIT {
         var root=java.nio.file.Path.of("src/main/java");try(var files=java.nio.file.Files.walk(root)) {
             for(var path:files.filter(p->p.toString().endsWith(".java")).toList()) {
                 String source=java.nio.file.Files.readString(path);
-                if(source.contains("@RestController"))assertTrue(path.toString().contains("platform/StatusController") || path.toString().contains("platform/security/AuthController") || path.toString().contains("platform/security/IdentityAdminController") || path.toString().contains("platform/security/AuthProblems") || java.util.Set.of("AssetController.java","CatalogController.java","PlaceController.java","AuditController.java","BusinessProblems.java").contains(path.getFileName().toString()));
+                if(source.contains("@RestController"))assertTrue(path.toString().contains("platform/StatusController") || path.toString().contains("platform/security/AuthController") || path.toString().contains("platform/security/IdentityAdminController") || path.toString().contains("platform/security/AuthProblems") || java.util.Set.of("AssetController.java","AssetCsvController.java","CatalogController.java","PlaceController.java","AuditController.java","BusinessProblems.java").contains(path.getFileName().toString()));
                 assertFalse(source.contains("SERIALIZABLE"));assertFalse(source.contains("ever_asset_referenced"));
             }
         }
