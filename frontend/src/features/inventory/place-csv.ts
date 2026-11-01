@@ -4,7 +4,7 @@ export type PlaceCsvSourceRow = { record: number; line: number; cells: string[] 
 export type PlaceCsvTable = { columns: string[]; rows: PlaceCsvSourceRow[]; delimiter: string | null; encoding: string };
 
 export class PlaceCsvError extends Error {
-  constructor(readonly reason: 'encoding' | 'autoEncoding' | 'bom' | 'format' | 'columns' | 'ambiguous' | 'header' | 'limit' | 'empty', readonly line?: number) { super(reason); }
+  constructor(readonly reason: 'encoding' | 'autoEncoding' | 'bom' | 'format' | 'columns' | 'ambiguous' | 'limit' | 'empty', readonly line?: number) { super(reason); }
 }
 
 function decode(bytes: ArrayBuffer, encoding: PlaceCsvSettings['encoding']): string {
@@ -39,14 +39,6 @@ export function parsePlaceCsvTable(bytes: ArrayBuffer, settings: PlaceCsvSetting
   if (multi.length === 1) return multi[0];
   if (single.length) return { ...single[0], delimiter: null };
   throw failure ?? new PlaceCsvError('format');
-}
-
-// Preserve the accepted one-column caller until the mapping wizard stage switches to the table result.
-export function parsePlaceCsv(bytes: ArrayBuffer, settings: PlaceCsvSettings): PlaceCsvRow[] {
-  const table = parsePlaceCsvTable(bytes, settings);
-  if (table.columns.length !== 1) throw new PlaceCsvError(settings.delimiter === 'AUTO' ? 'ambiguous' : 'columns', table.rows[0]?.line);
-  if (settings.header && table.columns[0].trim().toLowerCase() !== 'name') throw new PlaceCsvError('header', 1);
-  return table.rows.map(row => ({ record: row.record, line: row.line, name: row.cells[0] }));
 }
 
 function parseRecords(input: string, delimiter: string, header: boolean): Pick<PlaceCsvTable, 'columns' | 'rows'> {

@@ -8,25 +8,37 @@ import {Button} from '../../components/ui/button';
 import {Modal} from '../../components/ui/dialog';
 import {confirmAction} from '../../components/ui/confirmation';
 import {Badge,Card} from '../../components/ui/surfaces';
-import {parsePlaceCsv,PlaceCsvError,type PlaceCsvRow,type PlaceCsvSettings} from './place-csv';
+import {parsePlaceCsvTable,PlaceCsvError,type PlaceCsvRow,type PlaceCsvSettings,type PlaceCsvTable} from './place-csv';
 
 type Outcome = PlaceCsvRow & {status:'SUCCESS'|'FAILED'|'UNKNOWN';id?:string;error?:string};
-type Parsed = {file:File;encoding:PlaceCsvSettings['encoding'];delimiter:string;custom:string;header:boolean;rows:PlaceCsvRow[]};
+type Parsed = {file:File;encoding:PlaceCsvSettings['encoding'];delimiter:string;custom:string;header:boolean;table:PlaceCsvTable};
+type Mapping = {file:File;columns:string[];index:number|null};
+type Review = {rows:PlaceCsvRow[];tenant:string;tenantLabel:string;columnLabel:string;fileName:string;generation:number};
 const delimiterValue:Record<string,string>={SEMICOLON:';',COMMA:',',TAB:'\t'};
+const sameColumns=(a:string[],b:string[])=>a.length===b.length&&a.every((value,index)=>value===b[index]);
+const initialColumn=(columns:string[],header:boolean):number|null=>{
+  if(columns.length===1)return 0;
+  const matches=header?columns.flatMap((value,index)=>value.trim().toLowerCase()==='name'?[index]:[]):[];
+  return matches.length===1?matches[0]:null;
+};
 
 export function PlaceCsvImport({kind,globalAdmin,tenantId,tenantName,tenants,onSuccess}:{kind:'locations'|'owners';globalAdmin:boolean;tenantId:string;tenantName?:string;tenants?:TenantItem[]|null;onSuccess:()=>void}) {
   const {t}=useTranslation();
   const [open,setOpen]=useState(false),[step,setStep]=useState<0|1|2>(0),[file,setFile]=useState<File|null>(null);
   const [encoding,setEncoding]=useState<PlaceCsvSettings['encoding']>('AUTO'),[delimiter,setDelimiter]=useState('AUTO'),[custom,setCustom]=useState(''),[header,setHeader]=useState(true);
-  const [target,setTarget]=useState(''),[parsed,setParsed]=useState<Parsed|null>(null),[parseError,setParseError]=useState(''),[parsing,setParsing]=useState(false);
-  const [outcomes,setOutcomes]=useState<Outcome[]|null>(null),[locked,setLocked]=useState(false),[visible,setVisible]=useState(100),[runError,setRunError]=useState('');
+  const [target,setTarget]=useState(''),[parsed,setParsed]=useState<Parsed|null>(null),[mapping,setMapping]=useState<Mapping|null>(null),[parseError,setParseError]=useState(''),[parsing,setParsing]=useState(false);
+  const [review,setReview]=useState<Review|null>(null),[outcomes,setOutcomes]=useState<Outcome[]|null>(null),[locked,setLocked]=useState(false),[visible,setVisible]=useState(50),[runError,setRunError]=useState('');
   const running=useRef(false),generation=useRef(0),stepHeading=useRef<HTMLHeadingElement>(null);
   const selectedTenant=globalAdmin?target:tenantId;
   const targetLabel=globalAdmin?tenants?.find(item=>item.id===target)?.name:tenantName;
-  const rows=parsed?.file===file&&parsed.encoding===encoding&&parsed.delimiter===delimiter&&parsed.custom===custom&&parsed.header===header?parsed.rows:null;
+  const table=parsed?.file===file&&parsed.encoding===encoding&&parsed.delimiter===delimiter&&parsed.custom===custom&&parsed.header===header?parsed.table:null;
+  const mappedColumn=table&&mapping?.file===file&&sameColumns(mapping.columns,table.columns)?mapping.index:null;
+  const rows=table&&mappedColumn!==null?table.rows.map(row=>({record:row.record,line:row.line,name:row.cells[mappedColumn]})):null;
   const ready=rows?.filter(row=>row.name.trim()).length??0;
-  const invalidate=()=>{generation.current++;setParsed(null);setParseError('');setVisible(100);};
-  const reset=()=>{invalidate();setFile(null);setEncoding('AUTO');setDelimiter('AUTO');setCustom('');setHeader(true);setTarget('');setStep(0);setOutcomes(null);setRunError('');};
+  const columnLabel=(value:string,index:number)=>`${t('csv.positionalColumn',{number:index+1})}${header&&value.trim()?` · ${value}`:''}`;
+  const delimiterLabel=(value:string|null)=>value===null?t('placeCsv.singleColumn'):value===';'?t('csv.delimiterSEMICOLON'):value===','?t('csv.delimiterCOMMA'):value==='\t'?t('csv.delimiterTAB'):value;
+  const invalidate=()=>{generation.current++;setParsed(null);setParseError('');setReview(null);setOutcomes(null);setVisible(50);};
+  const reset=()=>{invalidate();setFile(null);setMapping(null);setEncoding('AUTO');setDelimiter('AUTO');setCustom('');setHeader(true);setTarget('');setStep(0);setRunError('');};
 
   useEffect(()=>{if(open)stepHeading.current?.focus();},[open,step]);
   useEffect(()=>{
@@ -36,27 +48,31 @@ export function PlaceCsvImport({kind,globalAdmin,tenantId,tenantName,tenants,onS
     setParsing(true);
     const selected=delimiter==='AUTO'?'AUTO':delimiter==='CUSTOM'?custom:delimiterValue[delimiter];
     void file.arrayBuffer().then(bytes=>{
-      const next=parsePlaceCsv(bytes,{encoding,delimiter:selected,header});
-      if(token===generation.current){setParsed({file,encoding,delimiter,custom,header,rows:next});setParseError('');}
+      const next=parsePlaceCsvTable(bytes,{encoding,delimiter:selected,header});
+      if(token===generation.current){
+        setParsed({file,encoding,delimiter,custom,header,table:next});
+        setMapping(current=>current?.file===file&&sameColumns(current.columns,next.columns)?current:{file,columns:next.columns,index:initialColumn(next.columns,header)});
+        setParseError('');
+      }
     }).catch(cause=>{
-      if(token===generation.current)setParseError(cause instanceof PlaceCsvError?t(`placeCsv.${cause.reason}`,{line:cause.line??1}):errorMessage(cause));
+      if(token===generation.current){setParsed(null);setParseError(cause instanceof PlaceCsvError?t(`placeCsv.${cause.reason}`,{line:cause.line??1}):errorMessage(cause));}
     }).finally(()=>{if(token===generation.current)setParsing(false);});
     return ()=>{generation.current++;};
   },[file,encoding,delimiter,custom,header,t]);
 
   const execute=async()=>{
-    if(step!==1||!rows||!selectedTenant||running.current)return;
+    if(step!==2||!review||outcomes||running.current||review.generation!==generation.current||review.tenant!==selectedTenant)return;
     running.current=true;setLocked(true);setRunError('');
-    const chosenRows=rows,chosenTenant=selectedTenant,version=session.contextVersion(),token=generation.current;
+    const chosen=review,version=session.contextVersion();
     const result:Outcome[]=[];let successes=0;
     try{
-      if(!await confirmAction(t('placeCsv.confirm',{count:chosenRows.length,tenant:targetLabel??chosenTenant})))return;
-      if(token!==generation.current||version!==session.contextVersion()){setRunError(t('placeCsv.contextChanged'));return;}
-      setOutcomes([]);setStep(2);
-      for(const row of chosenRows){
+      if(!await confirmAction(t('placeCsv.confirm',{count:chosen.rows.length,tenant:chosen.tenantLabel})))return;
+      if(chosen.generation!==generation.current||version!==session.contextVersion()){setRunError(t('placeCsv.contextChanged'));return;}
+      setOutcomes([]);
+      for(const row of chosen.rows){
         if(version!==session.contextVersion()){setRunError(t('placeCsv.contextChanged'));break;}
         try{
-          const created=await session.request<{id:string}>(`/api/v1/tenants/${chosenTenant}/${kind}`,'POST',{name:row.name,note:null});
+          const created=await session.request<{id:string}>(`/api/v1/tenants/${chosen.tenant}/${kind}`,'POST',{name:row.name,note:null});
           result.push({...row,status:'SUCCESS',id:created.id});successes++;
         }catch(cause){
           const known=cause instanceof ApiFailure&&cause.status>0;
@@ -73,14 +89,15 @@ export function PlaceCsvImport({kind,globalAdmin,tenantId,tenantName,tenants,onS
     }
   };
 
-  const steps=['csv.fileSettings','placeCsv.previewTitle','placeCsv.resultTitle'] as const;
-  const sourcePreview=(limit:number)=>rows&&<div className="table-frame max-h-64 overflow-auto"><table className="data-table" aria-label={t('placeCsv.previewTitle')}><thead><tr><th scope="col">{t('csv.recordNumber')}</th><th scope="col">{t('csv.lineNumber')}</th><th scope="col">{t('ui.name')}</th><th scope="col">{t('csv.previewStatus')}</th></tr></thead><tbody>{rows.slice(0,limit).map(row=><tr key={row.record}><th scope="row">{row.record}</th><td>{row.line}</td><td className="break-words">{row.name||'—'}</td><td>{row.name.trim()?t('csv.statusREADY'):t('placeCsv.emptyName')}</td></tr>)}</tbody></table></div>;
+  const rawPreview=(limit:number)=>table&&<div className="table-frame"><table className="data-table" aria-label={t('placeCsv.sourcePreview')}><thead><tr><th scope="col">{t('csv.recordNumber')}</th><th scope="col">{t('csv.lineNumber')}</th>{table.columns.map((column,index)=><th scope="col" key={index}>{columnLabel(column,index)}</th>)}</tr></thead><tbody>{table.rows.slice(0,limit).map(row=><tr key={row.record}><th scope="row">{row.record}</th><td>{row.line}</td>{row.cells.map((cell,index)=><td key={index}>{cell||'—'}</td>)}</tr>)}</tbody></table></div>;
+  const namePreview=(selected:PlaceCsvRow[],limit:number)=><div className="table-frame"><table className="data-table" aria-label={t('placeCsv.previewTitle')}><thead><tr><th scope="col">{t('csv.recordNumber')}</th><th scope="col">{t('csv.lineNumber')}</th><th scope="col">{t('ui.name')}</th><th scope="col">{t('csv.previewStatus')}</th><th scope="col">{t('placeCsv.otherColumns')}</th></tr></thead><tbody>{selected.slice(0,limit).map(row=><tr key={row.record}><th scope="row">{row.record}</th><td>{row.line}</td><td>{row.name||'—'}</td><td>{row.name.trim()?t('csv.statusREADY'):t('placeCsv.emptyName')}</td><td>{table?.rows[row.record-(header?2:1)]?.cells.flatMap((value,index)=>index===mappedColumn?[]:[`${columnLabel(table.columns[index],index)}: ${value||'—'}`]).slice(0,3).join(' · ')||'—'}</td></tr>)}</tbody></table></div>;
+  const steps=['csv.fileSettings','placeCsv.mappingTitle','placeCsv.resultTitle'] as const;
   return <><Button type="button" variant="outline" size="control" className="shrink-0" onClick={()=>{reset();setOpen(true);}}>{t('csv.importTitle')}</Button>
-    <Modal open={open} canClose={!locked} onOpenChange={value=>{if(!value)reset();setOpen(value);}} title={t('placeCsv.title',{resource:t(kind==='locations'?'ui.location':'ui.owner')})}>
-      <div className="space-y-4" data-unsaved={!!file&&(step!==2||locked)} data-import-executing={locked||undefined}>
+    <Modal open={open} wide canClose={!locked} onOpenChange={value=>{if(!value)reset();setOpen(value);}} title={t('placeCsv.title',{resource:t(kind==='locations'?'ui.location':'ui.owner')})}>
+      <div className="space-y-4" data-unsaved={!!file&&(!outcomes||locked)} data-import-executing={locked||undefined}>
         <nav aria-label={t('csv.steps')}><ol className="flex flex-wrap gap-2 text-sm">{steps.map((name,index)=><li key={name} aria-current={step===index?'step':undefined} className={`rounded-md border px-3 py-1.5 ${step===index?'border-primary bg-accent font-semibold text-accent-foreground':'text-muted-foreground'}`}>{index+1}. {t(name)}</li>)}</ol></nav>
         {step===0&&<Card className="space-y-4 p-4"><h2 ref={stepHeading} tabIndex={-1} className="text-lg font-semibold">{t('csv.fileSettings')}</h2>
-          <label className="field">{t('fields.tenantName')}{globalAdmin?<select className="input" required value={target} disabled={locked} onChange={event=>{setTarget(event.target.value);setRunError('');}}><option value="">{t('ui.select')}</option>{tenants?.map(item=><option key={item.id} value={item.id}>{item.name} · {item.id}</option>)}</select>:<input className="input" readOnly value={targetLabel??tenantId}/>}</label>
+          <label className="field">{t('fields.tenantName')}{globalAdmin?<select className="input" required value={target} disabled={locked} onChange={event=>{setTarget(event.target.value);setReview(null);setRunError('');}}><option value="">{t('ui.select')}</option>{tenants?.map(item=><option key={item.id} value={item.id}>{item.name} · {item.id}</option>)}</select>:<input className="input" readOnly value={targetLabel??tenantId}/>}</label>
           <label className="field">{t('csv.file')}<input className="input" type="file" accept=".csv,text/csv" disabled={locked} onChange={event=>{invalidate();setFile(event.target.files?.[0]??null);}}/></label>
           {file&&<p className="text-sm text-muted-foreground">{file.name}</p>}
           <div className="grid gap-3 sm:grid-cols-2">
@@ -88,27 +105,24 @@ export function PlaceCsvImport({kind,globalAdmin,tenantId,tenantName,tenants,onS
             <label className="field">{t('csv.delimiter')}<select className="input" value={delimiter} disabled={locked} onChange={event=>{invalidate();setDelimiter(event.target.value);}}>{['AUTO','SEMICOLON','COMMA','TAB','CUSTOM'].map(value=><option key={value} value={value}>{t(`csv.delimiter${value}`)}</option>)}</select></label>
             {delimiter==='CUSTOM'&&<label className="field">{t('csv.customDelimiter')}<input className="input" maxLength={1} value={custom} disabled={locked} onChange={event=>{invalidate();setCustom(event.target.value);}}/></label>}
           </div>
-          {(encoding==='AUTO'||delimiter==='AUTO')&&<p className="text-sm text-muted-foreground">{encoding==='AUTO'&&t('placeCsv.autoEncodingHelp')}{encoding==='AUTO'&&delimiter==='AUTO'&&' '}{delimiter==='AUTO'&&t('placeCsv.autoDelimiterHelp')}</p>}
           <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={header} disabled={locked} onChange={event=>{invalidate();setHeader(event.target.checked);}}/>{t('csv.headerPresent')}</label>
           {parsing&&<p role="status">{t('ui.checking')}</p>}
           {parseError&&<p role="alert" className="error-box">{parseError}</p>}
-          {rows&&<><p role="status" className="text-sm">{t('placeCsv.previewCount',{count:rows.length})}</p>{sourcePreview(10)}{rows.length>10&&<p className="text-sm text-muted-foreground">{t('placeCsv.previewSample',{count:10})}</p>}</>}
-          <div className="flex justify-end border-t pt-4"><Button type="button" disabled={!rows||!selectedTenant||parsing||locked} onClick={()=>{setVisible(100);setStep(1);}}>{t('csv.next')}</Button></div>
+          {table&&<><p role="status" className="text-sm">{t('placeCsv.formatSummary',{count:table.rows.length,columns:table.columns.length,delimiter:delimiterLabel(table.delimiter)})}</p>{rawPreview(10)}{table.rows.length>10&&<p className="text-sm text-muted-foreground">{t('placeCsv.previewSample',{count:10})}</p>}</>}
+          <div className="flex justify-end border-t pt-4"><Button type="button" disabled={!table||!selectedTenant||parsing||locked} onClick={()=>{setVisible(50);setStep(1);}}>{t('csv.next')}</Button></div>
         </Card>}
-        {step===1&&rows&&<Card className="space-y-4 p-4"><h2 ref={stepHeading} tabIndex={-1} className="text-lg font-semibold">{t('placeCsv.previewTitle')}</h2>
+        {step===1&&table&&<Card className="space-y-4 p-4"><h2 ref={stepHeading} tabIndex={-1} className="text-lg font-semibold">{t('placeCsv.mappingTitle')}</h2>
+          <label className="field">{t('ui.name')}<select className="input" value={mappedColumn??''} onChange={event=>{setMapping({file:file!,columns:table.columns,index:event.target.value===''?null:Number(event.target.value)});setReview(null);}}><option value="">{t('ui.select')}</option>{table.columns.map((column,index)=><option key={index} value={index}>{columnLabel(column,index)}</option>)}</select></label>
           <p className="text-sm">{t('fields.tenantName')}: {targetLabel??selectedTenant} · {file?.name}</p>
-          <div className="flex flex-wrap gap-2"><Badge>{t('csv.ready')}: {ready}</Badge><Badge>{t('placeCsv.invalid')}: {rows.length-ready}</Badge></div>
-          {sourcePreview(visible)}
-          {rows.length>visible&&<Button type="button" variant="outline" onClick={()=>setVisible(value=>value+100)}>{t('csv.showMoreRows',{count:rows.length-visible})}</Button>}
-          <div className="flex flex-wrap justify-end gap-2 border-t pt-4"><Button type="button" variant="outline" disabled={locked} onClick={()=>setStep(0)}>{t('csv.back')}</Button><Button type="button" aria-busy={locked} disabled={locked||!rows||!selectedTenant} onClick={()=>void execute()}>{locked?t('csv.executing'):t('csv.importSelected',{count:rows.length})}</Button></div>
-          {runError&&<p role="alert" className="error-box">{runError}</p>}
+          {rows?<><div className="flex flex-wrap gap-2"><Badge>{t('csv.ready')}: {ready}</Badge><Badge>{t('placeCsv.invalid')}: {rows.length-ready}</Badge></div>{namePreview(rows,visible)}{rows.length>visible&&<Button type="button" variant="outline" onClick={()=>setVisible(value=>value+50)}>{t('csv.showMoreRows',{count:rows.length-visible})}</Button>}</>:<p role="alert" className="error-box">{t('placeCsv.selectNameColumn')}</p>}
+          <div className="flex flex-wrap justify-end gap-2 border-t pt-4"><Button type="button" variant="outline" onClick={()=>setStep(0)}>{t('csv.back')}</Button><Button type="button" disabled={!rows||!selectedTenant} onClick={()=>{if(!rows||mappedColumn===null)return;setReview({rows,tenant:selectedTenant,tenantLabel:targetLabel??selectedTenant,columnLabel:columnLabel(table.columns[mappedColumn],mappedColumn),fileName:file?.name??'',generation:generation.current});setStep(2);}}>{t('csv.next')}</Button></div>
         </Card>}
-        {step===2&&<Card className="space-y-4 p-4" role="status"><h2 ref={stepHeading} tabIndex={-1} className="text-lg font-semibold">{t('placeCsv.resultTitle')}</h2>
-          <p>{t('placeCsv.progress',{done:outcomes?.length??0,total:rows?.length??0})}</p>
-          {locked&&<p className="text-sm text-muted-foreground">{t('placeCsv.finishBeforeLeaving')}</p>}
-          {outcomes&&<><p>{t('placeCsv.result',{successful:outcomes.filter(row=>row.status==='SUCCESS').length,failed:outcomes.filter(row=>row.status==='FAILED').length,unknown:outcomes.filter(row=>row.status==='UNKNOWN').length,remaining:(rows?.length??0)-outcomes.length})}</p><div className="table-frame max-h-64 overflow-auto"><table className="data-table"><thead><tr><th scope="col">{t('csv.recordNumber')}</th><th scope="col">{t('csv.lineNumber')}</th><th scope="col">{t('ui.name')}</th><th scope="col">{t('csv.previewStatus')}</th><th scope="col">{t('csv.issues')}</th></tr></thead><tbody>{outcomes.slice(0,visible).map(row=><tr key={row.record}><th scope="row">{row.record}</th><td>{row.line}</td><td className="break-words">{row.name||'—'}</td><td>{row.status==='UNKNOWN'?t('placeCsv.statusUnknown'):t(`csv.status${row.status}`)}</td><td className="break-words">{row.id??row.error??'—'}</td></tr>)}</tbody></table></div>{outcomes.length>visible&&<Button type="button" variant="outline" onClick={()=>setVisible(value=>value+100)}>{t('csv.showMoreRows',{count:outcomes.length-visible})}</Button>}{outcomes.some(row=>row.status==='UNKNOWN')&&<p role="alert" className="error-box">{t('placeCsv.unknown')}</p>}</>}
+        {step===2&&review&&<Card className="space-y-4 p-4" role={outcomes?'status':undefined}><h2 ref={stepHeading} tabIndex={-1} className="text-lg font-semibold">{t('placeCsv.resultTitle')}</h2>
+          <p>{t('fields.tenantName')}: {review.tenantLabel} · {t('ui.name')}: {review.columnLabel} · {review.fileName}</p>
+          {!outcomes&&<><p>{t('placeCsv.reviewCount',{count:review.rows.length})}</p><div className="flex flex-wrap justify-end gap-2 border-t pt-4"><Button type="button" variant="outline" disabled={locked} onClick={()=>setStep(1)}>{t('csv.back')}</Button><Button type="button" aria-busy={locked} disabled={locked} onClick={()=>void execute()}>{locked?t('csv.executing'):t('csv.importSelected',{count:review.rows.length})}</Button></div></>}
+          {outcomes&&<><p>{t('placeCsv.progress',{done:outcomes.length,total:review.rows.length})}</p>{locked&&<p className="text-sm text-muted-foreground">{t('placeCsv.finishBeforeLeaving')}</p>}<p>{t('placeCsv.result',{successful:outcomes.filter(row=>row.status==='SUCCESS').length,failed:outcomes.filter(row=>row.status==='FAILED').length,unknown:outcomes.filter(row=>row.status==='UNKNOWN').length,remaining:review.rows.length-outcomes.length})}</p><div className="table-frame"><table className="data-table"><thead><tr><th scope="col">{t('csv.recordNumber')}</th><th scope="col">{t('csv.lineNumber')}</th><th scope="col">{t('ui.name')}</th><th scope="col">{t('csv.previewStatus')}</th><th scope="col">{t('csv.issues')}</th></tr></thead><tbody>{outcomes.slice(0,visible).map(row=><tr key={row.record}><th scope="row">{row.record}</th><td>{row.line}</td><td>{row.name||'—'}</td><td>{row.status==='UNKNOWN'?t('placeCsv.statusUnknown'):t(`csv.status${row.status}`)}</td><td>{row.id??row.error??'—'}</td></tr>)}</tbody></table></div>{outcomes.length>visible&&<Button type="button" variant="outline" onClick={()=>setVisible(value=>value+50)}>{t('csv.showMoreRows',{count:outcomes.length-visible})}</Button>}{outcomes.some(row=>row.status==='UNKNOWN')&&<p role="alert" className="error-box">{t('placeCsv.unknown')}</p>}</>}
           {runError&&<p role="alert" className="error-box">{runError}</p>}
-          {!locked&&<div className="flex flex-wrap justify-end gap-2 border-t pt-4"><Button asChild variant="outline"><Link to={`/tenants/${selectedTenant}/${kind}`}>{t('placeCsv.viewTarget')}</Link></Button><Button type="button" variant="outline" onClick={reset}>{t('csv.newImport')}</Button></div>}
+          {!locked&&outcomes&&<div className="flex flex-wrap justify-end gap-2 border-t pt-4"><Button asChild variant="outline"><Link to={`/tenants/${review.tenant}/${kind}`}>{t('placeCsv.viewTarget')}</Link></Button><Button type="button" variant="outline" onClick={reset}>{t('csv.newImport')}</Button></div>}
         </Card>}
       </div>
     </Modal></>;
