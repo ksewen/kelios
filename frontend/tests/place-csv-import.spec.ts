@@ -20,8 +20,11 @@ async function setup(page:Page,scope:'GLOBAL'|'TENANT',language:'en'|'de'='en'){
     }
     if(method==='GET'&&/\/(locations|owners)$/.test(path)){
       reads++;listReads.push(route.request().url());
-      const tenantId=path.split('/')[4],query=url.searchParams.get('q')?.toLowerCase();
-      const items=writes.flatMap((write,index)=>write.path===path&&write.body.name.trim()&&(!query||write.body.name.toLowerCase().includes(query))?[{id:`00000000-0000-0000-0000-${String(index+1).padStart(12,'0')}`,name:write.body.name,tenant:{id:tenantId,name:tenantId===own?'Own':'Other'},metadata:{createdAt:'2026-11-01T10:00:00Z',createdByDisplayName:'Admin'}}]:[]);
+      const tenantId=path.includes('/tenants/')?path.split('/')[4]:null,query=url.searchParams.get('q')?.toLowerCase(),kind=path.split('/').at(-1);
+      const items=writes.flatMap((write,index)=>{
+        const owner=write.path.split('/')[4];
+        return write.path.endsWith(`/${kind}`)&&(!tenantId||tenantId===owner)&&write.body.name.trim()&&(!query||write.body.name.toLowerCase().includes(query))?[{id:`00000000-0000-0000-0000-${String(index+1).padStart(12,'0')}`,name:write.body.name,tenant:{id:owner,name:owner===own?'Own':'Other'},metadata:{createdAt:'2026-11-01T10:00:00Z',createdByDisplayName:'Admin'}}]:[];
+      });
       return route.fulfill({json:{items,page:0,size:20,totalElements:items.length}});
     }
     return route.fulfill({json:{items:[],page:0,size:20,totalElements:0}});
@@ -71,32 +74,39 @@ for(const kind of ['locations','owners'] as const){
   });
 }
 
-for(const kind of ['locations','owners'] as const)for(const scope of ['TENANT','GLOBAL'] as const)test(`${kind}: ${scope} result opens the refreshed target list without reloading the page`,async({page})=>{
-  const language=scope==='TENANT'?'de':'en',text=language==='de'?de:en,target=scope==='TENANT'?own:other;
-  const fixture=await setup(page,scope,language);
-  await page.goto(`/tenants/${own}/${kind}`);
-  if(scope==='TENANT'){
-    const search=page.getByRole('textbox',{name:kind==='locations'?text.ui.locationSearch:text.ui.ownerSearch});
-    await search.fill('No Match');await search.press('Enter');
-    await expect.poll(()=>fixture.listReads().some(value=>new URL(value).searchParams.get('q')==='No Match')).toBe(true);
-  }
+const contextCases=[
+  {name:'Global aggregate to Own',scope:'GLOBAL',source:null,target:own,language:'en'},
+  {name:'Own to Other',scope:'GLOBAL',source:own,target:other,language:'de'},
+  {name:'Own to Own',scope:'GLOBAL',source:own,target:own,language:'en'},
+  {name:'Tenant own',scope:'TENANT',source:own,target:own,language:'de'},
+] as const;
+for(const kind of ['locations','owners'] as const)for(const scenario of contextCases)test(`${kind}: ${scenario.name} returns to unchanged browsing context`,async({page})=>{
+  const text=scenario.language==='de'?de:en,sourcePath=scenario.source?`/tenants/${scenario.source}/${kind}`:`/${kind}`;
+  const fixture=await setup(page,scenario.scope,scenario.language);
+  await page.goto(sourcePath);
+  const search=page.getByRole('textbox',{name:kind==='locations'?text.ui.locationSearch:text.ui.ownerSearch});
+  await search.fill('No Match');await search.press('Enter');
+  await expect.poll(()=>fixture.listReads().some(value=>new URL(value).searchParams.get('q')==='No Match')).toBe(true);
   await page.getByRole('toolbar').getByRole('button',{name:text.csv.importTitle}).click();
   const dialog=page.getByRole('dialog');
-  if(scope==='GLOBAL')await dialog.getByRole('combobox',{name:text.fields.tenantName}).selectOption(other);
+  if(scenario.scope==='GLOBAL')await dialog.getByRole('combobox',{name:text.fields.tenantName}).selectOption(scenario.target);
+  else await expect(dialog.getByRole('combobox',{name:text.fields.tenantName})).toHaveCount(0);
   await dialog.getByLabel(text.csv.file).setInputFiles({name:'names.csv',mimeType:'text/csv',buffer:Buffer.from('name\nImported')});
   await next(dialog,text);await next(dialog,text);await importRows(page,dialog,1,text);
   const action=dialog.getByRole('button',{name:kind==='locations'?text.placeCsv.viewLocations:text.placeCsv.viewOwners});
-  await expect(action).toBeVisible();
-  await page.evaluate(()=>(window as any).importDocument=document);
-  await action.click();
-  await expect(dialog).toHaveCount(0);
-  await expect(page).toHaveURL(new RegExp(`/tenants/${target}/${kind}$`));
-  await expect(page.getByRole('table').getByText('Imported',{exact:true})).toBeVisible();
+  await expect(action).toBeVisible();await page.evaluate(()=>(window as any).importDocument=document);
+  await action.click();await expect(dialog).toHaveCount(0);
+  await expect(page).toHaveURL(new RegExp(`${sourcePath}$`));
+  const imported=page.getByRole('table').getByText('Imported',{exact:true});
+  if(scenario.source===scenario.target||scenario.source===null)await expect(imported).toBeVisible();else await expect(imported).toHaveCount(0);
+  await expect(search).toHaveValue('');
   expect(await page.evaluate(()=>document===(window as any).importDocument)).toBe(true);
-  const targetReads=fixture.listReads().filter(value=>new URL(value).pathname===`/api/v1/tenants/${target}/${kind}`);
-  expect(targetReads.length).toBeGreaterThan(scope==='TENANT'?1:0);
-  const last=new URL(targetReads.at(-1)!);expect(last.searchParams.get('q')).toBeNull();expect(last.searchParams.get('page')).toBe('0');
-  expect(fixture.writes).toEqual([{path:`/api/v1/tenants/${target}/${kind}`,body:{name:'Imported',note:null}}]);
+  const sourceApi=scenario.source?`/api/v1/tenants/${scenario.source}/${kind}`:`/api/v1/${kind}`;
+  const sourceReads=fixture.listReads().filter(value=>new URL(value).pathname===sourceApi);
+  expect(sourceReads.length).toBeGreaterThan(1);
+  const last=new URL(sourceReads.at(-1)!);expect(last.searchParams.get('q')).toBeNull();expect(last.searchParams.get('page')).toBe('0');
+  if(scenario.source!==scenario.target)expect(fixture.listReads().filter(value=>new URL(value).pathname===`/api/v1/tenants/${scenario.target}/${kind}`)).toHaveLength(0);
+  expect(fixture.writes).toEqual([{path:`/api/v1/tenants/${scenario.target}/${kind}`,body:{name:'Imported',note:null}}]);
 });
 
 test('unique name heading preselects; blank and duplicate headings stay positional',async({page})=>{
