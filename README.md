@@ -8,6 +8,8 @@ Use the [KELIOS deployment guide](docs/operations/deployment.md) for prerequisit
 
 ## Develop and verify
 
+Use the [feature-development workflow](docs/development/feature-workflow.md) for planning, staged implementation, local acceptance and PR gates.
+
 Requirements for local builds are Java 25, Docker with Compose and BuildKit, and Node 24. The backend uses the committed Maven 3 Wrapper and PostgreSQL Testcontainers; Gradle and an H2 substitute are unsupported. From the repository root:
 
 ```sh

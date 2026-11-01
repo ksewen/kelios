@@ -10,6 +10,8 @@ Read these files in order:
 
 `README.md` is the human entry point. This file governs agent/repository process. DOMAIN owns business policy; ARCHITECTURE owns technical boundaries; `docs/api/openapi.yaml` defines the external transport contract consistent with them. Explicit current human decisions control their scope. Plans, analysis and historical evidence cannot silently redefine normative rules. Source/tests establish implemented behavior, not approval of a contrary policy: report conflicts and stop affected work rather than inventing a resolution.
 
+Follow the permanent [feature-development workflow](docs/development/feature-workflow.md) for new features and significant corrections. An explicit task-specific stop condition takes precedence over its default sequence.
+
 `CODEX_IMPLEMENTATION_TASK.md` and completed Phase 0–4 plans are historical execution instructions, not a requirement to restart Phase 0. Do not invent missing business rules or expand deferred features. All project specifications and agent-facing documentation must be in English.
 
 Backend build is **Apache Maven 3**, using `pom.xml` and the committed Maven Wrapper (`./mvnw`); **do not use Gradle**. Backend Docker builder must use Maven 3; its runtime image must not contain Maven. Preserve independent frontend/backend images and the approved runtime-branding boundaries.
@@ -44,7 +46,7 @@ Use `DRAFT → APPROVED → IN PROGRESS → HUMAN ACCEPTED / CLOSED`.
 - SUPERSEDED names a reviewed successor and accounts for every unfinished requirement.
 - ABANDONED requires explicit human cancellation; retain meaningful decision/failure evidence before retirement.
 
-Apply these statuses prospectively; do not falsify historical execution-time states. Plan approval, implementation authorization, human acceptance, consolidation authorization and commit permission are distinct. Never automatically begin the next gate.
+Apply these statuses prospectively; do not falsify historical execution-time states. Plan approval, implementation authorization, human acceptance and consolidation authorization are distinct. Scoped stage commits and post-acceptance push/PR follow the standing authorization below; never infer human acceptance from tests or deployment.
 
 ## Analysis and verification lifecycle
 
@@ -70,9 +72,11 @@ When authorized implementation changes approved behavior, synchronize the releva
 - Inspect and preserve pre-existing dirty/untracked work. Establish path/hunk ownership before editing; do not overwrite, normalize, stage or silently adopt unrelated content.
 - Mixed-provenance files require exact hunk isolation and verification against the accepted manifest. Ambiguous ownership is a stop condition, not permission to whole-file stage.
 - Credentials, private runtime data, raw provider claims, keys, database dumps and unreviewed sensitive traces must never enter Git.
-- Git read-only commands are allowed. Create commits only when explicitly requested; human acceptance alone is not commit permission.
+- Git read-only commands are allowed. Approval of a Plan and its execution authorizes scoped commits after each successfully verified implementation stage. Inspect the exact staged manifest and diff first. An explicit stop condition overrides this standing authorization.
 - Commit only the exact accepted scope: derive the manifest, inspect staged content, check links/whitespace/private-material exclusion, and report remaining index/status and preserved unrelated work.
-- Never push without explicit approval. Never use destructive Git commands without explicit approval.
+- Explicit HUMAN ACCEPTED status for the complete feature authorizes pushing its verified feature branch and opening a PR to `main` without another permission request. This never authorizes a merge. Never use destructive Git commands without separate explicit approval.
 - Preserve the 13 accepted milestone commits through `9a0332b435079453dc585e9b98bab65a633eecdf`. No history rewrite is authorized by documentation governance or cleanup.
 - Rebase/squash/reorder/drop/filtering/reset/force-push history operations require separate explicit HUMAN AUTHORIZATION for the exact proposal, reference mapping and preservation boundaries. No reset/stash/clean shortcut around dirty ownership.
 - Stop at the authorized gate boundary; no automatic cleanup, next implementation or history operation.
+
+Use only `git`, `gh` and terminal commands for GitHub work; do not request GUI, browser-control, screen-recording or macOS Accessibility permissions for it. Integrate through a feature branch and PR, honor branch protection, and merge only with separate explicit human authorization. Never push feature work directly to `main` or rewrite published history without separate authorization.
