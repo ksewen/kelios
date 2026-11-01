@@ -198,3 +198,14 @@ for(const language of ['en','de'] as const)for(const width of [390,1440])test(`$
   await next(dialog,text);await expect(dialog.getByText(/Raum/)).toBeVisible();
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
 });
+
+test('language change on final review keeps the current import ready',async({page})=>{
+  const fixture=await setup(page,'TENANT');const dialog=await open(page,'locations');
+  await dialog.getByLabel(en.csv.file).setInputFiles({name:'names.csv',mimeType:'text/csv',buffer:Buffer.from('Name\nRaum')});
+  await next(dialog,en);await next(dialog,en);
+  await page.evaluate(()=>import('/src/i18n.ts').then(module=>module.selectLanguage('de')));
+  await expect(dialog.getByRole('button',{name:de.csv.importSelected.replace('{{count}}','1')})).toBeEnabled();
+  await importRows(page,dialog,1,de);
+  await expect.poll(()=>fixture.writes.length).toBe(1);
+  expect(fixture.writes[0].body).toEqual({name:'Raum',note:null});
+});

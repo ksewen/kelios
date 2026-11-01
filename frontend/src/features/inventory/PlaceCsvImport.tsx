@@ -14,6 +14,7 @@ type Outcome = PlaceCsvRow & {status:'SUCCESS'|'FAILED'|'UNKNOWN';id?:string;err
 type Parsed = {file:File;encoding:PlaceCsvSettings['encoding'];delimiter:string;custom:string;header:boolean;table:PlaceCsvTable};
 type Mapping = {file:File;columns:string[];index:number|null};
 type Review = {rows:PlaceCsvRow[];tenant:string;tenantLabel:string;columnLabel:string;fileName:string;generation:number};
+type ParseProblem = PlaceCsvError | {message:string} | {custom:true};
 const delimiterValue:Record<string,string>={SEMICOLON:';',COMMA:',',TAB:'\t'};
 const sameColumns=(a:string[],b:string[])=>a.length===b.length&&a.every((value,index)=>value===b[index]);
 const initialColumn=(columns:string[],header:boolean):number|null=>{
@@ -26,7 +27,7 @@ export function PlaceCsvImport({kind,globalAdmin,tenantId,tenantName,tenants,onS
   const {t}=useTranslation();
   const [open,setOpen]=useState(false),[step,setStep]=useState<0|1|2>(0),[file,setFile]=useState<File|null>(null);
   const [encoding,setEncoding]=useState<PlaceCsvSettings['encoding']>('AUTO'),[delimiter,setDelimiter]=useState('AUTO'),[custom,setCustom]=useState(''),[header,setHeader]=useState(true);
-  const [target,setTarget]=useState(''),[parsed,setParsed]=useState<Parsed|null>(null),[mapping,setMapping]=useState<Mapping|null>(null),[parseError,setParseError]=useState(''),[parsing,setParsing]=useState(false);
+  const [target,setTarget]=useState(''),[parsed,setParsed]=useState<Parsed|null>(null),[mapping,setMapping]=useState<Mapping|null>(null),[parseError,setParseError]=useState<ParseProblem|null>(null),[parsing,setParsing]=useState(false);
   const [review,setReview]=useState<Review|null>(null),[outcomes,setOutcomes]=useState<Outcome[]|null>(null),[locked,setLocked]=useState(false),[visible,setVisible]=useState(50),[runError,setRunError]=useState('');
   const running=useRef(false),generation=useRef(0),stepHeading=useRef<HTMLHeadingElement>(null);
   const selectedTenant=globalAdmin?target:tenantId;
@@ -37,14 +38,14 @@ export function PlaceCsvImport({kind,globalAdmin,tenantId,tenantName,tenants,onS
   const ready=rows?.filter(row=>row.name.trim()).length??0;
   const columnLabel=(value:string,index:number)=>`${t('csv.positionalColumn',{number:index+1})}${header&&value.trim()?` · ${value}`:''}`;
   const delimiterLabel=(value:string|null)=>value===null?t('placeCsv.singleColumn'):value===';'?t('csv.delimiterSEMICOLON'):value===','?t('csv.delimiterCOMMA'):value==='\t'?t('csv.delimiterTAB'):value;
-  const invalidate=()=>{generation.current++;setParsed(null);setParseError('');setReview(null);setOutcomes(null);setVisible(50);};
+  const invalidate=()=>{generation.current++;setParsed(null);setParseError(null);setReview(null);setOutcomes(null);setVisible(50);};
   const reset=()=>{invalidate();setFile(null);setMapping(null);setEncoding('AUTO');setDelimiter('AUTO');setCustom('');setHeader(true);setTarget('');setStep(0);setRunError('');};
 
   useEffect(()=>{if(open)stepHeading.current?.focus();},[open,step]);
   useEffect(()=>{
     const token=++generation.current;
     if(!file){setParsing(false);return;}
-    if(delimiter==='CUSTOM'&&Array.from(custom).length!==1){setParsing(false);setParseError(t('csv.customDelimiterRequired'));return;}
+    if(delimiter==='CUSTOM'&&Array.from(custom).length!==1){setParsing(false);setParseError({custom:true});return;}
     setParsing(true);
     const selected=delimiter==='AUTO'?'AUTO':delimiter==='CUSTOM'?custom:delimiterValue[delimiter];
     void file.arrayBuffer().then(bytes=>{
@@ -52,13 +53,13 @@ export function PlaceCsvImport({kind,globalAdmin,tenantId,tenantName,tenants,onS
       if(token===generation.current){
         setParsed({file,encoding,delimiter,custom,header,table:next});
         setMapping(current=>current?.file===file&&sameColumns(current.columns,next.columns)?current:{file,columns:next.columns,index:initialColumn(next.columns,header)});
-        setParseError('');
+        setParseError(null);
       }
     }).catch(cause=>{
-      if(token===generation.current){setParsed(null);setParseError(cause instanceof PlaceCsvError?t(`placeCsv.${cause.reason}`,{line:cause.line??1}):errorMessage(cause));}
+      if(token===generation.current){setParsed(null);setParseError(cause instanceof PlaceCsvError?cause:{message:errorMessage(cause)});}
     }).finally(()=>{if(token===generation.current)setParsing(false);});
     return ()=>{generation.current++;};
-  },[file,encoding,delimiter,custom,header,t]);
+  },[file,encoding,delimiter,custom,header]);
 
   const execute=async()=>{
     if(step!==2||!review||outcomes||running.current||review.generation!==generation.current||review.tenant!==selectedTenant)return;
@@ -107,7 +108,7 @@ export function PlaceCsvImport({kind,globalAdmin,tenantId,tenantName,tenants,onS
           </div>
           <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={header} disabled={locked} onChange={event=>{invalidate();setHeader(event.target.checked);}}/>{t('csv.headerPresent')}</label>
           {parsing&&<p role="status">{t('ui.checking')}</p>}
-          {parseError&&<p role="alert" className="error-box">{parseError}</p>}
+          {parseError&&<p role="alert" className="error-box">{parseError instanceof PlaceCsvError?t(`placeCsv.${parseError.reason}`,{line:parseError.line??1}):'custom' in parseError?t('csv.customDelimiterRequired'):parseError.message}</p>}
           {table&&<><p role="status" className="text-sm">{t('placeCsv.formatSummary',{count:table.rows.length,columns:table.columns.length,delimiter:delimiterLabel(table.delimiter)})}</p>{rawPreview(10)}{table.rows.length>10&&<p className="text-sm text-muted-foreground">{t('placeCsv.previewSample',{count:10})}</p>}</>}
           <div className="flex justify-end border-t pt-4"><Button type="button" disabled={!table||!selectedTenant||parsing||locked} onClick={()=>{setVisible(50);setStep(1);}}>{t('csv.next')}</Button></div>
         </Card>}
