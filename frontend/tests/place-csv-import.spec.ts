@@ -52,14 +52,15 @@ for(const kind of ['locations','owners'] as const){
     await expect(mapping).toHaveValue('');await mapping.selectOption('0');
     await expect(dialog.getByRole('table',{name:en.placeCsv.previewTitle}).getByText(en.placeCsv.emptyName)).toBeVisible();
     await expect(dialog.getByRole('table',{name:en.placeCsv.previewTitle}).getByText('Column 2 · Code: 1')).toBeVisible();
-    await expect(dialog.getByText(`${en.csv.ready}: 2`)).toBeVisible();
+    await expect(dialog.getByText(`${en.placeCsv.totalRows}: 3`)).toBeVisible();
+    await expect(dialog.getByText(`${en.placeCsv.eligibleRows}: 2`)).toBeVisible();
+    await expect(dialog.getByRole('checkbox',{name:en.csv.selectNumber.replace('{{number}}','3')})).toBeDisabled();
     await next(dialog);
     await expect(dialog.getByText(/Other · Name: Column 1 · Room/)).toBeVisible();
-    await importRows(page,dialog,3);
-    await expect(dialog.getByText(/2 successful · 1 failed/)).toBeVisible();
-    expect(fixture.writes).toEqual(['Same','','Same'].map(name=>({path:`/api/v1/tenants/${other}/${kind}`,body:{name,note:null}})));
-    await expect(dialog.getByText('INVALID_INPUT (HTTP 400)',{exact:false})).toBeVisible();
-    expect(fixture.reads()).toBeGreaterThan(1);
+    await importRows(page,dialog,2);
+    await expect(dialog.getByText(/2 successful · 0 failed/)).toBeVisible();
+    expect(fixture.writes).toEqual(['Same','Same'].map(name=>({path:`/api/v1/tenants/${other}/${kind}`,body:{name,note:null}})));
+    expect(fixture.reads()).toBe(1);
   });
   test(`${kind}: TENANT ADMIN imports headerless names into signed Tenant`,async({page})=>{
     const fixture=await setup(page,'TENANT'),dialog=await open(page,kind);
@@ -107,6 +108,74 @@ for(const kind of ['locations','owners'] as const)for(const scenario of contextC
   const last=new URL(sourceReads.at(-1)!);expect(last.searchParams.get('q')).toBeNull();expect(last.searchParams.get('page')).toBe('0');
   if(scenario.source!==scenario.target)expect(fixture.listReads().filter(value=>new URL(value).pathname===`/api/v1/tenants/${scenario.target}/${kind}`)).toHaveLength(0);
   expect(fixture.writes).toEqual([{path:`/api/v1/tenants/${scenario.target}/${kind}`,body:{name:'Imported',note:null}}]);
+});
+
+for(const kind of ['locations','owners'] as const)test(`${kind}: source-row selection is independent for duplicate names and excludes blank rows`,async({page})=>{
+  const fixture=await setup(page,'TENANT'),dialog=await open(page,kind);
+  await upload(dialog,'name\nSame\n \nSame\n\u2003\n\u00a0\nOther');await next(dialog);
+  await expect(dialog.getByText(`${en.placeCsv.totalRows}: 6`)).toBeVisible();
+  await expect(dialog.getByText(`${en.placeCsv.eligibleRows}: 4`)).toBeVisible();
+  await expect(dialog.getByText(`${en.placeCsv.selectedRows}: 4`)).toBeVisible();
+  for(const record of [3,5])await expect(dialog.getByRole('checkbox',{name:en.csv.selectNumber.replace('{{number}}',String(record))})).toBeDisabled();
+  await expect(dialog.getByRole('checkbox',{name:en.csv.selectNumber.replace('{{number}}','6')})).toBeChecked();
+  await dialog.getByRole('button',{name:en.placeCsv.deselectAll}).click();
+  await expect(dialog.getByText(`${en.placeCsv.selectedRows}: 0`)).toBeVisible();await expect(dialog.getByRole('button',{name:en.csv.next})).toBeDisabled();
+  await dialog.getByRole('button',{name:en.placeCsv.selectAll}).click();await expect(dialog.getByText(`${en.placeCsv.selectedRows}: 4`)).toBeVisible();
+  await dialog.getByRole('button',{name:en.placeCsv.deselectAll}).click();
+  for(const record of [2,4,7])await dialog.getByRole('checkbox',{name:en.csv.selectNumber.replace('{{number}}',String(record))}).check();
+  await dialog.getByRole('checkbox',{name:en.csv.selectNumber.replace('{{number}}','4')}).uncheck();
+  await expect(dialog.getByText(`${en.placeCsv.selectedRows}: 2`)).toBeVisible();
+  await dialog.getByRole('button',{name:en.csv.back}).click();await next(dialog);
+  await expect(dialog.getByRole('checkbox',{name:en.csv.selectNumber.replace('{{number}}','2')})).toBeChecked();
+  await expect(dialog.getByRole('checkbox',{name:en.csv.selectNumber.replace('{{number}}','4')})).not.toBeChecked();
+  await next(dialog);await expect(dialog.getByText(`${en.placeCsv.selectedRows}: 2`)).toBeVisible();
+  await importRows(page,dialog,2);await expect(dialog.getByText(/2 successful · 0 failed/)).toBeVisible();
+  expect(fixture.writes.map(write=>write.body.name)).toEqual(['Same','Other']);
+  const results=dialog.getByRole('table').last();await expect(results.getByRole('rowheader',{name:'2'})).toBeVisible();await expect(results.getByRole('rowheader',{name:'7'})).toBeVisible();
+  await expect(results.getByRole('rowheader',{name:'4'})).toHaveCount(0);
+});
+
+test('selection resets after Name mapping, encoding, delimiter, header and file changes',async({page})=>{
+  await setup(page,'TENANT');const dialog=await open(page,'locations');
+  await upload(dialog,'A;B\nx;One\ny;Two');await next(dialog);
+  const mapping=dialog.getByRole('combobox',{name:en.ui.name}),selected=(count:number)=>dialog.getByText(`${en.placeCsv.selectedRows}: ${count}`);
+  await mapping.selectOption('1');await expect(selected(2)).toBeVisible();
+  await dialog.getByRole('button',{name:en.placeCsv.deselectAll}).click();await mapping.selectOption('0');await expect(selected(2)).toBeVisible();
+  await dialog.getByRole('button',{name:en.placeCsv.deselectAll}).click();await dialog.getByRole('button',{name:en.csv.back}).click();
+  await dialog.getByRole('combobox',{name:en.csv.encoding}).selectOption('UTF-8');await next(dialog);await expect(selected(2)).toBeVisible();
+  await dialog.getByRole('button',{name:en.placeCsv.deselectAll}).click();await dialog.getByRole('button',{name:en.csv.back}).click();
+  await dialog.getByRole('combobox',{name:en.csv.delimiter}).selectOption('SEMICOLON');await next(dialog);await expect(selected(2)).toBeVisible();
+  await dialog.getByRole('button',{name:en.placeCsv.deselectAll}).click();await dialog.getByRole('button',{name:en.csv.back}).click();
+  await dialog.getByRole('checkbox',{name:en.csv.headerPresent}).uncheck();await next(dialog);await mapping.selectOption('1');await expect(selected(3)).toBeVisible();
+  await dialog.getByRole('button',{name:en.placeCsv.deselectAll}).click();await dialog.getByRole('button',{name:en.csv.back}).click();
+  await upload(dialog,'x;y\nz;Three');await next(dialog);await mapping.selectOption('1');await expect(selected(2)).toBeVisible();
+});
+
+test('bulk selection includes source rows beyond the visible review sample',async({page})=>{
+  await setup(page,'TENANT');const dialog=await open(page,'owners');
+  await upload(dialog,`name\n${Array.from({length:55},(_,index)=>`Name ${index+1}`).join('\n')}`);await next(dialog);
+  await dialog.getByRole('button',{name:en.placeCsv.deselectAll}).click();
+  await dialog.getByRole('button',{name:en.placeCsv.selectAll}).click();
+  await expect(dialog.getByText(`${en.placeCsv.selectedRows}: 55`)).toBeVisible();
+  await dialog.getByRole('button',{name:en.csv.showMoreRows.replace('{{count}}','5')}).click();
+  await expect(dialog.getByRole('checkbox',{name:en.csv.selectNumber.replace('{{number}}','56')})).toBeChecked();
+});
+
+test('selected valid rows keep partial backend failures identifiable and skip unselected rows',async({page})=>{
+  const fixture=await setup(page,'TENANT');const seen:string[]=[];
+  await page.route(`**/api/v1/tenants/${own}/owners`,route=>{
+    if(route.request().method()!=='POST')return route.fallback();
+    const name=(route.request().postDataJSON() as {name:string}).name;seen.push(name);
+    return name==='Bad'?route.fulfill({status:400,json:{code:'INVALID_INPUT',message:'Rejected by backend'}}):route.fallback();
+  });
+  const dialog=await open(page,'owners');await upload(dialog,'name\nGood\nBad\nSkip\nLater');await next(dialog);
+  await dialog.getByRole('button',{name:en.placeCsv.deselectAll}).click();
+  for(const record of [2,3,5])await dialog.getByRole('checkbox',{name:en.csv.selectNumber.replace('{{number}}',String(record))}).check();
+  await next(dialog);await importRows(page,dialog,3);
+  await expect(dialog.getByText(/2 successful · 1 failed/)).toBeVisible();
+  expect(seen).toEqual(['Good','Bad','Later']);expect(fixture.writes.map(write=>write.body.name)).toEqual(['Good','Later']);
+  await expect(dialog.getByText('INVALID_INPUT (HTTP 400)',{exact:false})).toBeVisible();
+  const results=dialog.getByRole('table').last();await expect(results.getByRole('rowheader',{name:'4'})).toHaveCount(0);
 });
 
 test('unique name heading preselects; blank and duplicate headings stay positional',async({page})=>{
@@ -223,7 +292,7 @@ test('ordinary navigation is blocked during a delayed POST, then results persist
   await expect(page.getByRole('alertdialog')).toBeVisible();await page.evaluate(()=>history.back());await expect(page).toHaveURL(path);
   await page.getByRole('alertdialog').getByRole('button',{name:en.redesign.confirm,exact:true}).click();
   await expect.poll(()=>waiting).toBe(true);
-  try{await expect(dialog.getByRole('button',{name:en.redesign.close})).toBeDisabled();await page.evaluate(()=>history.back());await expect(page).toHaveURL(path);}
+  try{await expect(dialog.getByRole('button',{name:en.redesign.close})).toBeDisabled();await expect(dialog.getByRole('button',{name:en.csv.back})).toHaveCount(0);await page.evaluate(()=>history.back());await expect(page).toHaveURL(path);}
   finally{release();}
   await expect(dialog.getByText(/1 successful/)).toBeVisible();expect(fixture.writes).toHaveLength(1);
 });
