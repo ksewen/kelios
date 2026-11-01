@@ -8,6 +8,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState, useId,
 import { useTable } from '@tanstack/react-table';
 import { authSession as session, ApiFailure, type Identity } from '../../auth';
 import {AssetCsvExport} from './AssetCsvExport';
+import {PlaceCsvImport} from './PlaceCsvImport';
 import * as Tabs from '@radix-ui/react-tabs';
 import * as Dialog from '@radix-ui/react-dialog';
 import {Dropdown,DropdownItem} from '../../components/ui/dropdown-menu';
@@ -306,7 +307,7 @@ export function Management({ tenant, tenantName, tenants, tenantsPending=false, 
    {!reviewed&&!product&&<p className="page-description">{t('redesign.resourceHelp')}</p>}
    {detailId&&!detailModal?<BusinessDetail kind={kind} id={detailId} user={user} changed={reload} exit={closeDetail} onTitle={onTitle}/>:<>
     <div role="toolbar" aria-label={label(kind)} className={`${collectionToolbarClass} ${product?'items-end':''}`}>
-     {(reviewed||product)&&createAction}{reviewed&&mergeAction}{searchAction}
+     {(reviewed||product)&&createAction}{canCreate&&(kind==='locations'||kind==='owners')&&<PlaceCsvImport kind={kind} globalAdmin={globalAdmin} tenantId={user.tenantId??''} tenantName={tenantName} tenants={tenants} onSuccess={target=>{if(!tenant||tenant===target)reload();}} onReturnToCollection={()=>{reset();reload();}}/>} {reviewed&&mergeAction}{searchAction}
      {compactFilter&&<ClearableControl name={t(category?'ui.categoryRows':'ui.catalogRows')} value={appliedFilter.visibility} onClear={()=>clearCatalog('visibility')} select><select aria-label={t(category?'ui.categoryRows':'ui.catalogRows')} className="input mt-0 h-10 w-auto max-w-full shrink-0 pr-20" value={appliedFilter.visibility} onChange={event=>{const visibility=event.target.value;setPendingFilter(old=>({...old,visibility}));setAppliedFilter(old=>({...old,visibility}));paginate(0);}}><option value="">{t('ui.categoryRowsAll')}</option><option value="GLOBAL">{t('ui.categoryRowsGlobal')}</option><option value="TENANT">{t('ui.categoryRowsTenant')}</option></select></ClearableControl>}
      {product&&<div className="min-w-0 flex-[0_1_15rem]"><FormReset.Provider value={filterReset}><Pick name={t('fields.categories')} path={options('categories')} value={pendingFilter.categoryId} set={selectProductCategory} optional retainValueOnQuery/></FormReset.Provider></div>}
      {!reviewed&&!product&&createAction}{!reviewed&&mergeAction}<ResetSearch onClick={reset}/>
