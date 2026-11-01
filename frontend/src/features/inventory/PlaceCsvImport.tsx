@@ -1,5 +1,5 @@
 import {useEffect,useRef,useState} from 'react';
-import {Link} from 'react-router-dom';
+import {useNavigate} from 'react-router-dom';
 import {useTranslation} from 'react-i18next';
 import type {TenantItem} from '../../api-contracts';
 import {authSession as session,ApiFailure} from '../../auth';
@@ -23,8 +23,9 @@ const initialColumn=(columns:string[],header:boolean):number|null=>{
   return matches.length===1?matches[0]:null;
 };
 
-export function PlaceCsvImport({kind,globalAdmin,tenantId,tenantName,tenants,onSuccess}:{kind:'locations'|'owners';globalAdmin:boolean;tenantId:string;tenantName?:string;tenants?:TenantItem[]|null;onSuccess:()=>void}) {
+export function PlaceCsvImport({kind,globalAdmin,tenantId,tenantName,tenants,onSuccess,onViewTarget}:{kind:'locations'|'owners';globalAdmin:boolean;tenantId:string;tenantName?:string;tenants?:TenantItem[]|null;onSuccess:()=>void;onViewTarget:(tenant:string)=>void}) {
   const {t}=useTranslation();
+  const navigate=useNavigate();
   const [open,setOpen]=useState(false),[step,setStep]=useState<0|1|2>(0),[file,setFile]=useState<File|null>(null);
   const [encoding,setEncoding]=useState<PlaceCsvSettings['encoding']>('AUTO'),[delimiter,setDelimiter]=useState('AUTO'),[custom,setCustom]=useState(''),[header,setHeader]=useState(true);
   const [target,setTarget]=useState(''),[parsed,setParsed]=useState<Parsed|null>(null),[mapping,setMapping]=useState<Mapping|null>(null),[parseError,setParseError]=useState<ParseProblem|null>(null),[parsing,setParsing]=useState(false);
@@ -123,7 +124,7 @@ export function PlaceCsvImport({kind,globalAdmin,tenantId,tenantName,tenants,onS
           {!outcomes&&<><p>{t('placeCsv.reviewCount',{count:review.rows.length})}</p><div className="flex flex-wrap justify-end gap-2 border-t pt-4"><Button type="button" variant="outline" disabled={locked} onClick={()=>setStep(1)}>{t('csv.back')}</Button><Button type="button" aria-busy={locked} disabled={locked} onClick={()=>void execute()}>{locked?t('csv.executing'):t('csv.importSelected',{count:review.rows.length})}</Button></div></>}
           {outcomes&&<><p>{t('placeCsv.progress',{done:outcomes.length,total:review.rows.length})}</p>{locked&&<p className="text-sm text-muted-foreground">{t('placeCsv.finishBeforeLeaving')}</p>}<p>{t('placeCsv.result',{successful:outcomes.filter(row=>row.status==='SUCCESS').length,failed:outcomes.filter(row=>row.status==='FAILED').length,unknown:outcomes.filter(row=>row.status==='UNKNOWN').length,remaining:review.rows.length-outcomes.length})}</p><div className="table-frame"><table className="data-table"><thead><tr><th scope="col">{t('csv.recordNumber')}</th><th scope="col">{t('csv.lineNumber')}</th><th scope="col">{t('ui.name')}</th><th scope="col">{t('csv.previewStatus')}</th><th scope="col">{t('csv.issues')}</th></tr></thead><tbody>{outcomes.slice(0,visible).map(row=><tr key={row.record}><th scope="row">{row.record}</th><td>{row.line}</td><td>{row.name||'—'}</td><td>{row.status==='UNKNOWN'?t('placeCsv.statusUnknown'):t(`csv.status${row.status}`)}</td><td>{row.id??row.error??'—'}</td></tr>)}</tbody></table></div>{outcomes.length>visible&&<Button type="button" variant="outline" onClick={()=>setVisible(value=>value+50)}>{t('csv.showMoreRows',{count:outcomes.length-visible})}</Button>}{outcomes.some(row=>row.status==='UNKNOWN')&&<p role="alert" className="error-box">{t('placeCsv.unknown')}</p>}</>}
           {runError&&<p role="alert" className="error-box">{runError}</p>}
-          {!locked&&outcomes&&<div className="flex flex-wrap justify-end gap-2 border-t pt-4"><Button asChild variant="outline"><Link to={`/tenants/${review.tenant}/${kind}`}>{t('placeCsv.viewTarget')}</Link></Button><Button type="button" variant="outline" onClick={reset}>{t('csv.newImport')}</Button></div>}
+          {!locked&&outcomes&&<div className="flex flex-wrap justify-end gap-2 border-t pt-4"><Button type="button" variant="outline" onClick={()=>{const target=review.tenant;onViewTarget(target);reset();setOpen(false);navigate(`/tenants/${target}/${kind}`);}}>{t(kind==='locations'?'placeCsv.viewLocations':'placeCsv.viewOwners')}</Button><Button type="button" variant="outline" onClick={reset}>{t('csv.newImport')}</Button></div>}
         </Card>}
       </div>
     </Modal></>;

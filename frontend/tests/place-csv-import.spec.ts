@@ -5,10 +5,10 @@ import de from '../src/locales/de.json' with {type:'json'};
 const own='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',other='bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 async function setup(page:Page,scope:'GLOBAL'|'TENANT',language:'en'|'de'='en'){
   const writes:{path:string;body:{name:string;note:null}}[]=[];
-  let reads=0;
+  let reads=0;const listReads:string[]=[];
   await page.addInitScript(value=>localStorage.setItem('kelios.ui.language',value),language);
   await page.route('**/api/v1/**',route=>{
-    const path=new URL(route.request().url()).pathname,method=route.request().method();
+    const url=new URL(route.request().url()),path=url.pathname,method=route.request().method();
     if(path==='/api/v1/auth/csrf')return route.fulfill({json:{token:'fixture'}});
     if(path==='/api/v1/auth/session/refresh')return route.fulfill({json:{accessToken:'fixture',expiresIn:900,user:{id:own,scope,tenantId:scope==='TENANT'?own:null,role:'ADMIN',status:'ACTIVE',displayName:'Admin'}}});
     if(path==='/api/v1/auth/me')return route.fulfill({json:{id:own,scope,tenantId:scope==='TENANT'?own:null,role:'ADMIN',status:'ACTIVE',displayName:'Admin'}});
@@ -18,10 +18,15 @@ async function setup(page:Page,scope:'GLOBAL'|'TENANT',language:'en'|'de'='en'){
       const body=route.request().postDataJSON() as {name:string;note:null};writes.push({path,body});
       return body.name.trim()?route.fulfill({status:201,json:{id:other}}):route.fulfill({status:400,json:{code:'INVALID_INPUT'}});
     }
-    if(method==='GET'&&/\/(locations|owners)$/.test(path)){reads++;return route.fulfill({json:{items:[],page:0,size:20,totalElements:0}});}
+    if(method==='GET'&&/\/(locations|owners)$/.test(path)){
+      reads++;listReads.push(route.request().url());
+      const tenantId=path.split('/')[4],query=url.searchParams.get('q')?.toLowerCase();
+      const items=writes.flatMap((write,index)=>write.path===path&&write.body.name.trim()&&(!query||write.body.name.toLowerCase().includes(query))?[{id:`00000000-0000-0000-0000-${String(index+1).padStart(12,'0')}`,name:write.body.name,tenant:{id:tenantId,name:tenantId===own?'Own':'Other'},metadata:{createdAt:'2026-11-01T10:00:00Z',createdByDisplayName:'Admin'}}]:[]);
+      return route.fulfill({json:{items,page:0,size:20,totalElements:items.length}});
+    }
     return route.fulfill({json:{items:[],page:0,size:20,totalElements:0}});
   });
-  return {writes,reads:()=>reads};
+  return {writes,reads:()=>reads,listReads:()=>listReads};
 }
 async function open(page:Page,kind:'locations'|'owners',text=en){
   await page.goto(`/tenants/${own}/${kind}`);
@@ -65,6 +70,34 @@ for(const kind of ['locations','owners'] as const){
     expect(fixture.writes).toEqual(['First','Second'].map(name=>({path:`/api/v1/tenants/${own}/${kind}`,body:{name,note:null}})));
   });
 }
+
+for(const kind of ['locations','owners'] as const)for(const scope of ['TENANT','GLOBAL'] as const)test(`${kind}: ${scope} result opens the refreshed target list without reloading the page`,async({page})=>{
+  const language=scope==='TENANT'?'de':'en',text=language==='de'?de:en,target=scope==='TENANT'?own:other;
+  const fixture=await setup(page,scope,language);
+  await page.goto(`/tenants/${own}/${kind}`);
+  if(scope==='TENANT'){
+    const search=page.getByRole('textbox',{name:kind==='locations'?text.ui.locationSearch:text.ui.ownerSearch});
+    await search.fill('No Match');await search.press('Enter');
+    await expect.poll(()=>fixture.listReads().some(value=>new URL(value).searchParams.get('q')==='No Match')).toBe(true);
+  }
+  await page.getByRole('toolbar').getByRole('button',{name:text.csv.importTitle}).click();
+  const dialog=page.getByRole('dialog');
+  if(scope==='GLOBAL')await dialog.getByRole('combobox',{name:text.fields.tenantName}).selectOption(other);
+  await dialog.getByLabel(text.csv.file).setInputFiles({name:'names.csv',mimeType:'text/csv',buffer:Buffer.from('name\nImported')});
+  await next(dialog,text);await next(dialog,text);await importRows(page,dialog,1,text);
+  const action=dialog.getByRole('button',{name:kind==='locations'?text.placeCsv.viewLocations:text.placeCsv.viewOwners});
+  await expect(action).toBeVisible();
+  await page.evaluate(()=>(window as any).importDocument=document);
+  await action.click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page).toHaveURL(new RegExp(`/tenants/${target}/${kind}$`));
+  await expect(page.getByRole('table').getByText('Imported',{exact:true})).toBeVisible();
+  expect(await page.evaluate(()=>document===(window as any).importDocument)).toBe(true);
+  const targetReads=fixture.listReads().filter(value=>new URL(value).pathname===`/api/v1/tenants/${target}/${kind}`);
+  expect(targetReads.length).toBeGreaterThan(scope==='TENANT'?1:0);
+  const last=new URL(targetReads.at(-1)!);expect(last.searchParams.get('q')).toBeNull();expect(last.searchParams.get('page')).toBe('0');
+  expect(fixture.writes).toEqual([{path:`/api/v1/tenants/${target}/${kind}`,body:{name:'Imported',note:null}}]);
+});
 
 test('unique name heading preselects; blank and duplicate headings stay positional',async({page})=>{
   await setup(page,'TENANT');const dialog=await open(page,'locations');
