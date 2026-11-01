@@ -1,5 +1,5 @@
 import {describe,expect,it} from 'vitest';
-import {parsePlaceCsv,PlaceCsvError,type PlaceCsvSettings} from './place-csv';
+import {parsePlaceCsv,parsePlaceCsvTable,PlaceCsvError,type PlaceCsvSettings} from './place-csv';
 
 const bytes=(text:string)=>new TextEncoder().encode(text).buffer as ArrayBuffer;
 const settings:PlaceCsvSettings={encoding:'UTF-8',delimiter:';',header:true};
@@ -11,9 +11,8 @@ describe('one-column Place CSV',()=>{
     ]);
     expect(parsePlaceCsv(bytes('First\nSecond'),{encoding:'AUTO',delimiter:'AUTO',header:false})[0].name).toBe('First');
   });
-  it.each([';',',','\t'])('rejects a possible extra column under automatic delimiter %s',separator=>{
-    try {parsePlaceCsv(bytes(`name\nA${separator}B`),{encoding:'AUTO',delimiter:'AUTO',header:true});throw Error('Expected ambiguity');}
-    catch(error){expect(error).toMatchObject({reason:'ambiguous',line:2});}
+  it.each([';',',','\t'])('keeps one column when the candidate separator produces inconsistent rows %s',separator=>{
+    expect(parsePlaceCsv(bytes(`name\nA${separator}B`),{encoding:'AUTO',delimiter:'AUTO',header:true})[0].name).toBe(`A${separator}B`);
   });
   it('uses only the explicitly selected delimiter, including a custom character',()=>{
     expect(parsePlaceCsv(bytes('name\nA,B'),{encoding:'AUTO',delimiter:';',header:true})[0].name).toBe('A,B');
@@ -62,5 +61,36 @@ describe('one-column Place CSV',()=>{
     expect(parsePlaceCsv(Uint8Array.from([110,97,109,101,10,0x80]).buffer,{...settings,encoding:'ISO-8859-1'})[0].name).toBe('\u0080');
     expect(()=>parsePlaceCsv(new ArrayBuffer(5*1024*1024+1),settings)).toThrowError(PlaceCsvError);
     expect(()=>parsePlaceCsv(bytes(`name\n${'A\n'.repeat(5001)}`),settings)).toThrowError(PlaceCsvError);
+  });
+});
+
+describe('mapped Place CSV table',()=>{
+  it('detects a headed multi-column structure and preserves source positions and lines',()=>{
+    expect(parsePlaceCsvTable(bytes('Raum;Notiz;Code\r\n"A; B";"one\r\ntwo";7\r\nC;note;8\r\n'),{encoding:'AUTO',delimiter:'AUTO',header:true})).toEqual({
+      encoding:'UTF-8',delimiter:';',columns:['Raum','Notiz','Code'],rows:[
+        {record:2,line:2,cells:['A; B','one\r\ntwo','7']},
+        {record:3,line:4,cells:['C','note','8']}
+      ]
+    });
+  });
+  it('accepts headerless columns and a single column without detecting a delimiter',()=>{
+    expect(parsePlaceCsvTable(bytes('A;1\nB;2'),{...settings,delimiter:'AUTO',header:false})).toMatchObject({delimiter:';',columns:['',''],rows:[{record:1,line:1,cells:['A','1']},{record:2,line:2,cells:['B','2']}]});
+    expect(parsePlaceCsvTable(bytes('A\nB'),{...settings,delimiter:'AUTO',header:false})).toMatchObject({delimiter:null,columns:[''],rows:[{record:1,line:1,cells:['A']},{record:2,line:2,cells:['B']}]});
+  });
+  it('keeps blank and duplicate source headings distinguishable by position',()=>{
+    expect(parsePlaceCsvTable(bytes('Name;name;;Other\nA;B;C;D'),settings).columns).toEqual(['Name','name','','Other']);
+  });
+  it('uses an explicit delimiter to keep other punctuation in a name',()=>{
+    expect(parsePlaceCsvTable(bytes('A Block, 414\nB Block, 415'),{...settings,delimiter:';',header:false}).rows[0].cells).toEqual(['A Block, 414']);
+    expect(parsePlaceCsvTable(bytes('A Block, 414\nB Block, 415'),{...settings,delimiter:'AUTO',header:false}).columns).toHaveLength(2);
+  });
+  it('rejects conflicting automatic multi-column candidates and ragged explicit rows',()=>{
+    try {parsePlaceCsvTable(bytes('A;B,C\nD;E,F'),{...settings,delimiter:'AUTO',header:false});throw Error('Expected ambiguity');}
+    catch(error){expect(error).toMatchObject({reason:'ambiguous'});}
+    try {parsePlaceCsvTable(bytes('A;B\nC'),{...settings,header:false});throw Error('Expected ragged record');}
+    catch(error){expect(error).toMatchObject({reason:'columns',line:2});}
+  });
+  it('limits column count without limiting arbitrary header text',()=>{
+    expect(()=>parsePlaceCsvTable(bytes(`${Array.from({length:65},()=> 'x').join(';')}\n${Array.from({length:65},()=> 'v').join(';')}`),settings)).toThrowError(PlaceCsvError);
   });
 });
