@@ -84,6 +84,7 @@ read_config() {
       MODE) C_MODE=$value;; DB_HOST) C_DB_HOST=$value;; DB_PORT) C_DB_PORT=$value;; DB_NAME) C_DB_NAME=$value;; DB_USER) C_DB_USER=$value;;
       DB_PASSWORD_FILE) C_DB_PASSWORD_FILE=$value;; THEME) C_THEME=$value;; ORGANIZATION_LOGO) C_ORGANIZATION_LOGO=$value;; AUTH_KEYS_DIRECTORY) C_AUTH_KEYS_DIRECTORY=$value;;
       ADMIN_EMAIL) C_ADMIN_EMAIL=$value;; ADMIN_DISPLAY_NAME) C_ADMIN_DISPLAY_NAME=$value;; ADMIN_PASSWORD_FILE) C_ADMIN_PASSWORD_FILE=$value;;
+      TRUSTED_PROVIDER_HOSTS) C_TRUSTED_PROVIDER_HOSTS=$value;;
       *) fail "Unknown input configuration field: $key";;
     esac
     CONFIG_KEYS="${CONFIG_KEYS-} $key"
@@ -100,6 +101,7 @@ validate_input_config() {
   [ -z "${C_DB_USER-}" ] || identifier "$C_DB_USER"
   case "${C_MODE-}" in ''|managed|external) ;; *) fail 'Database mode must be managed or external.';; esac
   case "${C_THEME-}" in ''|orange|green|blue) ;; *) fail 'Theme must be orange, green or blue.';; esac
+  [ -z "${C_TRUSTED_PROVIDER_HOSTS-}" ] || provider_hosts "$C_TRUSTED_PROVIDER_HOSTS"
 }
 docker_endpoint() {
   [ -z "${DOCKER_HOST-}" ] || [ -z "${DOCKER_CONTEXT-}" ] || fail 'DOCKER_HOST and DOCKER_CONTEXT are both set; select one unambiguous local Docker endpoint.'
@@ -205,6 +207,18 @@ password() {
 port() { case "$1" in ''|*[!0-9]*|0*) fail 'Port must be an integer from 1 to 65535, without leading zeros.';; esac; [ "${#1}" -le 5 ] && [ "$1" -le 65535 ] || fail 'Invalid port.'; }
 identifier() { case "$1" in ''|*[!A-Za-z0-9_.-]*) fail 'Use letters, digits, dot, underscore or hyphen.';; esac; [ "${#1}" -le 64 ] || fail 'Identifier too long.'; }
 host() { case "$1" in ''|*[!A-Za-z0-9.:-]*|-*|.*) fail 'Invalid host.';; esac; [ "${#1}" -le 253 ] || fail 'Host too long.'; }
+provider_hosts() {
+  [ -z "$1" ] && return
+  case "$1" in *"$NEWLINE"*|*"$CR"*) fail 'Trusted provider hosts must be one line.';; esac
+  printf '%s\n' "$1" | LC_ALL=C awk -F, '
+    length($0)>2048 || NF>32 {exit 1}
+    {for(i=1;i<=NF;i++) {
+      host=tolower($i)
+      if(length(host)<1 || length(host)>253 || host ~ /^[0-9.]+$/ || seen[host]++) exit 1
+      n=split(host,labels,".")
+      for(j=1;j<=n;j++) if(length(labels[j])>63 || labels[j]!~/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/) exit 1
+    }}' || fail 'Trusted provider hosts must be unique comma-separated DNS names (no URL, IP or wildcard).'
+}
 bind() {
   case "$1" in *:*) printf '%s\n' "$1" | LC_ALL=C awk '
       /[^0-9a-fA-F:]/ || /:::/ {exit 1}
@@ -224,6 +238,7 @@ validate() {
   bind "$BIND"; port "$HTTP_PORT"; port "$HTTPS_PORT"
   [ "$HTTP_PORT" != "$HTTPS_PORT" ] || fail 'HTTP and HTTPS ports must differ.'
   host "$BROWSER_HOST"; host "$DB_HOST"; port "$DB_PORT"; identifier "$DB_NAME"; identifier "$DB_USER"
+  provider_hosts "$TRUSTED_PROVIDER_HOSTS"
   case "$BROWSER_HOST" in *:*) fail 'Use a DNS name or IPv4 address for the browser host (IPv6 bind is supported).';; esac
   case "$ISSUER" in https://*) ;; *) fail 'Invalid JWT issuer.';; esac
   case "$ISSUER" in *[!A-Za-z0-9.:/-]*) fail 'Invalid JWT issuer.';; esac
@@ -236,7 +251,7 @@ validate() {
 load() {
   [ -f "$STATE/installation.conf" ] && [ ! -L "$STATE/installation.conf" ] || fail 'Installation is not initialized. Run ./kelios install.'
   [ -z "$(find "$STATE" -type l -print)" ] || fail 'Installation state contains unsafe symlinks.'
-  SEEN='|'; ORG_LOGO=; RELEASE=phase0
+  SEEN='|'; ORG_LOGO=; RELEASE=phase0; TRUSTED_PROVIDER_HOSTS=
   while IFS='=' read -r key value; do
     case "$SEEN" in *"|$key|"*) fail 'Duplicate installation field.';; esac
     SEEN=$SEEN$key'|'
@@ -245,18 +260,20 @@ load() {
       BIND) BIND=$value;; HTTP_PORT) HTTP_PORT=$value;; HTTPS_PORT) HTTPS_PORT=$value;; BROWSER_HOST) BROWSER_HOST=$value;; ISSUER) ISSUER=$value;;
       DB_HOST) DB_HOST=$value;; DB_PORT) DB_PORT=$value;; DB_NAME) DB_NAME=$value;; DB_USER) DB_USER=$value;;
       BACKGROUND) BACKGROUND=$value;; FOREGROUND) FOREGROUND=$value;; PRIMARY) PRIMARY=$value;; PRIMARY_FOREGROUND) PRIMARY_FOREGROUND=$value;;
-      ACCENT) ACCENT=$value;; ACCENT_FOREGROUND) ACCENT_FOREGROUND=$value;; LOGO) LOGO=$value;; ORG_LOGO) ORG_LOGO=$value;; *) fail 'Unknown installation field.';;
+      ACCENT) ACCENT=$value;; ACCENT_FOREGROUND) ACCENT_FOREGROUND=$value;; LOGO) LOGO=$value;; ORG_LOGO) ORG_LOGO=$value;;
+      TRUSTED_PROVIDER_HOSTS) TRUSTED_PROVIDER_HOSTS=$value;; *) fail 'Unknown installation field.';;
     esac
   done < "$STATE/installation.conf"
+  case "$SEEN" in *'|TRUSTED_PROVIDER_HOSTS|') SEEN=${SEEN%TRUSTED_PROVIDER_HOSTS|};; esac
   case "$SEEN" in '|SCHEMA|PROJECT|MODE|PHASE|BIND|HTTP_PORT|HTTPS_PORT|BROWSER_HOST|ISSUER|DB_HOST|DB_PORT|DB_NAME|DB_USER|BACKGROUND|FOREGROUND|PRIMARY|PRIMARY_FOREGROUND|ACCENT|ACCENT_FOREGROUND|LOGO|'|'|SCHEMA|PROJECT|MODE|PHASE|BIND|HTTP_PORT|HTTPS_PORT|BROWSER_HOST|ISSUER|DB_HOST|DB_PORT|DB_NAME|DB_USER|BACKGROUND|FOREGROUND|PRIMARY|PRIMARY_FOREGROUND|ACCENT|ACCENT_FOREGROUND|LOGO|ORG_LOGO|'|'|SCHEMA|PROJECT|MODE|PHASE|RELEASE|BIND|HTTP_PORT|HTTPS_PORT|BROWSER_HOST|ISSUER|DB_HOST|DB_PORT|DB_NAME|DB_USER|BACKGROUND|FOREGROUND|PRIMARY|PRIMARY_FOREGROUND|ACCENT|ACCENT_FOREGROUND|LOGO|ORG_LOGO|') ;; *) fail 'Incomplete or reordered installation configuration.';; esac
   validate
 }
 save() {
   validate
   MANIFEST_TEMP=$(mktemp "$STATE/installation.XXXXXXXX")
-  { for field in SCHEMA PROJECT MODE PHASE RELEASE BIND HTTP_PORT HTTPS_PORT BROWSER_HOST ISSUER DB_HOST DB_PORT DB_NAME DB_USER BACKGROUND FOREGROUND PRIMARY PRIMARY_FOREGROUND ACCENT ACCENT_FOREGROUND LOGO ORG_LOGO; do
+  { for field in SCHEMA PROJECT MODE PHASE RELEASE BIND HTTP_PORT HTTPS_PORT BROWSER_HOST ISSUER DB_HOST DB_PORT DB_NAME DB_USER BACKGROUND FOREGROUND PRIMARY PRIMARY_FOREGROUND ACCENT ACCENT_FOREGROUND LOGO ORG_LOGO TRUSTED_PROVIDER_HOSTS; do
       # Explicit cases: no eval and never execute saved data.
-      case "$field" in SCHEMA) v=$SCHEMA;; PROJECT) v=$PROJECT;; MODE) v=$MODE;; PHASE) v=$PHASE;; RELEASE) v=$RELEASE;; BIND) v=$BIND;; HTTP_PORT) v=$HTTP_PORT;; HTTPS_PORT) v=$HTTPS_PORT;; BROWSER_HOST) v=$BROWSER_HOST;; ISSUER) v=$ISSUER;; DB_HOST) v=$DB_HOST;; DB_PORT) v=$DB_PORT;; DB_NAME) v=$DB_NAME;; DB_USER) v=$DB_USER;; BACKGROUND) v=$BACKGROUND;; FOREGROUND) v=$FOREGROUND;; PRIMARY) v=$PRIMARY;; PRIMARY_FOREGROUND) v=$PRIMARY_FOREGROUND;; ACCENT) v=$ACCENT;; ACCENT_FOREGROUND) v=$ACCENT_FOREGROUND;; LOGO) v=$LOGO;; ORG_LOGO) v=$ORG_LOGO;; esac
+      case "$field" in SCHEMA) v=$SCHEMA;; PROJECT) v=$PROJECT;; MODE) v=$MODE;; PHASE) v=$PHASE;; RELEASE) v=$RELEASE;; BIND) v=$BIND;; HTTP_PORT) v=$HTTP_PORT;; HTTPS_PORT) v=$HTTPS_PORT;; BROWSER_HOST) v=$BROWSER_HOST;; ISSUER) v=$ISSUER;; DB_HOST) v=$DB_HOST;; DB_PORT) v=$DB_PORT;; DB_NAME) v=$DB_NAME;; DB_USER) v=$DB_USER;; BACKGROUND) v=$BACKGROUND;; FOREGROUND) v=$FOREGROUND;; PRIMARY) v=$PRIMARY;; PRIMARY_FOREGROUND) v=$PRIMARY_FOREGROUND;; ACCENT) v=$ACCENT;; ACCENT_FOREGROUND) v=$ACCENT_FOREGROUND;; LOGO) v=$LOGO;; ORG_LOGO) v=$ORG_LOGO;; TRUSTED_PROVIDER_HOSTS) v=$TRUSTED_PROVIDER_HOSTS;; esac
       printf '%s=%s\n' "$field" "$v"
     done; } > "$MANIFEST_TEMP"
   mv -f "$MANIFEST_TEMP" "$STATE/installation.conf"
@@ -282,7 +299,7 @@ compose_env() {
     printf 'KELIOS_BACKEND_IMAGE=kelios-backend:%s\nKELIOS_FRONTEND_IMAGE=kelios-frontend:%s\n' "$RELEASE" "$RELEASE"
     printf 'KELIOS_DATABASE_URL=jdbc:postgresql://%s:%s/%s\nKELIOS_DATABASE_USER=%s\n' "$JDBC_HOST" "$DB_PORT" "$DB_NAME" "$DB_USER"
     printf "KELIOS_DB_PASSWORD_FILE='%s/secrets/db-password'\nKELIOS_AUTH_KEY_DIRECTORY='%s/secrets/auth'\nKELIOS_TLS_DIRECTORY='%s'\nKELIOS_BRANDING_DIRECTORY='%s/branding'\nKELIOS_LOGO_DIRECTORY='%s/branding/logos'\n" "$STATE" "$STATE" "$CERT_DIR" "$STATE" "$STATE"
-    printf 'KELIOS_AUTH_PUBLIC_ORIGIN=https://%s:%s\nKELIOS_AUTH_ISSUER=%s\n' "$BROWSER_HOST" "$HTTPS_PORT" "$ISSUER"
+    printf 'KELIOS_AUTH_PUBLIC_ORIGIN=https://%s:%s\nKELIOS_AUTH_ISSUER=%s\nKELIOS_AUTH_TRUSTED_PROVIDER_HOSTS=%s\n' "$BROWSER_HOST" "$HTTPS_PORT" "$ISSUER" "$TRUSTED_PROVIDER_HOSTS"
   } > "$ENV_FILE"
   # Ambient shell deployment settings must not override recorded installation.
   unset COMPOSE_PROFILES COMPOSE_PROJECT_NAME COMPOSE_FILE KELIOS_BACKEND_IMAGE KELIOS_FRONTEND_IMAGE KELIOS_BIND_ADDRESS KELIOS_HTTP_PORT KELIOS_HTTPS_PORT KELIOS_DATABASE_URL KELIOS_DATABASE_USER KELIOS_DATABASE_PASSWORD KELIOS_DB_PASSWORD_FILE KELIOS_AUTH_KEY_DIRECTORY KELIOS_TLS_DIRECTORY KELIOS_BRANDING_DIRECTORY KELIOS_LOGO_DIRECTORY KELIOS_AUTH_PUBLIC_ORIGIN KELIOS_AUTH_ISSUER KELIOS_AUTH_SIGNING_KEY_ID KELIOS_AUTH_ENCRYPTION_KEY_ID KELIOS_AUTH_TRUSTED_PROVIDER_HOSTS KELIOS_AUTH_PROVIDER_TRUST_STORE KELIOS_AUTH_PROVIDER_TRUST_STORE_PASSWORD
@@ -494,7 +511,7 @@ install() {
     [ -n "${C_ADMIN_EMAIL-}" ] || fail 'ADMIN_EMAIL is required for noninteractive installation.'
     [ -n "${C_ADMIN_PASSWORD_FILE-}" ] && [ -f "$C_ADMIN_PASSWORD_FILE" ] && [ -r "$C_ADMIN_PASSWORD_FILE" ] && [ ! -L "$C_ADMIN_PASSWORD_FILE" ] || fail 'ADMIN_PASSWORD_FILE must name a readable regular file.'
   fi
-  SCHEMA=1; PROJECT=kelios-local-$(openssl rand -hex 6); PHASE=prepared
+  SCHEMA=1; PROJECT=kelios-local-$(openssl rand -hex 6); PHASE=prepared; TRUSTED_PROVIDER_HOSTS=${C_TRUSTED_PROVIDER_HOSTS-}
   source_release
   prompt 'Listen address' '127.0.0.1'; BIND=$ANSWER; bind "$BIND"
   case "$BIND" in 127.*|::1) ;; *) printf 'Warning: this bind may expose the local installation beyond this machine.\n';; esac
@@ -738,18 +755,19 @@ configure() {
   NEW_LOGO=; NEW_ORG_LOGO=; CLEAR_LOGO=false; CLEAR_ORG_LOGO=false
   if [ "$NONINTERACTIVE" = 1 ]; then
     [ -n "$INPUT_CONFIG" ] && [ -n "${CONFIG_KEYS-}" ] || fail 'Noninteractive config requires a nonempty --config file.'
-    for field in $CONFIG_KEYS; do case "$field" in BIND|HTTP_PORT|HTTPS_PORT|THEME|ORGANIZATION_LOGO) ;; *) fail "Unsupported config update field: $field";; esac; done
+    for field in $CONFIG_KEYS; do case "$field" in BIND|HTTP_PORT|HTTPS_PORT|THEME|ORGANIZATION_LOGO|TRUSTED_PROVIDER_HOSTS) ;; *) fail "Unsupported config update field: $field";; esac; done
     case "$CONFIG_SEEN" in *'|BIND|'*) BIND=$C_BIND;; esac
     case "$CONFIG_SEEN" in *'|HTTP_PORT|'*) HTTP_PORT=$C_HTTP_PORT;; esac
     case "$CONFIG_SEEN" in *'|HTTPS_PORT|'*) HTTPS_PORT=$C_HTTPS_PORT;; esac
     case "$CONFIG_SEEN" in *'|THEME|'*) theme "$C_THEME";; esac
     case "$CONFIG_SEEN" in *'|ORGANIZATION_LOGO|'*) if [ -n "$C_ORGANIZATION_LOGO" ]; then NEW_ORG_LOGO=$C_ORGANIZATION_LOGO; else CLEAR_ORG_LOGO=true; fi;; esac
+    case "$CONFIG_SEEN" in *'|TRUSTED_PROVIDER_HOSTS|'*) TRUSTED_PROVIDER_HOSTS=$C_TRUSTED_PROVIDER_HOSTS;; esac
     save_configuration; return
   fi
   terminal
   printf 'Changes apply on next ./kelios start; branding then appears on page reload. Use certificate replace for explicit TLS rotation.\n'
   while :; do
-    printf '\nKELIOS Configuration\n1. HTTP port\n2. HTTPS port\n3. Listen address\n4. Theme\n5. Six theme colors\n6. Legacy logo\n7. Organization logo\n8. Save and exit\n0. Exit without changes\n'
+    printf '\nKELIOS Configuration\n1. HTTP port\n2. HTTPS port\n3. Listen address\n4. Theme\n5. Six theme colors\n6. Legacy logo\n7. Organization logo\n8. Trusted iServ provider hosts\n9. Save and exit\n0. Exit without changes\n'
     prompt 'Choice' '0'
     case "$ANSWER" in
       1) prompt 'HTTP port' "$HTTP_PORT"; port "$ANSWER"; HTTP_PORT=$ANSWER;;
@@ -759,7 +777,8 @@ configure() {
       5) prompt 'Background' "$BACKGROUND"; BACKGROUND=$ANSWER; prompt 'Foreground' "$FOREGROUND"; FOREGROUND=$ANSWER; prompt 'Primary' "$PRIMARY"; PRIMARY=$ANSWER; prompt 'Primary foreground' "$PRIMARY_FOREGROUND"; PRIMARY_FOREGROUND=$ANSWER; prompt 'Accent' "$ACCENT"; ACCENT=$ANSWER; prompt 'Accent foreground' "$ACCENT_FOREGROUND"; ACCENT_FOREGROUND=$ANSWER;;
       6) prompt 'Legacy logo path (empty clears)' ''; if [ -n "$ANSWER" ]; then [ -f "$ANSWER" ] || fail 'Logo file unavailable.'; NEW_LOGO=$ANSWER; else CLEAR_LOGO=true; NEW_LOGO=; fi;;
       7) prompt 'Organization logo path (empty clears)' ''; if [ -n "$ANSWER" ]; then [ -f "$ANSWER" ] || fail 'Organization logo unavailable.'; NEW_ORG_LOGO=$ANSWER; else CLEAR_ORG_LOGO=true; NEW_ORG_LOGO=; fi;;
-      8) save_configuration; return;;
+      8) prompt 'Trusted iServ provider hosts (comma-separated, empty clears)' "$TRUSTED_PROVIDER_HOSTS"; provider_hosts "$ANSWER"; TRUSTED_PROVIDER_HOSTS=$ANSWER;;
+      9) save_configuration; return;;
       0) printf 'No configuration changes saved.\n'; return;; *) printf 'Select a listed option.\n';;
     esac
   done

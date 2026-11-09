@@ -124,6 +124,9 @@ argv = sys.argv[1:]
 state = root / '.kelios/installation.conf'
 phase = dict(line.split('=', 1) for line in state.read_text().splitlines()).get('PHASE') if state.exists() else None
 record = {'argv': argv, 'phase': phase}
+if '--env-file' in argv:
+    env_file = pathlib.Path(argv[argv.index('--env-file') + 1])
+    record['trusted_provider_hosts'] = dict(line.split('=', 1) for line in env_file.read_text().splitlines()).get('KELIOS_AUTH_TRUSTED_PROVIDER_HOSTS')
 if any(arg.startswith('--kelios.recovery.password-file=') for arg in argv):
     mount = argv[argv.index('-v') + 1]
     source = pathlib.Path(mount.rsplit(':', 2)[0])
@@ -314,6 +317,48 @@ with (root / 'docker-argv.jsonl').open('a') as out:
         d=self.state(); (d/'installation.conf').write_text((d/'installation.conf').read_text()+'EVIL=1\n'); self.assertNotEqual(self.run_cli('stop')[0],0)
     def test_duplicate_saved_field_rejected(self):
         d=self.state(); (d/'installation.conf').write_text((d/'installation.conf').read_text()+'SCHEMA=1\n'); self.assertNotEqual(self.run_cli('stop')[0],0)
+    def test_trusted_provider_hosts_upgrade_and_runtime(self):
+        self.managed_install_answers('control-admin@example.org')
+        d=self.state()
+        for source,target in [('certificate.pem','secrets/tls/0123456789ab/certificate.pem'),('private.pem','secrets/tls/0123456789ab/private.pem')]:
+            shutil.copy2(self.root/source,d/target)
+        for name in ('main.private.pem','main.public.pem','main.aes'):
+            shutil.copy2(self.root/'keys'/name,d/'secrets/auth'/name)
+        original=(d/'installation.conf').read_bytes()
+        self.env['KELIOS_AUTH_TRUSTED_PROVIDER_HOSTS']='untrusted.example.org'
+        rc,out=self.run_cli('start'); self.assertEqual(rc,0,out)
+        del self.env['KELIOS_AUTH_TRUSTED_PROVIDER_HOSTS']
+        self.assertEqual(original,(d/'installation.conf').read_bytes())
+        calls=[json.loads(line) for line in (self.root/'docker-argv.jsonl').read_text().splitlines()]
+        self.assertEqual([call['trusted_provider_hosts'] for call in calls if ' up ' in ' '.join(call['argv'])][-1],'')
+        config=self.root/'provider.conf'; config.write_text('TRUSTED_PROVIDER_HOSTS=gwkuen.test-iserv.de,login.example.org\n')
+        result=subprocess.run([str(self.root/'kelios'),'--state-dir',str(d),'--config',str(config),'--non-interactive','config'],cwd=self.root,env=self.env,text=True,capture_output=True)
+        self.assertEqual(result.returncode,0,result.stderr)
+        self.assertIn('TRUSTED_PROVIDER_HOSTS=gwkuen.test-iserv.de,login.example.org\n',(d/'installation.conf').read_text())
+        self.assertEqual(self.run_cli('start')[0],0)
+        calls=[json.loads(line) for line in (self.root/'docker-argv.jsonl').read_text().splitlines()]
+        self.assertEqual([call['trusted_provider_hosts'] for call in calls if ' up ' in ' '.join(call['argv'])][-1],'gwkuen.test-iserv.de,login.example.org')
+        config.write_text('TRUSTED_PROVIDER_HOSTS=\n')
+        self.assertEqual(subprocess.run([str(self.root/'kelios'),'--state-dir',str(d),'--config',str(config),'--non-interactive','config'],cwd=self.root,env=self.env,capture_output=True).returncode,0)
+        self.assertIn('TRUSTED_PROVIDER_HOSTS=\n',(d/'installation.conf').read_text())
+        self.assertEqual(self.run_cli('start')[0],0)
+        calls=[json.loads(line) for line in (self.root/'docker-argv.jsonl').read_text().splitlines()]
+        self.assertEqual([call['trusted_provider_hosts'] for call in calls if ' up ' in ' '.join(call['argv'])][-1],'')
+    def test_trusted_provider_hosts_reject_invalid_without_mutation(self):
+        d=self.state(); original=(d/'installation.conf').read_bytes(); config=self.root/'provider.conf'
+        for value in ('https://iserv.example.org','*.example.org','10.0.0.1','iserv.example.org,','iserv.example.org,iserv.example.org','iserv.example.org;evil'):
+            config.write_text('TRUSTED_PROVIDER_HOSTS='+value+'\n')
+            result=subprocess.run([str(self.root/'kelios'),'--state-dir',str(d),'--config',str(config),'--non-interactive','config'],cwd=self.root,env=self.env,capture_output=True)
+            self.assertNotEqual(result.returncode,0,value)
+            self.assertEqual(original,(d/'installation.conf').read_bytes())
+    def test_trusted_provider_hosts_interactive_save_and_cancel(self):
+        d=self.state(); original=(d/'installation.conf').read_bytes()
+        rc,_=self.run_cli('config',[('Choice','8'),('Trusted iServ provider hosts','iserv.internal.example'),('Choice','0')])
+        self.assertEqual(rc,0)
+        self.assertEqual(original,(d/'installation.conf').read_bytes())
+        rc,_=self.run_cli('config',[('Choice','8'),('Trusted iServ provider hosts','iserv.internal.example'),('Choice','9')])
+        self.assertEqual(rc,0)
+        self.assertIn('TRUSTED_PROVIDER_HOSTS=iserv.internal.example\n',(d/'installation.conf').read_text())
     def test_symlink_state_rejected(self):
         (self.root/'.kelios').symlink_to(self.root/'bin',target_is_directory=True); self.assertNotEqual(self.run_cli('status')[0],0)
     def test_abandoned_lock_rejected(self):
@@ -824,17 +869,17 @@ with (root / 'docker-argv.jsonl').open('a') as out:
         self.assertEqual(original,(d/'installation.conf').read_bytes())
         self.assertEqual(json.loads((d/'branding/config.json').read_text())['logoUrl'],'/runtime/logos/logo.svg')
         source=self.root/'organization.svg'; source.write_text('<svg xmlns="http://www.w3.org/2000/svg"/>')
-        rc,_=self.run_cli('config',[('Choice','7'),('Organization logo path',str(source)),('Choice','8')]); self.assertEqual(rc,0)
+        rc,_=self.run_cli('config',[('Choice','7'),('Organization logo path',str(source)),('Choice','9')]); self.assertEqual(rc,0)
         self.assertTrue((d/'branding/logos/organization.svg').exists())
         self.assertEqual(self.run_cli('start')[0],0)
         branding=json.loads((d/'branding/config.json').read_text())
         self.assertEqual(branding['logoUrl'],'/runtime/logos/logo.svg')
         self.assertEqual(branding['organizationLogoUrl'],'/runtime/logos/organization.svg')
         self.assertEqual(branding['theme']['primary'],'#087f5b')
-        rc,_=self.run_cli('config',[('Choice','7'),('Organization logo path',''),('Choice','8')]); self.assertEqual(rc,0)
+        rc,_=self.run_cli('config',[('Choice','7'),('Organization logo path',''),('Choice','9')]); self.assertEqual(rc,0)
         self.assertEqual(self.run_cli('start')[0],0)
         self.assertNotIn('organizationLogoUrl',json.loads((d/'branding/config.json').read_text()))
-        rc,_=self.run_cli('config',[('Choice','6'),('Legacy logo path',''),('Choice','8')]); self.assertEqual(rc,0)
+        rc,_=self.run_cli('config',[('Choice','6'),('Legacy logo path',''),('Choice','9')]); self.assertEqual(rc,0)
         self.assertEqual(self.run_cli('start')[0],0)
         branding=json.loads((d/'branding/config.json').read_text())
         self.assertNotIn('logoUrl',branding)
