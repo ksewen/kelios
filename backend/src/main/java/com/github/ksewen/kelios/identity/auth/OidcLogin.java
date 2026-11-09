@@ -35,9 +35,9 @@ public class OidcLogin {
     private Map<String,Object> discovery(OidcConfigurationService.Provider provider){
         String issuer=provider.issuer();var key=new ProviderKey(provider.tenantId(),provider.version(),issuer,provider.clientId());
         synchronized(metadataCache){var cached=metadataCache.get(key);if(cached!=null && clock.instant().isBefore(cached.expires()))return cached.document();}
-        var doc=http.get(issuer.replaceAll("/$","")+"/.well-known/openid-configuration",issuer,null);
+        var doc=http.get(issuer.replaceAll("/$","")+"/.well-known/openid-configuration",issuer,null,"discovery");
         if(!issuer.equals(doc.get("issuer")) || !(doc.get("id_token_signing_alg_values_supported") instanceof List<?> algorithms) || !algorithms.contains("RS256")
-            || !(doc.get("response_types_supported") instanceof List<?> responses) || !responses.contains("code"))throw AuthFailure.provider();
+            || !(doc.get("response_types_supported") instanceof List<?> responses) || !responses.contains("code")){OidcDiagnostics.rejected("discovery","invalid_metadata",503);throw AuthFailure.provider();}
         for(String field:List.of("authorization_endpoint","token_endpoint","userinfo_endpoint","jwks_uri"))http.endpoint(text(doc,field),issuer);
         Object methods=doc.get("code_challenge_methods_supported");if(methods!=null && (!(methods instanceof List<?> list) || !list.contains("S256")))throw AuthFailure.provider();
         synchronized(metadataCache){metadataCache.put(key,new Metadata(clock.instant().plusSeconds(60),doc));if(metadataCache.size()>128)metadataCache.remove(metadataCache.keySet().iterator().next());}
@@ -46,7 +46,7 @@ public class OidcLogin {
     private JWKSet keys(Map<String,Object> doc,Flow flow)throws Exception{
         var key=new ProviderKey(flow.tenant(),flow.version(),flow.issuer(),flow.clientId());
         synchronized(keyCache){var cached=keyCache.get(key);if(cached!=null && clock.instant().isBefore(cached.expires()))return cached.set();}
-        var set=JWKSet.parse(json.writeValueAsString(http.get(text(doc,"jwks_uri"),flow.issuer(),null)));
+        var set=JWKSet.parse(json.writeValueAsString(http.get(text(doc,"jwks_uri"),flow.issuer(),null,"jwks")));
         synchronized(keyCache){keyCache.put(key,new Keys(clock.instant().plusSeconds(60),set));if(keyCache.size()>128)keyCache.remove(keyCache.keySet().iterator().next());}
         return set;
     }
@@ -58,55 +58,61 @@ public class OidcLogin {
         try{challenge=Base64.getUrlEncoder().withoutPadding().encodeToString(MessageDigest.getInstance("SHA-256").digest(flow.verifier().getBytes(StandardCharsets.US_ASCII)));}catch(Exception ex){throw AuthFailure.provider();}
         String authorization=text(doc,"authorization_endpoint");
         String url=authorization+(authorization.contains("?")?"&":"?")+"response_type=code&client_id="+encode(flow.clientId())+"&redirect_uri="+encode(flow.redirect())
-            +"&scope="+encode("openid profile iserv:groups")+"&state="+encode(flow.state())+"&nonce="+encode(flow.nonce())+"&code_challenge_method=S256&code_challenge="+encode(challenge);
+            +"&scope="+encode("openid profile"+(provider.groupMappings().isEmpty()?"":" iserv:groups")+(provider.roleMappings().isEmpty()?"":" iserv:roles"))+"&state="+encode(flow.state())+"&nonce="+encode(flow.nonce())+"&code_challenge_method=S256&code_challenge="+encode(challenge);
         return new Start(url,cookie);
     }
     public JwtTokens.Pair callback(UUID tenant,String cookie,String state,String code,String responseIssuer){
+        String stage="flow";
         try{
             Flow flow=json.readValue(secrets.decrypt(cookie,flowContext()),Flow.class);
             if(!tenant.equals(flow.tenant()) || state==null || !MessageDigest.isEqual(state.getBytes(StandardCharsets.UTF_8),flow.state().getBytes(StandardCharsets.UTF_8))
                 || clock.instant().getEpochSecond()>=flow.expiresAt() || flow.expiresAt()>clock.instant().plusSeconds(300).getEpochSecond() || code==null || code.isBlank() || code.length()>4096
                 || (responseIssuer!=null && !responseIssuer.equals(flow.issuer())))throw AuthFailure.invalid();
-            var provider=configs.provider(tenant);
+            stage="configuration";var provider=configs.provider(tenant);
             if(provider.version()!=flow.version() || !provider.issuer().equals(flow.issuer()) || !provider.clientId().equals(flow.clientId()) || !settings.callback(tenant).equals(flow.redirect()))throw new AuthFailure(409,"Provider configuration changed during login");
-            var doc=discovery(provider);
+            stage="discovery";var doc=discovery(provider);
             String body="grant_type=authorization_code&code="+encode(code)+"&redirect_uri="+encode(flow.redirect())+"&code_verifier="+encode(flow.verifier());
             Object rawMethods=doc.get("token_endpoint_auth_methods_supported");List<?> methods=rawMethods==null?List.of("client_secret_basic"):(rawMethods instanceof List<?> list?list:List.of());
             String basic=null,secret=configs.secret(provider);
             if(methods.contains("client_secret_basic"))basic=Base64.getEncoder().encodeToString((encode(provider.clientId())+":"+encode(secret)).getBytes(StandardCharsets.US_ASCII));
             else if(methods.contains("client_secret_post"))body+="&client_id="+encode(provider.clientId())+"&client_secret="+encode(secret);
             else throw AuthFailure.provider();
-            var response=http.post(text(doc,"token_endpoint"),provider.issuer(),body,basic);
+            stage="token";var response=http.post(text(doc,"token_endpoint"),provider.issuer(),body,basic,"token");
             if(!"Bearer".equalsIgnoreCase(text(response,"token_type")))throw AuthFailure.provider();
-            var claims=verifyIdToken(text(response,"id_token"),doc,flow);
-            var info=http.get(text(doc,"userinfo_endpoint"),provider.issuer(),text(response,"access_token"));
-            if(!claims.getSubject().equals(text(info,"sub")))throw AuthFailure.denied();
+            stage="id_token";var claims=verifyIdToken(text(response,"id_token"),doc,flow);
+            stage="userinfo";var info=http.get(text(doc,"userinfo_endpoint"),provider.issuer(),text(response,"access_token"),"userinfo");OidcDiagnostics.userInfo(info);
+            stage="subject";
+            if(!claims.getSubject().equals(text(info,"sub"))){OidcDiagnostics.rejected("subject","subject_mismatch",403);throw AuthFailure.denied();}
             String display=info.get("name") instanceof String name?name:null;
-            return provisioning.complete(tenant,flow.version(),flow.issuer(),flow.clientId(),claims.getSubject(),display,IServGroups.parse(info));
-        }catch(AuthFailure ex){throw ex;}catch(Exception ex){throw AuthFailure.provider();}
+            stage="mappings";
+            Set<String> groups=Set.of(),roles=Set.of();
+            if(!provider.groupMappings().isEmpty())try{groups=IServGroups.parse(info);}catch(AuthFailure ex){OidcDiagnostics.rejected("groups","invalid_claim",403);}
+            if(!provider.roleMappings().isEmpty())try{roles=IServRoles.parse(info);}catch(AuthFailure ex){OidcDiagnostics.rejected("roles","invalid_claim",403);}
+            stage="provisioning";return provisioning.complete(tenant,flow.version(),flow.issuer(),flow.clientId(),claims.getSubject(),display,groups,roles);
+        }catch(AuthFailure ex){OidcDiagnostics.rejected(stage,"rejected",ex.status());throw ex;}catch(Exception ex){OidcDiagnostics.transport(stage,ex);throw AuthFailure.provider();}
     }
     private JWTClaimsSet verifyIdToken(String value,Map<String,Object> doc,Flow flow)throws Exception{
         SignedJWT jwt=SignedJWT.parse(value);var header=jwt.getHeader();
-        if(!JWSAlgorithm.RS256.equals(header.getAlgorithm()) || header.getKeyID()==null || header.getJWKURL()!=null || header.getX509CertURL()!=null || (header.getCriticalParams()!=null && !header.getCriticalParams().isEmpty()))throw AuthFailure.denied();
+        if(!JWSAlgorithm.RS256.equals(header.getAlgorithm()) || header.getKeyID()==null || header.getJWKURL()!=null || header.getX509CertURL()!=null || (header.getCriticalParams()!=null && !header.getCriticalParams().isEmpty())){OidcDiagnostics.rejected("id_token","invalid_header",403);throw AuthFailure.denied();}
         var keys=keys(doc,flow);
-        if(keys.getKeys().stream().filter(k->header.getKeyID().equals(k.getKeyID())).count()!=1)throw AuthFailure.denied();
+        if(keys.getKeys().stream().filter(k->header.getKeyID().equals(k.getKeyID())).count()!=1){OidcDiagnostics.rejected("id_token","unknown_key",403);throw AuthFailure.denied();}
         JWK key=keys.getKeyByKeyId(header.getKeyID());
         if(!(key instanceof RSAKey rsa) || (rsa.getKeyUse()!=null && !KeyUse.SIGNATURE.equals(rsa.getKeyUse())) || (rsa.getAlgorithm()!=null && !JWSAlgorithm.RS256.equals(rsa.getAlgorithm()))
-            || rsa.toRSAPublicKey().getModulus().bitLength()<2048 || !jwt.verify(new RSASSAVerifier(rsa.toRSAPublicKey())))throw AuthFailure.denied();
+            || rsa.toRSAPublicKey().getModulus().bitLength()<2048 || !jwt.verify(new RSASSAVerifier(rsa.toRSAPublicKey()))){OidcDiagnostics.rejected("id_token","invalid_signature",403);throw AuthFailure.denied();}
         var c=jwt.getJWTClaimsSet();Instant now=clock.instant();
         if(!flow.issuer().equals(c.getIssuer()) || c.getSubject()==null || c.getSubject().isBlank() || !c.getAudience().contains(flow.clientId())
             || (c.getAudience().size()>1 && !flow.clientId().equals(c.getStringClaim("azp"))) || (c.getStringClaim("azp")!=null && !flow.clientId().equals(c.getStringClaim("azp")))
             || c.getExpirationTime()==null || !now.minusSeconds(30).isBefore(c.getExpirationTime().toInstant()) || c.getIssueTime()==null || c.getIssueTime().toInstant().isAfter(now.plusSeconds(30))
-            || (c.getNotBeforeTime()!=null && c.getNotBeforeTime().toInstant().isAfter(now.plusSeconds(30))) || !flow.nonce().equals(c.getStringClaim("nonce")))throw AuthFailure.denied();
+            || (c.getNotBeforeTime()!=null && c.getNotBeforeTime().toInstant().isAfter(now.plusSeconds(30))) || !flow.nonce().equals(c.getStringClaim("nonce"))){OidcDiagnostics.rejected("id_token","invalid_claims",403);throw AuthFailure.denied();}
         // Use Spring's standard OIDC validation extension as well as explicit flow/nonce/purpose checks.
         var registration=ClientRegistration.withRegistrationId(flow.tenant().toString()).clientId(flow.clientId())
-            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE).redirectUri(flow.redirect()).scope("openid","profile","iserv:groups")
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE).redirectUri(flow.redirect()).scope("openid","profile")
             .issuerUri(flow.issuer()).authorizationUri(text(doc,"authorization_endpoint")).tokenUri(text(doc,"token_endpoint"))
             .jwkSetUri(text(doc,"jwks_uri")).userInfoUri(text(doc,"userinfo_endpoint")).userNameAttributeName("sub").build();
         var standard=new OidcIdTokenValidator(registration);standard.setClock(clock);standard.setClockSkew(Duration.ofSeconds(30));
         var parsed=new HashMap<String,Object>(c.getClaims());parsed.put("iat",c.getIssueTime().toInstant());parsed.put("exp",c.getExpirationTime().toInstant());
         if(c.getNotBeforeTime()!=null)parsed.put("nbf",c.getNotBeforeTime().toInstant());
-        if(standard.validate(new Jwt(value,c.getIssueTime().toInstant(),c.getExpirationTime().toInstant(),header.toJSONObject(),parsed)).hasErrors())throw AuthFailure.denied();
+        if(standard.validate(new Jwt(value,c.getIssueTime().toInstant(),c.getExpirationTime().toInstant(),header.toJSONObject(),parsed)).hasErrors()){OidcDiagnostics.rejected("id_token","standard_validation_failed",403);throw AuthFailure.denied();}
         return c;
     }
 }

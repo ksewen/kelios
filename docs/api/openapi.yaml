@@ -245,8 +245,8 @@ paths:
         in: query
         required: false
         schema: *id007
-      description: Requires flow cookie binding. Validated ID token and UserInfo sub, documented iserv:groups UUID
-        intersection, exact issuer/subject identity, JIT TENANT/USER/PENDING. Provider tokens discarded. No tokens
+      description: Requires flow cookie binding. Validated ID token and UserInfo sub, exact configured group act or role displayName
+        match, exact issuer/subject identity, JIT TENANT/mapped-role/PENDING. Provider tokens discarded. No tokens
         or provider error details in frontend redirect.
   /tenants:
     get:
@@ -594,7 +594,7 @@ paths:
     get:
       operationId: listOidcConfigurations
       summary: List existing IServ configurations (ACTIVE GLOBAL ADMIN only)
-      description: Bounded administrative read of enabled and disabled configurations, ordered by case-insensitive Tenant name then Tenant UUID. No secrets, groups, claims, credentials or mutation authority. Separate from anonymous enabled-organization login routing and signed-own Tenant singleton administration.
+      description: Bounded administrative read of enabled and disabled configurations. Optional case-insensitive literal Tenant name substring and exact enabled filters combine before paging. Ordered by case-insensitive Tenant name then Tenant UUID. No secrets, groups, claims, credentials or mutation authority. Separate from anonymous enabled-organization login routing and signed-own Tenant singleton administration.
       security: *id003
       parameters:
       - in: query
@@ -603,6 +603,14 @@ paths:
       - in: query
         name: size
         schema: {type: integer, minimum: 1, maximum: 100, default: 20}
+      - in: query
+        name: q
+        description: Literal, case-insensitive Tenant name substring; percent and underscore are not wildcards.
+        schema: {type: string, maxLength: 128}
+      - in: query
+        name: enabled
+        description: Exact enabled state; omitted includes both enabled and disabled configurations.
+        schema: {type: boolean}
       responses:
         '200':
           description: Existing configurations and total count; Cache-Control no-store
@@ -614,7 +622,7 @@ paths:
   /tenants/{id}/oidc:
     get:
       operationId: getTenantsIdOidc
-      summary: Read sanitized Tenant OIDC configuration (ACTIVE GLOBAL or own-Tenant ADMIN)
+      summary: Read sanitized Tenant OIDC configuration (ACTIVE GLOBAL ADMIN or signed-own TENANT ADMIN)
       description: ACTIVE ADMIN only. GLOBAL ADMIN targets an authorized concrete Tenant; TENANT ADMIN is forced to its signed Tenant and foreign locators share missing-resource behavior. USER/PENDING/DISABLED denied.
       security: *id003
       responses:
@@ -632,7 +640,7 @@ paths:
         schema: *id006
     put:
       operationId: putTenantsIdOidc
-      summary: Create/update Tenant OIDC and group UUID allowlist (ACTIVE GLOBAL or own-Tenant ADMIN)
+      summary: Create/update Tenant OIDC group and role mappings (ACTIVE GLOBAL ADMIN only)
       security: *id003
       responses:
         '200':
@@ -653,14 +661,14 @@ paths:
         in: path
         required: true
         schema: *id006
-      description: Atomic versioned settings/secret/allowlist change. Omit/null version on first create; current
-        version on update. Initial clientSecret required; null on update retains/re-encrypts existing secret. Secret
-        only accepted as write-only input, never returned. Empty allowlist denies login. Runtime changes need no
-        image rebuild. Callback/final provisioning revalidate current configuration; valid recreated configuration may accept a pre-delete flow.
+      description: ACTIVE GLOBAL ADMIN only; TENANT ADMIN receives 403 regardless of target existence. Atomic versioned settings/secret/group-mapping change. Omit/null version on first create; current
+        version on update. Creation without clientSecret requires enabled=false and leaves an incomplete Connector; null on update retains an existing secret or remains incomplete. Enabling requires a configured secret. Existing callers may still submit a secret here, while the UI uses the separate secret command.
+        Secret is only accepted as write-only input, never returned. Empty or unmatched group mappings deny login with 403. Runtime changes need no
+        image rebuild. A single terminal slash in the supplied issuer is checked against live OIDC Discovery and the exact discovered issuer is stored; unavailable or unrelated Discovery rejects the write. Callback/final provisioning revalidate current configuration; valid recreated configuration may accept a pre-delete flow.
     delete:
       operationId: deleteTenantOidcConfiguration
       summary: Physically delete current Tenant OIDC singleton
-      description: ACTIVE GLOBAL ADMIN or signed-own-Tenant ADMIN only. Requires current version. Atomically deletes encrypted secret/configuration and owned groups plus exactly one captured-Tenant OIDC_CONFIG_DELETED audit. Disabled is not deleted. Missing/repeated DELETE returns404 without another successful audit. Users/external mappings/JWTs remain. No generations/tombstones/restore. Recreation requires initial PUT with a fresh supplied secret.
+      description: ACTIVE GLOBAL ADMIN only; TENANT ADMIN receives 403 regardless of target existence. Requires current version. Atomically deletes encrypted secret/configuration and owned groups plus exactly one captured-Tenant OIDC_CONFIG_DELETED audit. Disabled is not deleted. Missing/repeated DELETE returns 404 without another successful audit. Users/external mappings/JWTs remain. No generations/tombstones/restore. Recreation may begin as disabled incomplete configuration.
       security: *id003
       parameters:
       - name: id
@@ -678,6 +686,31 @@ paths:
       responses:
         '200':
           description: Deleted successfully; empty body
+        default: *id001
+  /tenants/{id}/oidc/secret:
+    put:
+      operationId: setTenantOidcSecret
+      summary: Set or replace the write-only IServ Client secret (ACTIVE GLOBAL ADMIN only)
+      description: Requires an existing Connector and its current version. Updates only encrypted secret, version, update metadata and redacted audit. It does not enable an incomplete Connector. Stale versions return 409; absent Connector returns 404. TENANT ADMIN receives 403 before target lookup.
+      security: *id003
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: *id006
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OidcSecretInput'
+      responses:
+        '200':
+          description: Sanitized updated Connector; the secret is never returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OidcConfiguration'
         default: *id001
   /tenants/{tenantId}/assets:
     post:
@@ -3776,7 +3809,7 @@ components:
       - issuer
       - clientId
       - enabled
-      - allowedGroupIds
+      - groupMappings
       properties:
         issuer:
           type: string
@@ -3793,6 +3826,7 @@ components:
           - 'null'
           writeOnly: true
           maxLength: 2048
+          description: Optional on disabled creation; omitted/null retains an existing secret. A Connector without a secret cannot be enabled.
         enabled:
           type: boolean
         version:
@@ -3800,11 +3834,60 @@ components:
           - integer
           - 'null'
           minimum: 0
-        allowedGroupIds:
+        groupMappings:
           type: array
           uniqueItems: true
           maxItems: 256
-          items: *id006
+          description: Exact, case-sensitive IServ group account (act) to KELIOS role mappings. Any group or role mapping must match for login; ADMIN wins across both sources. Role is assigned only on first PENDING creation.
+          items:
+            $ref: '#/components/schemas/OidcGroupMapping'
+        roleMappings:
+          type: array
+          uniqueItems: true
+          maxItems: 256
+          description: Exact, case-sensitive IServ role displayName to KELIOS role mappings. Omission on create means empty; omission on update retains existing role mappings; an explicit empty list clears them. The IServ Client must allow iserv:roles when these mappings are configured.
+          items:
+            $ref: '#/components/schemas/OidcRoleMapping'
+    OidcSecretInput:
+      type: object
+      additionalProperties: false
+      required: [clientSecret, version]
+      properties:
+        clientSecret:
+          type: string
+          writeOnly: true
+          minLength: 1
+          maxLength: 2048
+        version:
+          type: integer
+          format: int64
+          minimum: 0
+    OidcGroupMapping:
+      type: object
+      additionalProperties: false
+      required: [act, role]
+      properties:
+        act:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: Exact IServ group account (act), never the display name or opaque id. Unique within a Connector.
+        role:
+          type: string
+          enum: [USER, ADMIN]
+    OidcRoleMapping:
+      type: object
+      additionalProperties: false
+      required: [displayName, role]
+      properties:
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: Exact IServ role displayName, never the opaque uuid or deprecated id. Unique within a Connector.
+        role:
+          type: string
+          enum: [USER, ADMIN]
     OidcConfigurationSummary:
       type: object
       additionalProperties: false
@@ -3844,7 +3927,8 @@ components:
       - secretConfigured
       - enabled
       - version
-      - allowedGroupIds
+      - groupMappings
+      - roleMappings
       - callbackUri
       - metadata
       - tenant
@@ -3859,10 +3943,18 @@ components:
         version:
           type: integer
           minimum: 0
-        allowedGroupIds:
+        groupMappings:
           type: array
           uniqueItems: true
-          items: *id006
+          maxItems: 256
+          items:
+            $ref: '#/components/schemas/OidcGroupMapping'
+        roleMappings:
+          type: array
+          uniqueItems: true
+          maxItems: 256
+          items:
+            $ref: '#/components/schemas/OidcRoleMapping'
         callbackUri:
           type: string
           format: uri

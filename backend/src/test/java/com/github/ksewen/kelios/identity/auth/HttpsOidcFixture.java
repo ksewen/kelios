@@ -29,12 +29,12 @@ import tools.jackson.databind.json.JsonMapper;
 final class HttpsOidcFixture implements AutoCloseable {
     record Authorization(String callback,String code,String state){}
     record Pending(String nonce,String challenge,String client,String redirect){}
-    final UUID group=UUID.randomUUID();final Path trustStore;final String issuer;final Clock clock;
+    final String group="members";final UUID groupId=UUID.randomUUID();final Path trustStore;final String issuer;final Clock clock;
     final HttpsServer server;final SSLContext ssl;final KeyPair pair;
     final ConcurrentMap<String,Pending> codes=new ConcurrentHashMap<>(),access=new ConcurrentHashMap<>();
     final JsonMapper json=JsonMapper.builder().build();
-    volatile String mode="normal",subject="stable-subject",name="Fixture user";
-    volatile Object groups;
+    volatile String mode="normal",subject="stable-subject",name="Fixture user",scope="openid profile iserv:groups";
+    volatile Object groups,roles;
     HttpsOidcFixture(Path directory,Clock clock)throws Exception{
         this.clock=clock;var generator=KeyPairGenerator.getInstance("RSA");generator.initialize(3072);pair=generator.generateKeyPair();
         X500Name owner=new X500Name("CN=localhost");Instant now=Instant.now();
@@ -48,7 +48,7 @@ final class HttpsOidcFixture implements AutoCloseable {
         server=HttpsServer.create(new InetSocketAddress("127.0.0.1",0),0);server.setHttpsConfigurator(new HttpsConfigurator(ssl));
         server.createContext("/",this::handle);server.setExecutor(Executors.newVirtualThreadPerTaskExecutor());server.start();issuer="https://localhost:"+server.getAddress().getPort();reset();
     }
-    void reset(){mode="normal";subject="stable-subject";name="Fixture user";groups=List.of(Map.of("id",group.toString(),"act","members","name","Members"));codes.clear();access.clear();}
+    void reset(){mode="normal";subject="stable-subject";name="Fixture user";scope="openid profile iserv:groups";groups=List.of(Map.of("id",groupId.toString(),"act",group,"name","Members"));roles=List.of(Map.of("displayName","ADMIN"));codes.clear();access.clear();}
     static Map<String,String> query(String query){
         Map<String,String> values=new HashMap<>();if(query==null)return values;for(String item:query.split("&")){var parts=item.split("=",2);values.put(URLDecoder.decode(parts[0],StandardCharsets.UTF_8),parts.length==1?"":URLDecoder.decode(parts[1],StandardCharsets.UTF_8));}return values;
     }
@@ -63,11 +63,12 @@ final class HttpsOidcFixture implements AutoCloseable {
         try{
             String path=exchange.getRequestURI().getPath();
             if(path.equals("/.well-known/openid-configuration")){
-                send(exchange,200,Map.of("issuer",mode.equals("discovery-issuer")?issuer+"/wrong":issuer,"authorization_endpoint",issuer+"/authorize","token_endpoint",issuer+"/token","userinfo_endpoint",issuer+"/userinfo","jwks_uri",issuer+"/jwks","response_types_supported",List.of("code"),"id_token_signing_alg_values_supported",List.of("RS256"),"code_challenge_methods_supported",List.of(mode.equals("pkce-unsupported")?"plain":"S256"),"token_endpoint_auth_methods_supported",List.of("client_secret_basic")));return;
+                if(mode.equals("discovery-unavailable")){send(exchange,503,Map.of("error","unavailable"));return;}
+                send(exchange,200,Map.of("issuer",mode.equals("discovery-issuer")?issuer+"/wrong":issuer,"authorization_endpoint",issuer+"/authorize","token_endpoint",issuer+"/token","userinfo_endpoint",issuer+"/userinfo","jwks_uri",issuer+"/jwks","response_types_supported",List.of("code"),"id_token_signing_alg_values_supported",List.of("RS256"),"code_challenge_methods_supported",List.of(mode.equals("pkce-unsupported")?"plain":"S256"),"token_endpoint_auth_methods_supported",List.of(mode.equals("client-secret-post")?"client_secret_post":"client_secret_basic")));return;
             }
             if(path.equals("/authorize")){
                 var args=query(exchange.getRequestURI().getRawQuery());
-                if(!"code".equals(args.get("response_type")) || !"S256".equals(args.get("code_challenge_method")) || !"openid profile iserv:groups".equals(args.get("scope"))){send(exchange,400,Map.of("error","invalid_request"));return;}
+                if(!"code".equals(args.get("response_type")) || !"S256".equals(args.get("code_challenge_method")) || !(scope.equals(args.get("scope")) || "openid profile iserv:groups".equals(scope) && "openid profile".equals(args.get("scope")))){send(exchange,400,Map.of("error","invalid_request"));return;}
                 String code=UUID.randomUUID().toString();codes.put(code,new Pending(args.get("nonce"),args.get("code_challenge"),args.get("client_id"),args.get("redirect_uri")));
                 exchange.getResponseHeaders().set("Location",args.get("redirect_uri")+"?code="+code+"&state="+args.get("state")+"&iss="+URLEncoder.encode(issuer,StandardCharsets.UTF_8));exchange.sendResponseHeaders(302,-1);exchange.close();return;
             }
@@ -77,7 +78,8 @@ final class HttpsOidcFixture implements AutoCloseable {
                 var args=query(new String(exchange.getRequestBody().readAllBytes(),StandardCharsets.UTF_8));var pending=codes.remove(args.get("code"));
                 String expected="Basic "+Base64.getEncoder().encodeToString("fixture-client:fixture-secret".getBytes(StandardCharsets.UTF_8));
                 String verifier=args.get("code_verifier");String challenge=verifier==null?"":Base64.getUrlEncoder().withoutPadding().encodeToString(MessageDigest.getInstance("SHA-256").digest(verifier.getBytes(StandardCharsets.US_ASCII)));
-                if(pending==null || !expected.equals(exchange.getRequestHeaders().getFirst("Authorization")) || !pending.challenge().equals(challenge) || !pending.redirect().equals(args.get("redirect_uri"))){send(exchange,400,Map.of("error","invalid_grant"));return;}
+                boolean authenticated=mode.equals("client-secret-post")?"fixture-client".equals(args.get("client_id"))&&"fixture-secret".equals(args.get("client_secret"))&&exchange.getRequestHeaders().getFirst("Authorization")==null:expected.equals(exchange.getRequestHeaders().getFirst("Authorization"));
+                if(pending==null || !authenticated || !pending.challenge().equals(challenge) || !pending.redirect().equals(args.get("redirect_uri"))){send(exchange,400,Map.of("error","invalid_grant"));return;}
                 Instant now=clock.instant();var claims=new JWTClaimsSet.Builder().issuer(mode.equals("id-issuer")?issuer+"/wrong":issuer).audience(mode.equals("id-audience")?"wrong-client":pending.client()).subject(subject)
                     .issueTime(Date.from(now)).expirationTime(Date.from(now.plusSeconds(mode.equals("id-expired")?-60:300))).claim("nonce",mode.equals("nonce")?"wrong-nonce":pending.nonce()).build();
                 SignedJWT id=new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256).keyID("provider").build(),claims);id.sign(new RSASSASigner((RSAPrivateKey)pair.getPrivate()));
@@ -87,7 +89,7 @@ final class HttpsOidcFixture implements AutoCloseable {
                 if(mode.equals("userinfo-unavailable")){send(exchange,503,Map.of("error","unavailable"));return;}
                 String auth=exchange.getRequestHeaders().getFirst("Authorization");if(auth==null || !auth.startsWith("Bearer ") || !access.containsKey(auth.substring(7))){send(exchange,401,Map.of("error","invalid_token"));return;}
                 Map<String,Object> info=new HashMap<>();info.put("sub",mode.equals("subject-mismatch")?"other-subject":subject);info.put("name",name);info.put("email","mutable@example.test");
-                if(groups!=null)info.put("iserv:groups",groups);info.put("iserv:roles",List.of(Map.of("displayName","ADMIN")));send(exchange,200,info);return;
+                if(groups!=null)info.put("iserv:groups",groups);if(roles!=null)info.put("iserv:roles",roles);send(exchange,200,info);return;
             }
             send(exchange,404,Map.of("error","not_found"));
         }catch(Exception ex){send(exchange,500,Map.of("error","fixture_error"));}

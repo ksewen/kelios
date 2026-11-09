@@ -47,10 +47,17 @@ class AuthPolicyTest {
         assertThrows(AuthFailure.class,()->Authorization.manageUser(admin,new Identity(UUID.randomUUID(),Scope.TENANT,UUID.randomUUID(),Role.USER,Status.PENDING,"Other")));
         assertThrows(AuthFailure.class,()->Authorization.destructiveSelf(admin,admin.id()));
     }
-    @Test void documentedGroupsUseUuidNotNames(){
-        UUID group=UUID.randomUUID();var info=Map.<String,Object>of("iserv:groups",List.of(Map.of("id",group.toString(),"act","old-name","name","Display")));
-        assertEquals(Set.of(group),IServGroups.parse(info));IServGroups.requireAllowed(IServGroups.parse(info),Set.of(group));
-        for(Map<String,Object> invalid:List.of(Map.<String,Object>of(),Map.<String,Object>of("iserv:groups","wrong"),Map.<String,Object>of("iserv:groups",List.of(Map.of("name","Display"))),Map.<String,Object>of("iserv:groups",List.of(Map.of("id","1-1-1-1-1")))))assertThrows(AuthFailure.class,()->IServGroups.parse(invalid));
-        assertThrows(AuthFailure.class,()->IServGroups.requireAllowed(Set.of(group),Set.of()));
+    @Test void documentedAndObservedGroupsMapExactAccounts(){
+        var item=Map.of("id","opaque-id","act","admins","name","Display");
+        assertEquals(Set.of("admins"),IServGroups.parse(Map.of("iserv:groups",List.of(item))));
+        assertEquals(Set.of("admins"),IServGroups.parse(Map.of("iserv:groups",Map.of("opaque-id",item))));
+        var mappings=List.of(new OidcConfigurationService.GroupMapping("admins",Role.ADMIN),new OidcConfigurationService.GroupMapping("users",Role.USER));
+        assertEquals(Role.ADMIN,IServGroups.mappedRole(Set.of("admins","users"),mappings));
+        for(Map<String,Object> invalid:List.of(Map.<String,Object>of(),Map.<String,Object>of("iserv:groups","wrong"),Map.<String,Object>of("iserv:groups",List.of(Map.of("name","Display"))),Map.<String,Object>of("iserv:groups",Map.of("wrong-key",item)),Map.<String,Object>of("iserv:groups",List.of(item,item))))assertThrows(AuthFailure.class,()->IServGroups.parse(invalid));
+        assertThrows(AuthFailure.class,()->IServGroups.mappedRole(Set.of("admins"),List.of()));
+    }
+    @Test void documentedRolesUseDisplayNameOnly(){
+        assertEquals(Set.of("Administrator"),IServRoles.parse(Map.of("iserv:roles",List.of(Map.of("uuid","opaque","id","old","displayName","Administrator")))));
+        for(Map<String,Object> invalid:List.of(Map.<String,Object>of(),Map.<String,Object>of("iserv:roles",Map.of("id","opaque")),Map.<String,Object>of("iserv:roles",List.of(Map.of("id","opaque"))),Map.<String,Object>of("iserv:roles",List.of(Map.of("displayName","same"),Map.of("displayName","same")))))assertThrows(AuthFailure.class,()->IServRoles.parse(invalid));
     }
 }

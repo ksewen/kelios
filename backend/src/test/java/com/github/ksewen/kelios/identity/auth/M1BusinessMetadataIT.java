@@ -74,7 +74,7 @@ class M1BusinessMetadataIT {
  @Test void allBusinessCreationUsesAuthoritativeActorAndOneInstant(){
   created("tenant",tenant,actor.id());created("category",category,actor.id());created("manufacturer",manufacturer,actor.id());created("product",product,actor.id());
   created("location",location,actor.id());created("owner",owner,actor.id());created("asset",asset().id(),actor.id());
-  configs.put(admin,tenant,"https://m1.example","client","secret",true,null,Set.of());created("tenant_oidc_config",tenant,actor.id());
+  configs.put(admin,tenant,"https://m1.example","client","secret",true,null,List.of());created("tenant_oidc_config",tenant,actor.id());
   UUID internal=users.create(Scope.GLOBAL,null,Role.USER,Status.ACTIVE,"Infrastructure fixture");created("app_user",internal,SystemActor.ID);
  }
  @Test void systemSeedsAreRecognizableAndCannotBecomeUserOrCredential()throws Exception{
@@ -91,7 +91,7 @@ class M1BusinessMetadataIT {
   jdbc.update("UPDATE app_user SET status='DISABLED' WHERE scope='GLOBAL' AND role='ADMIN'");
   Identity boot=auth.bootstrap("m1-"+UUID.randomUUID()+"@example.org","Bootstrap","CorrectHorse25!Battery");created("app_user",boot.id(),boot.id());
   Identity u=auth.createGlobal(boot,"user-"+UUID.randomUUID()+"@example.org","Human","CorrectHorse25!Battery");created("app_user",u.id(),boot.id());
-  UUID group=UUID.randomUUID();configs.put(boot,tenant,"https://jit.example","client","secret",true,null,Set.of(group));
+  String group="members";configs.put(boot,tenant,"https://jit.example","client","secret",true,null,List.of(new OidcConfigurationService.GroupMapping(group,Role.USER)));
   var pair=provisioning.complete(tenant,0,"https://jit.example","client","subject-"+UUID.randomUUID(),"JIT human",Set.of(group));created("app_user",pair.user().id(),pair.user().id());
  }
  @ParameterizedTest @EnumSource(CatalogService.Kind.class) void catalogEditPreservesCreation(CatalogService.Kind kind){
@@ -181,9 +181,9 @@ class M1BusinessMetadataIT {
   var seed=jdbc.queryForMap("SELECT created_by,created_at,updated_at FROM "+schema+".category WHERE name='UNKNOWN'");assertEquals(SystemActor.ID,seed.get("created_by"));assertFalse(((java.sql.Timestamp)seed.get("created_at")).toInstant().isBefore(lower));assertEquals(seed.get("created_at"),seed.get("updated_at"));
  }
  @Test void providerAndUserUpdatesPreserveCreationAndUseRealAdministrator(){
-  configs.put(admin,tenant,"https://m1.example","client","secret",true,null,Set.of());var pBefore=metadata("tenant_oidc_config",tenant);
+  configs.put(admin,tenant,"https://m1.example","client","secret",true,null,List.of());var pBefore=metadata("tenant_oidc_config",tenant);
   UUID id=users.create(Scope.GLOBAL,null,Role.USER,Status.ACTIVE,"User");var uBefore=metadata("app_user",id);clock.now=clock.now.plusSeconds(10);
-  configs.put(admin,tenant,"https://m1.example","client",null,false,0L,Set.of(UUID.randomUUID()));updated("tenant_oidc_config",tenant,pBefore,actor.id());
+  configs.put(admin,tenant,"https://m1.example","client",null,false,0L,List.of(new OidcConfigurationService.GroupMapping("members",Role.USER)));updated("tenant_oidc_config",tenant,pBefore,actor.id());
   auth.role(admin,id,Role.ADMIN);updated("app_user",id,uBefore,actor.id());uBefore=metadata("app_user",id);clock.now=clock.now.plusSeconds(10);auth.resetCredential(admin,id,"reset-"+UUID.randomUUID()+"@example.org","CorrectHorse25!Battery");updated("app_user",id,uBefore,actor.id());
  }
  @ParameterizedTest @ValueSource(strings={"approve","disable","own-password"}) void userMutationMetadata(String operation){
@@ -208,7 +208,7 @@ class M1BusinessMetadataIT {
   if(status(r)!=400){assertEquals(200,status(r));created("tenant",UUID.fromString(json.readValue(r.getResponse().getContentAsByteArray(),String.class)),actor.id());}
   b=new LinkedHashMap<>(forbidden);b.put("email","transport-"+UUID.randomUUID()+"@example.org");b.put("displayName","Transport User");b.put("password","CorrectHorse25!Battery");r=request(admin,post("/api/v1/users/global"),b);
   if(status(r)!=400){assertEquals(200,status(r));created("app_user",UUID.fromString((String)data(r).get("id")),actor.id());}
-  b=new LinkedHashMap<>(forbidden);b.put("issuer","https://transport.example");b.put("clientId","client");b.put("clientSecret","secret");b.put("enabled",true);b.put("allowedGroupIds",List.of());r=request(admin,put("/api/v1/tenants/"+tenant+"/oidc"),b);
+  b=new LinkedHashMap<>(forbidden);b.put("issuer","https://transport.example");b.put("clientId","client");b.put("clientSecret","secret");b.put("enabled",true);b.put("groupMappings",List.of());r=request(admin,put("/api/v1/tenants/"+tenant+"/oidc"),b);
   if(status(r)!=400){assertEquals(200,status(r));created("tenant_oidc_config",tenant,actor.id());}
  }
 

@@ -28,9 +28,11 @@ export type TenantItem = { id: UUID; name: string; metadata: Metadata };
 export type TenantDetail = TenantItem;
 /** Tenant POST returns a JSON UUID string, unlike Catalog/Place POST {id}. */
 export type TenantCreated = UUID;
+export type OidcGroupMapping = { act: string; role: 'USER' | 'ADMIN' };
+export type OidcRoleMapping = { displayName: string; role: 'USER' | 'ADMIN' };
 export type OidcConfigurationDetail = {
   tenantId: UUID; issuer: string; clientId: string; secretConfigured: boolean; enabled: boolean;
-  version: number; allowedGroupIds: UUID[]; callbackUri: string; tenant: Reference; metadata: Metadata;
+  version: number; groupMappings: OidcGroupMapping[]; roleMappings: OidcRoleMapping[]; callbackUri: string; tenant: Reference; metadata: Metadata;
 };
 export type OidcConfigurationSummary = { tenantId: UUID; tenant: Reference; issuer: string; clientId: string; enabled: boolean; version: number };
 export type RoutingOrganization = { routingId: UUID; name: string };
@@ -73,7 +75,7 @@ export type CatalogLabelEditCommand = CatalogLabelCommand & { publishGlobally?: 
 export type ProductEditCommand = ProductCommand & { publishGlobally?: boolean };
 export type PlaceCommand = { name: string; note?: string | null };
 export type MergeCommand = { sourceId: UUID; targetId: UUID };
-export type OidcConfigureCommand = { issuer: string; clientId: string; clientSecret?: string | null; enabled: boolean; version?: number | null; allowedGroupIds: UUID[] };
+export type OidcConfigureCommand = { issuer: string; clientId: string; clientSecret?: string | null; enabled: boolean; version?: number | null; groupMappings: OidcGroupMapping[]; roleMappings?: OidcRoleMapping[] };
 export type OidcDeleteQuery = { version: number };
 export type CatalogSelection = { productId: UUID; categoryId?: never; manufacturerId?: never } | { productId?: never; categoryId: UUID; manufacturerId: UUID };
 export type AssetRegistration = CatalogSelection & { locationId: UUID; ownerId?: UUID | null; loanable: boolean; serialNumber?: string | null; externalInventoryNumber?: string | null; note?: string | null; localIdentifier?: string | null };
