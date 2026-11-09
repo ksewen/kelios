@@ -70,7 +70,8 @@ class IdentityAuthenticationIT {
     }
     @AfterEach void clear(){SecurityContextHolder.clearContext();}
     @AfterAll static void close(){PROVIDER.close();}
-    OidcConfigurationService.View configure(UUID target,Long version,Set<UUID> groups){return configurations.put(admin,target,PROVIDER.issuer,"fixture-client","fixture-secret",true,version,groups);}
+    List<OidcConfigurationService.GroupMapping> mappings(Set<String> groups){return groups.stream().sorted().map(act->new OidcConfigurationService.GroupMapping(act,Role.USER)).toList();}
+    OidcConfigurationService.View configure(UUID target,Long version,Set<String> groups){return configurations.put(admin,target,PROVIDER.issuer,"fixture-client","fixture-secret",true,version,mappings(groups));}
     <T>T tx(java.util.function.Supplier<T> work){return new TransactionTemplate(tm).execute(s->work.get());}
     void principal(Identity user){SecurityContextHolder.getContext().setAuthentication(UsernamePasswordAuthenticationToken.authenticated(user,null,List.of()));}
     Identity fixture(Scope scope,UUID tenant,Role role,Status status){UUID id=users.create(scope,tenant,role,status,"Fixture user");return identities.load(id,"");}
@@ -157,21 +158,21 @@ class IdentityAuthenticationIT {
         assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM app_user WHERE scope='GLOBAL' AND role='ADMIN' AND status='ACTIVE'",Integer.class));
     }
     @Test void oidcConfigurationEncryptedSanitizedAndVersioned()throws Exception{
-        var view=configurations.get(admin,tenant);assertEquals(Set.of(PROVIDER.group),view.allowedGroupIds());assertEquals("https://kelios.example/api/v1/auth/oidc/"+tenant+"/callback",view.callbackUri());
+        var view=configurations.get(admin,tenant);assertEquals(mappings(Set.of(PROVIDER.group)),view.groupMappings());assertEquals("https://kelios.example/api/v1/auth/oidc/"+tenant+"/callback",view.callbackUri());
         assertFalse(jdbc.queryForObject("SELECT encrypted_client_secret FROM tenant_oidc_config WHERE tenant_id=?",String.class,tenant).contains("fixture-secret"));assertFalse(json.writeValueAsString(view).contains("fixture-secret"));
         assertThrows(AuthFailure.class,()->configure(tenant,null,Set.of(PROVIDER.group)));
-        var updated=configurations.put(admin,tenant,PROVIDER.issuer,"fixture-client",null,true,view.version(),Set.of(PROVIDER.group));assertEquals(1,updated.version());
+        var updated=configurations.put(admin,tenant,PROVIDER.issuer,"fixture-client",null,true,view.version(),mappings(Set.of(PROVIDER.group)));assertEquals(1,updated.version());
         assertEquals(tenant,configurations.get(fixture(Scope.TENANT,tenant,Role.ADMIN,Status.ACTIVE),tenant).tenantId());
         var result=mvc.perform(get("/api/v1/tenants/"+tenant+"/oidc").header("Authorization","Bearer "+tokens.login(admin).accessToken())).andReturn();assertEquals(200,result.getResponse().getStatus());assertFalse(body(result).containsKey("encryptedSecret"));
-        String input=json.writeValueAsString(Map.of("issuer",PROVIDER.issuer,"clientId","fixture-client","enabled",true,"version",1,"allowedGroupIds",List.of(PROVIDER.group)));
+        String input=json.writeValueAsString(Map.of("issuer",PROVIDER.issuer,"clientId","fixture-client","enabled",true,"version",1,"groupMappings",mappings(Set.of(PROVIDER.group))));
         String forged=input.substring(0,input.length()-1)+",\"actorId\":\""+UUID.randomUUID()+"\"}";
         assertEquals(400,mvc.perform(put("/api/v1/tenants/"+tenant+"/oidc").header("Authorization","Bearer "+tokens.login(admin).accessToken()).contentType("application/json").content(forged)).andReturn().getResponse().getStatus());
         assertEquals(1,configurations.get(admin,tenant).version());
         var saved=mvc.perform(put("/api/v1/tenants/"+tenant+"/oidc").header("Authorization","Bearer "+tokens.login(admin).accessToken()).contentType("application/json").content(input)).andReturn();
         assertEquals(200,saved.getResponse().getStatus());assertEquals(2,((Number)body(saved).get("version")).intValue());assertEquals(true,body(saved).get("secretConfigured"));assertFalse(body(saved).containsKey("clientSecret"));
         var tenantAdmin=fixture(Scope.TENANT,tenant,Role.ADMIN,Status.ACTIVE);
-        assertEquals(409,mvc.perform(put("/api/v1/tenants/"+tenant+"/oidc").header("Authorization","Bearer "+tokens.login(tenantAdmin).accessToken()).contentType("application/json").content(input)).andReturn().getResponse().getStatus());
-        String malformed=input.replace(PROVIDER.group.toString(),"invalid-group-uuid");
+        assertEquals(403,mvc.perform(put("/api/v1/tenants/"+tenant+"/oidc").header("Authorization","Bearer "+tokens.login(tenantAdmin).accessToken()).contentType("application/json").content(input)).andReturn().getResponse().getStatus());
+        String malformed=input.replace("\"act\":\"members\"","\"act\":\"\"");
         assertEquals(400,mvc.perform(put("/api/v1/tenants/"+tenant+"/oidc").header("Authorization","Bearer "+tokens.login(admin).accessToken()).contentType("application/json").content(malformed)).andReturn().getResponse().getStatus());
         assertEquals(2,configurations.get(admin,tenant).version());assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE action='OIDC_CONFIG_CHANGED' AND target_id=? AND actor_id<>?",Integer.class,tenant,admin.id()));
     }
@@ -180,6 +181,44 @@ class IdentityAuthenticationIT {
         var refresh=cookie(result,BrowserTokens.REFRESH).getValue();var session=auth.refresh(refresh);assertEquals(Scope.TENANT,session.user().scope());assertEquals(tenant,session.user().tenantId());assertEquals(Role.USER,session.user().role());assertEquals(Status.PENDING,session.user().status());
         assertEquals(403,mvc.perform(get("/api/v1/tenants").header("Authorization","Bearer "+session.accessToken())).andReturn().getResponse().getStatus());assertEquals(200,mvc.perform(get("/api/v1/auth/me").header("Authorization","Bearer "+session.accessToken())).andReturn().getResponse().getStatus());
         assertNull(result.getRequest().getSession(false));assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM external_identity",Integer.class));
+    }
+    @Test void clientSecretPostCompletesFirstLogin()throws Exception{
+        PROVIDER.mode="client-secret-post";
+        var result=loginOidc();assertEquals("https://kelios.example/auth/complete",result.getResponse().getHeader("Location"));
+        assertEquals(Status.PENDING,auth.refresh(cookie(result,BrowserTokens.REFRESH).getValue()).user().status());
+        assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM external_identity",Integer.class));
+    }
+    @Test void oneTerminalIssuerSlashStoresExactDiscoveryIssuerAndFailedCalibrationDoesNotWrite(){
+        var created=configurations.put(admin,other,PROVIDER.issuer+"/","fixture-client","fixture-secret",true,null,mappings(Set.of(PROVIDER.group)));
+        assertEquals(PROVIDER.issuer,created.issuer());assertEquals(PROVIDER.issuer,configurations.provider(other).issuer());
+        assertEquals("fixture-secret",configurations.secret(configurations.provider(other)));
+        long version=created.version();long auditCount=jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE action='OIDC_CONFIG_CHANGED' AND target_id=?",Long.class,other);
+        for(String mode:List.of("discovery-issuer","discovery-unavailable")){
+            PROVIDER.mode=mode;
+            int expected=mode.equals("discovery-issuer")?400:503;
+            assertEquals(expected,assertThrows(AuthFailure.class,()->configurations.put(admin,other,PROVIDER.issuer+"/","fixture-client",null,true,version,List.of())).status());
+            assertEquals(version,configurations.get(admin,other).version());
+            assertEquals(auditCount,jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE action='OIDC_CONFIG_CHANGED' AND target_id=?",Long.class,other));
+        }
+        assertEquals(400,assertThrows(AuthFailure.class,()->configurations.put(admin,other,PROVIDER.issuer+"//","fixture-client",null,true,version,List.of())).status());
+        assertEquals("fixture-secret",configurations.secret(configurations.provider(other)));
+    }
+    @Test void liveFlowDiagnosticsDistinguishDeniedGroupAndMissingConfigurationWithoutValues()throws Exception{
+        var logger=(ch.qos.logback.classic.Logger)OidcDiagnostics.LOG;var original=logger.getLevel();var appender=new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();appender.start();logger.addAppender(appender);
+        try{
+            logger.setLevel(ch.qos.logback.classic.Level.DEBUG);
+            PROVIDER.mode="nonce";assertEquals("https://kelios.example/auth/failed",loginOidc().getResponse().getHeader("Location"));
+            PROVIDER.mode="subject-mismatch";assertEquals("https://kelios.example/auth/failed",loginOidc().getResponse().getHeader("Location"));
+            PROVIDER.mode="normal";
+            UUID outside=UUID.randomUUID();PROVIDER.groups=List.of(Map.of("id",outside.toString(),"act","outside", "name","private-group-name"));
+            assertEquals("https://kelios.example/auth/failed",loginOidc().getResponse().getHeader("Location"));
+            var started=flow();configurations.delete(admin,tenant,0);
+            assertEquals("https://kelios.example/auth/failed",callback(started,started.authorization().state()).getResponse().getHeader("Location"));
+            String output=appender.list.stream().map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage).reduce("",String::concat);
+            assertTrue(output.contains("invalid_claims"));assertTrue(output.contains("subject_mismatch"));assertTrue(output.contains("no_allowed_intersection"));assertTrue(output.contains("intersects=false"));assertTrue(output.contains("stage=configuration reason=rejected status=404"));
+            assertTrue(output.contains("id:string"));
+            for(String sensitive:List.of(PROVIDER.subject,PROVIDER.name,outside.toString(),PROVIDER.group.toString(),"private-group-name","fixture-secret"))assertFalse(output.contains(sensitive));
+        }finally{logger.detachAppender(appender);logger.setLevel(original);appender.stop();}
     }
     @Test void existingIdentityKeepsIdDespiteChangedNameAndApprovedThenDisabled()throws Exception{
         var first=auth.refresh(cookie(loginOidc(),BrowserTokens.REFRESH).getValue());UUID id=first.user().id();auth.approve(admin,id);PROVIDER.name="Changed display";
@@ -191,10 +230,47 @@ class IdentityAuthenticationIT {
     void oidcProtocolFailuresProvisionNothing(String mode)throws Exception{
         PROVIDER.mode=mode;var result=loginOidc();assertEquals("https://kelios.example/auth/failed",result.getResponse().getHeader("Location"));assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM external_identity",Integer.class));assertTrue(result.getResponse().getHeaders("Set-Cookie").stream().noneMatch(x->x.startsWith(BrowserTokens.REFRESH+"=")));
     }
-    @ParameterizedTest(name="group rejection {0}") @ValueSource(strings={"missing","wrong-shape","missing-id","invalid-id","empty","outside"})
+    @ParameterizedTest(name="group rejection {0}") @ValueSource(strings={"missing","wrong-shape","missing-id","missing-act","empty","outside","duplicate-act","wrong-object-key"})
     void documentedGroupFailuresFailClosed(String mode)throws Exception{
-        PROVIDER.groups=switch(mode){case "missing"->null;case "wrong-shape"->"wrong";case "missing-id"->List.of(Map.of("name","Members"));case "invalid-id"->List.of(Map.of("id","invalid"));case "empty"->List.of();default->List.of(Map.of("id",UUID.randomUUID().toString(),"name","Members"));};
+        PROVIDER.groups=switch(mode){case "missing"->null;case "wrong-shape"->"wrong";case "missing-id"->List.of(Map.of("act",PROVIDER.group,"name","Members"));case "missing-act"->List.of(Map.of("id",PROVIDER.groupId.toString(),"name","Members"));case "empty"->List.of();case "duplicate-act"->List.of(Map.of("id","one","act",PROVIDER.group),Map.of("id","two","act",PROVIDER.group));case "wrong-object-key"->Map.of("other",Map.of("id","one","act",PROVIDER.group));default->List.of(Map.of("id",UUID.randomUUID().toString(),"act","outside","name","Members"));};
         assertEquals("https://kelios.example/auth/failed",loginOidc().getResponse().getHeader("Location"));assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM external_identity",Integer.class));
+    }
+    @Test void observedObjectGroupsAndMultipleMappingsGrantPendingAdminOnlyOnce()throws Exception{
+        var adminGroup=Map.of("id","opaque-admin","act","admins","name","Readable Admins");
+        PROVIDER.groups=Map.of("opaque-admin",adminGroup,"opaque-user",Map.of("id","opaque-user","act",PROVIDER.group,"name","Members"));
+        configurations.put(admin,tenant,PROVIDER.issuer,"fixture-client",null,true,0L,List.of(new OidcConfigurationService.GroupMapping(PROVIDER.group,Role.USER),new OidcConfigurationService.GroupMapping("admins",Role.ADMIN)));
+        var first=loginOidc();var pending=auth.refresh(cookie(first,BrowserTokens.REFRESH).getValue()).user();
+        assertEquals(Role.ADMIN,pending.role());assertEquals(Status.PENDING,pending.status());
+        var tenantAdmin=fixture(Scope.TENANT,tenant,Role.ADMIN,Status.ACTIVE);
+        assertEquals(404,assertThrows(AuthFailure.class,()->auth.approve(tenantAdmin,pending.id())).status());
+        assertEquals(Status.ACTIVE,auth.approve(admin,pending.id()).status());
+        PROVIDER.groups=Map.of("opaque-user",Map.of("id","opaque-user","act",PROVIDER.group,"name","Members"));
+        var repeated=auth.refresh(cookie(loginOidc(),BrowserTokens.REFRESH).getValue()).user();
+        assertEquals(pending.id(),repeated.id());assertEquals(Role.ADMIN,repeated.role());assertEquals(Status.ACTIVE,repeated.status());
+        PROVIDER.groups=Map.of("outside",Map.of("id","outside","act","outside","name","Outside"));
+        assertEquals("https://kelios.example/auth/failed",loginOidc().getResponse().getHeader("Location"));
+    }
+    @Test void roleOnlyLoginCreatesPendingAdminAndLaterRoleChangeDoesNotRewriteIt()throws Exception{
+        configurations.put(admin,tenant,PROVIDER.issuer,"fixture-client",null,true,0L,List.of(),List.of(new OidcConfigurationService.RoleMapping("ADMIN",Role.ADMIN)));
+        PROVIDER.scope="openid profile iserv:roles";PROVIDER.groups=null;
+        var first=auth.refresh(cookie(loginOidc(),BrowserTokens.REFRESH).getValue()).user();
+        assertEquals(Role.ADMIN,first.role());assertEquals(Status.PENDING,first.status());
+        auth.approve(admin,first.id());
+        PROVIDER.roles=List.of(Map.of("displayName","ADMIN"));
+        var later=auth.refresh(cookie(loginOidc(),BrowserTokens.REFRESH).getValue()).user();
+        assertEquals(first.id(),later.id());assertEquals(Role.ADMIN,later.role());assertEquals(Status.ACTIVE,later.status());
+        PROVIDER.roles=List.of(Map.of("displayName","OTHER"));
+        assertEquals("https://kelios.example/auth/failed",loginOidc().getResponse().getHeader("Location"));
+    }
+    @Test void groupAndRoleMatchesCombineWithAdminPriorityAndMalformedOtherSource()throws Exception{
+        configurations.put(admin,tenant,PROVIDER.issuer,"fixture-client",null,true,0L,mappings(Set.of(PROVIDER.group)),List.of(new OidcConfigurationService.RoleMapping("ADMIN",Role.ADMIN)));
+        PROVIDER.scope="openid profile iserv:groups iserv:roles";
+        var first=auth.refresh(cookie(loginOidc(),BrowserTokens.REFRESH).getValue()).user();
+        assertEquals(Role.ADMIN,first.role());assertEquals(Status.PENDING,first.status());
+        PROVIDER.roles=null;assertEquals(first.id(),auth.refresh(cookie(loginOidc(),BrowserTokens.REFRESH).getValue()).user().id());
+        PROVIDER.roles="bad";assertEquals(first.id(),auth.refresh(cookie(loginOidc(),BrowserTokens.REFRESH).getValue()).user().id());
+        PROVIDER.roles=List.of(Map.of("displayName","ADMIN"));PROVIDER.groups="bad";assertEquals(first.id(),auth.refresh(cookie(loginOidc(),BrowserTokens.REFRESH).getValue()).user().id());
+        PROVIDER.roles=List.of(Map.of("displayName","OTHER"));assertEquals("https://kelios.example/auth/failed",loginOidc().getResponse().getHeader("Location"));
     }
     @Test void emptyAllowlistAndChangedConfigurationFailClosed()throws Exception{
         var flow=flow();configure(tenant,0L,Set.of());assertEquals("https://kelios.example/auth/failed",callback(flow,flow.authorization().state()).getResponse().getHeader("Location"));
@@ -208,7 +284,7 @@ class IdentityAuthenticationIT {
     }
     @Test void discoveryAndPkceFailuresAndNoHardcodedProvider(){
         PROVIDER.mode="discovery-issuer";assertThrows(AuthFailure.class,()->oidc.start(tenant));PROVIDER.mode="pkce-unsupported";assertThrows(AuthFailure.class,()->oidc.start(tenant));
-        assertThrows(AuthFailure.class,()->configurations.put(admin,tenant,"http://localhost","client","secret",true,0L,Set.of(PROVIDER.group)));
+        assertThrows(AuthFailure.class,()->configurations.put(admin,tenant,"http://localhost","client","secret",true,0L,mappings(Set.of(PROVIDER.group))));
         configure(other,null,Set.of(PROVIDER.group));assertEquals(other,configurations.provider(other).tenantId());
     }
     @Test void jitRaceNoOrphansAndNoCrossTenantMapping()throws Exception{
@@ -336,7 +412,7 @@ class IdentityAuthenticationIT {
         var first=provisioning.complete(tenant,0,PROVIDER.issuer,"fixture-client","first-subject","Person",Set.of(PROVIDER.group));
         var second=provisioning.complete(tenant,0,PROVIDER.issuer,"fixture-client","other-subject","Person",Set.of(PROVIDER.group));
         assertNotEquals(first.user().id(),second.user().id());
-        String changed="https://other-issuer.example";configurations.put(admin,tenant,changed,"fixture-client",null,true,0L,Set.of(PROVIDER.group));
+        String changed="https://other-issuer.example";configurations.put(admin,tenant,changed,"fixture-client",null,true,0L,mappings(Set.of(PROVIDER.group)));
         var third=provisioning.complete(tenant,1,changed,"fixture-client","first-subject","Person",Set.of(PROVIDER.group));
         assertNotEquals(first.user().id(),third.user().id());assertEquals(Status.PENDING,third.user().status());
         assertEquals(3,jdbc.queryForObject("SELECT count(*) FROM external_identity",Integer.class));
@@ -411,7 +487,7 @@ class IdentityAuthenticationIT {
         assertEquals(403,assertThrows(AuthFailure.class,()->provisioning.complete(other,0,PROVIDER.issuer,"fixture-client",PROVIDER.subject,"Same name",Set.of(PROVIDER.group))).status());
     }
     @Test void organizationDiscoveryOmitsDisabledAndUnconfiguredProviders()throws Exception {
-        var p=configurations.get(admin,tenant);configurations.put(admin,tenant,p.issuer(),p.clientId(),null,false,p.version(),p.allowedGroupIds());
+        var p=configurations.get(admin,tenant);configurations.put(admin,tenant,p.issuer(),p.clientId(),null,false,p.version(),p.groupMappings());
         assertEquals(0,((Number)body(mvc.perform(get("/api/v1/auth/oidc/organizations").secure(true)).andReturn()).get("totalElements")).intValue());
         assertNotEquals(200,unsafe(post("/api/v1/auth/oidc/"+tenant+"/start"),null).getResponse().getStatus());
     }
@@ -463,7 +539,7 @@ class IdentityAuthenticationIT {
     @Test void organizationDiscoveryDefaultAndLaterPageHaveScopedFullCountAndMinimalProjection()throws Exception {
         for(int i=0;i<25;i++)configure(tenants.create("Routing fixture "+String.format(Locale.ROOT,"%02d",i),admin.actor()),null,Set.of(PROVIDER.group));
         var disabled=configure(tenants.create("Routing fixture disabled",admin.actor()),null,Set.of(PROVIDER.group));
-        configurations.put(admin,disabled.tenantId(),disabled.issuer(),disabled.clientId(),null,false,disabled.version(),disabled.allowedGroupIds());
+        configurations.put(admin,disabled.tenantId(),disabled.issuer(),disabled.clientId(),null,false,disabled.version(),disabled.groupMappings());
         tenants.create("Routing fixture unconfigured",admin.actor());
         long usersBefore=jdbc.queryForObject("SELECT count(*) FROM app_user",Long.class),identitiesBefore=jdbc.queryForObject("SELECT count(*) FROM external_identity",Long.class),auditBefore=jdbc.queryForObject("SELECT count(*) FROM audit_log",Long.class);
         var seen=new HashSet<String>();
@@ -548,7 +624,7 @@ class IdentityAuthenticationIT {
         assertEquals("legacy",jdbc.queryForObject("SELECT login_name FROM "+schema+".local_global_credential WHERE user_id=?",String.class,user));
         assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM information_schema.columns WHERE table_schema=? AND table_name='local_global_credential' AND column_name='email'",Integer.class,schema));
         assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='local_global_credential' AND column_name='login_name'",Integer.class));
-        assertEquals(9,jdbc.queryForObject("SELECT count(*) FROM public.flyway_schema_history WHERE success",Integer.class));
+        assertEquals(12,jdbc.queryForObject("SELECT count(*) FROM public.flyway_schema_history WHERE success",Integer.class));
     }
 
     @Test void emailEditWinsAgainstLoginUsingOldEmailEvenWhenPasswordIsUnchanged()throws Exception{
@@ -570,6 +646,6 @@ class IdentityAuthenticationIT {
         var active=auth.refresh(pair.refreshToken());configurations.delete(admin,tenant,0);assertEquals(id,auth.refresh(active.refreshToken()).user().id());assertDoesNotThrow(()->tokens.verify(active.accessToken(),"access"));assertEquals(1,jdbc.queryForObject("SELECT count(*) FROM external_identity WHERE user_id=?",Integer.class,id));
     }
     @Test void callbackRejectsCurrentRecreationThatDoesNotSatisfyClientChecks()throws Exception{
-        var started=flow();configurations.delete(admin,tenant,0);configurations.put(admin,tenant,PROVIDER.issuer,"different-client","fixture-secret",true,null,Set.of(PROVIDER.group));assertEquals("https://kelios.example/auth/failed",callback(started,started.authorization().state()).getResponse().getHeader("Location"));assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM external_identity",Integer.class));
+        var started=flow();configurations.delete(admin,tenant,0);configurations.put(admin,tenant,PROVIDER.issuer,"different-client","fixture-secret",true,null,mappings(Set.of(PROVIDER.group)));assertEquals("https://kelios.example/auth/failed",callback(started,started.authorization().state()).getResponse().getHeader("Location"));assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM external_identity",Integer.class));
     }
 }

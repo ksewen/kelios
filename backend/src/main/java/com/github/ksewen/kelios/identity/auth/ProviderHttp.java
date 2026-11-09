@@ -59,23 +59,26 @@ public class ProviderHttp implements AutoCloseable {
             return uri;
         }catch(RuntimeException ex){throw AuthFailure.provider();}
     }
-    public Map<String,Object> get(String url,String issuer,String bearer){
-        var request=new HttpGet(endpoint(url,issuer));if(bearer!=null)request.setHeader("Authorization","Bearer "+bearer);return execute(request);
+    public Map<String,Object> get(String url,String issuer,String bearer){return get(url,issuer,bearer,"provider");}
+    public Map<String,Object> get(String url,String issuer,String bearer,String stage){
+        var request=new HttpGet(endpoint(url,issuer));if(bearer!=null)request.setHeader("Authorization","Bearer "+bearer);return execute(request,stage);
     }
-    public Map<String,Object> post(String url,String issuer,String body,String basic){
-        var request=new HttpPost(endpoint(url,issuer));request.setEntity(new StringEntity(body,ContentType.APPLICATION_FORM_URLENCODED));if(basic!=null)request.setHeader("Authorization","Basic "+basic);return execute(request);
+    public Map<String,Object> post(String url,String issuer,String body,String basic){return post(url,issuer,body,basic,"provider");}
+    public Map<String,Object> post(String url,String issuer,String body,String basic,String stage){
+        var request=new HttpPost(endpoint(url,issuer));request.setEntity(new StringEntity(body,ContentType.APPLICATION_FORM_URLENCODED));if(basic!=null)request.setHeader("Authorization","Basic "+basic);return execute(request,stage);
     }
-    @SuppressWarnings("unchecked") private Map<String,Object> execute(HttpUriRequestBase request){
+    @SuppressWarnings("unchecked") private Map<String,Object> execute(HttpUriRequestBase request,String stage){
         try {
             request.setHeader("Accept","application/json");
             return client.execute(request,response->{
+                OidcDiagnostics.http(stage,response.getCode());
                 if(response.getCode()!=200 || response.getEntity()==null)throw new IOException("Provider failure");
                 try(var in=response.getEntity().getContent()){
                     byte[] body=in.readNBytes(131073);if(body.length>131072)throw new IOException("Provider response limit");
                     Object value=json.readValue(body,Object.class);if(!(value instanceof Map<?,?>))throw new IOException("Provider response shape");return (Map<String,Object>)value;
                 }
             });
-        }catch(Exception ex){throw AuthFailure.provider();}
+        }catch(Exception ex){OidcDiagnostics.transport(stage,ex);throw AuthFailure.provider();}
     }
     public void close()throws IOException{client.close();}
 }

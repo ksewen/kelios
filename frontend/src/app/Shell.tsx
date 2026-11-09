@@ -45,7 +45,7 @@ export function Shell({user,branding,logout}:{user:Identity;branding:Branding;lo
  else if(page==='audit'&&admin)content=<Audit globalAdmin={ga}/>;
  else if(page==='users'&&admin)content=<UserAdministration user={user}/>;
  else if(page==='tenants'&&ga)content=<TenantAdministration globalAdmin={ga}/>;
- else if(page==='oidc'&&canOidc)content=tenant?<ProviderAdministration tenant={tenant}/>:ga?<ProviderCollection/>:<ContextPrompt/>;
+ else if(page==='oidc'&&canOidc)content=tenant?<ProviderAdministration tenant={tenant} editable={ga}/>:ga?<ProviderCollection tenants={tenants} tenantsError={error}/>:<ContextPrompt/>;
  else if(page==='password'&&global)content=<PasswordChange/>;
  else content=<Card className="p-6"><h1 className="page-title">{t('redesign.pageUnavailable')}</h1><Link to={scoped('dashboard')} className="text-primary">{t('redesign.backDashboard')}</Link></Card>;
  const breadcrumbPage=screenPath.split('/').at(-1)||'dashboard';

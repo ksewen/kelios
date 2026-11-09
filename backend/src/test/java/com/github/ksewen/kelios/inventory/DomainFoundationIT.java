@@ -108,7 +108,7 @@ class DomainFoundationIT {
         assertEquals(1,events(a.id()));
     }
     @Test void freshSchemaAndV1UpgradeUseSameMigrations() {
-        assertEquals(9,jdbc.queryForObject("SELECT count(*) FROM flyway_schema_history WHERE success",Integer.class));
+        assertEquals(12,jdbc.queryForObject("SELECT count(*) FROM flyway_schema_history WHERE success",Integer.class));
         assertEquals(10,jdbc.queryForObject("SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name IN ('tenant','app_user','category','manufacturer','product','location','owner','asset','asset_event','audit_log')",Integer.class));
         Flyway v1=Flyway.configure().dataSource(PG.getJdbcUrl(),PG.getUsername(),PG.getPassword()).schemas("upgrade_test").defaultSchema("upgrade_test").target("1").load();v1.migrate();
         assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM information_schema.tables WHERE table_schema='upgrade_test' AND table_name='asset'",Integer.class));

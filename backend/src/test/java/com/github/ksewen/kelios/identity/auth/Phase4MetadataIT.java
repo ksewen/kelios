@@ -92,13 +92,13 @@ class Phase4MetadataIT {
  @Test void populatedV5UpgradePreservesAllDataAndFreshSchema(){
   UUID global=users.create(Scope.GLOBAL,null,Role.USER,Status.ACTIVE,"Migration global"),local=users.create(Scope.TENANT,tenant,Role.USER,Status.PENDING,"Migration tenant");
   jdbc.update("INSERT INTO local_global_credential(user_id,email,password_hash,email_verified_at) VALUES(?,?,'fixture-hash',now())",global,"migration-"+global.toString().substring(0,8)+"@example.org");
-  configs.put(admin,tenant,"https://fixture.example","client","private test fixture",true,null,Set.of(UUID.randomUUID()));jdbc.update("INSERT INTO external_identity(issuer,subject,user_id,tenant_id) VALUES('https://fixture.example',?,?,?)",local.toString(),local,tenant);
+  configs.put(admin,tenant,"https://fixture.example","client","private test fixture",true,null,List.of(new OidcConfigurationService.GroupMapping(UUID.randomUUID().toString(),Role.USER)));jdbc.update("INSERT INTO external_identity(issuer,subject,user_id,tenant_id) VALUES('https://fixture.example',?,?,?)",local.toString(),local,tenant);
   var a=asset();String schema="phase4_"+UUID.randomUUID().toString().replace("-","");var old=org.flywaydb.core.Flyway.configure().dataSource(PG.getJdbcUrl(),PG.getUsername(),PG.getPassword()).schemas(schema).defaultSchema(schema).target("5").load();old.migrate();
   var tables=List.of("tenant","app_user","category","manufacturer","product","location","owner","asset","asset_event","asset_tag_counter","local_global_credential","tenant_oidc_config","tenant_oidc_allowed_group","external_identity","global_admin_recovery_guard","audit_log");var before=new LinkedHashMap<String,List<String>>();
-  for(String table:tables){String columns=String.join(",",jdbc.queryForList("SELECT column_name FROM information_schema.columns WHERE table_schema=? AND table_name=? ORDER BY ordinal_position",String.class,schema,table));jdbc.execute("INSERT INTO "+schema+"."+table+" SELECT "+(table.equals("local_global_credential")?columns.replace("login_name","split_part(email,'@',1)"):columns)+" FROM public."+table+" ON CONFLICT DO NOTHING");before.put(table,jdbc.queryForList("SELECT to_jsonb(t)::text FROM "+schema+"."+table+" t ORDER BY to_jsonb(t)::text",String.class));}
+  for(String table:tables){String columns=String.join(",",jdbc.queryForList("SELECT column_name FROM information_schema.columns WHERE table_schema=? AND table_name=? ORDER BY ordinal_position",String.class,schema,table));jdbc.execute("INSERT INTO "+schema+"."+table+" SELECT "+(table.equals("local_global_credential")?columns.replace("login_name","split_part(email,'@',1)"):table.equals("tenant_oidc_allowed_group")?"tenant_id,md5(group_act)::uuid":columns)+" FROM public."+table+" ON CONFLICT DO NOTHING");before.put(table,jdbc.queryForList("SELECT to_jsonb(t)::text FROM "+schema+"."+table+" t ORDER BY to_jsonb(t)::text",String.class));}
   var checksums=jdbc.queryForList("SELECT checksum FROM "+schema+".flyway_schema_history ORDER BY installed_rank",Integer.class);var latest=org.flywaydb.core.Flyway.configure().dataSource(PG.getJdbcUrl(),PG.getUsername(),PG.getPassword()).schemas(schema).defaultSchema(schema).target("6").load();latest.migrate();latest.validate();assertEquals(checksums,jdbc.queryForList("SELECT checksum FROM "+schema+".flyway_schema_history WHERE version IS NULL OR version<>'6' ORDER BY installed_rank",Integer.class));
   for(String table:tables)assertEquals(before.get(table),jdbc.queryForList("SELECT "+(table.equals("asset")?"(to_jsonb(t)-'local_identifier')":"to_jsonb(t)")+"::text FROM "+schema+"."+table+" t ORDER BY "+(table.equals("asset")?"(to_jsonb(t)-'local_identifier')":"to_jsonb(t)")+"::text",String.class),table);
-  assertNull(jdbc.queryForObject("SELECT local_identifier FROM "+schema+".asset WHERE id=?",String.class,a.id()));assertEquals(9,jdbc.queryForObject("SELECT count(*) FROM public.flyway_schema_history WHERE success",Integer.class));assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM pg_indexes WHERE schemaname='public' AND tablename='asset' AND indexdef LIKE '%local_identifier%'",Integer.class));
+  assertNull(jdbc.queryForObject("SELECT local_identifier FROM "+schema+".asset WHERE id=?",String.class,a.id()));assertEquals(12,jdbc.queryForObject("SELECT count(*) FROM public.flyway_schema_history WHERE success",Integer.class));assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM pg_indexes WHERE schemaname='public' AND tablename='asset' AND indexdef LIKE '%local_identifier%'",Integer.class));
  }
 
  @Test void creatorMigrationLeavesPreexistingRowsUnattributed(){
@@ -122,7 +122,7 @@ class Phase4MetadataIT {
  }
 
  @Test void oidcJitSnapshotsOnlyAnAvailableProviderDisplayLabel(){
-  UUID group=UUID.randomUUID();configs.put(admin,tenant,"https://jit.example","client","fixture secret",true,null,Set.of(group));
+  String group="members";configs.put(admin,tenant,"https://jit.example","client","fixture secret",true,null,List.of(new OidcConfigurationService.GroupMapping(group,Role.USER)));
   var named=provisioning.complete(tenant,0,"https://jit.example","client","named-subject","Provider Person",Set.of(group));
   var unnamed=provisioning.complete(tenant,0,"https://jit.example","client","unnamed-subject",null,Set.of(group));
   assertEquals("Provider Person",jdbc.queryForObject("SELECT created_by_display_name FROM app_user WHERE id=?",String.class,named.user().id()));
@@ -135,7 +135,7 @@ class Phase4MetadataIT {
  }
  @Test void disposableBackupRestorePreservesDataAndRequiresExternalEncryptionKey()throws Exception {
   var a=assets.register(tenant,new AssetService.Registration(new AssetService.ProductSelection(product),location,owner,false,null,null,null,"Restore label"),actor);
-  configs.put(admin,tenant,"https://fixture.example","restored-client","private restore fixture",true,null,Set.of(UUID.randomUUID()));
+  configs.put(admin,tenant,"https://fixture.example","restored-client","private restore fixture",true,null,List.of(new OidcConfigurationService.GroupMapping("members",Role.USER)));
   UUID user=users.create(Scope.GLOBAL,null,Role.USER,Status.ACTIVE,"Restored identity");jdbc.update("INSERT INTO local_global_credential(user_id,email,password_hash,email_verified_at) VALUES(?,?,'fixture-hash',now())",user,"restore-"+user.toString().substring(0,8)+"@example.org");
   assertEquals(0,PG.execInContainer("pg_dump","-U",PG.getUsername(),"-d",PG.getDatabaseName(),"-Fc","-f","/tmp/phase4-restore.dump").getExitCode());assertEquals(0,PG.execInContainer("createdb","-U",PG.getUsername(),"phase4_restore").getExitCode());assertEquals(0,PG.execInContainer("pg_restore","-U",PG.getUsername(),"-d","phase4_restore","--no-owner","/tmp/phase4-restore.dump").getExitCode());
   var restored=new JdbcTemplate(new org.springframework.jdbc.datasource.DriverManagerDataSource(PG.getJdbcUrl().replace("/"+PG.getDatabaseName(),"/phase4_restore"),PG.getUsername(),PG.getPassword()));
